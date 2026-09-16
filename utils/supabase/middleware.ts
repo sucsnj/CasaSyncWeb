@@ -2,6 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from '@/types/database'
 
+const PUBLIC_PATHS = ['/login', '/register', '/auth']
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+}
+
+function dashboardForRole(role: Database['public']['Enums']['user_role'] | undefined): string | null {
+  if (role === 'ADMIN') return '/dashboard/admin'
+  if (role === 'DEPENDENT') return '/dashboard/dependent'
+  return null
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -38,16 +50,59 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
-  ) {
-    // No user, redirect to the login page
+  const pathname = request.nextUrl.pathname
+
+  // Nenhum usuário autenticado: apenas rotas públicas são permitidas.
+  if (!user) {
+    if (isPublicPath(pathname)) {
+      return supabaseResponse
+    }
+
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    url.searchParams.set('redirectedFrom', request.nextUrl.pathname)
+    url.searchParams.set('redirectedFrom', pathname)
     return NextResponse.redirect(url)
+  }
+
+  // Usuário autenticado: resolve a role para guiar os redirecionamentos.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('user_role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const role = profile?.user_role
+  const dashboard = dashboardForRole(role)
+
+  // Página inicial: encaminha para o dashboard da role.
+  if (pathname === '/') {
+    if (dashboard) {
+      return NextResponse.redirect(new URL(dashboard, request.url))
+    }
+    return supabaseResponse
+  }
+
+  // Rotas públicas: usuário já autenticado vai direto para o dashboard.
+  if (isPublicPath(pathname)) {
+    if (dashboard) {
+      return NextResponse.redirect(new URL(dashboard, request.url))
+    }
+    return supabaseResponse
+  }
+
+  // Proteção das rotas de dashboard por role.
+  if (pathname.startsWith('/dashboard/admin') && role !== 'ADMIN') {
+    if (dashboard) {
+      return NextResponse.redirect(new URL(dashboard, request.url))
+    }
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  if (pathname.startsWith('/dashboard/dependent') && role !== 'DEPENDENT') {
+    if (dashboard) {
+      return NextResponse.redirect(new URL(dashboard, request.url))
+    }
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is. If

@@ -1,7 +1,6 @@
+import { redirect } from 'next/navigation'
+
 export default function Home() {
-  return (
-    <main>
-      <div>Hello world!</div>
-    </main>
-  );
+  // Protegida pelo proxy.ts: autenticados vão para o dashboard da role.
+  redirect('/login')
 }

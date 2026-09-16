@@ -1,31 +1,37 @@
 # CasaSync Web — PROJECT STATUS
 
-## Etapa 1 — Infraestrutura Inicial (concluída)
+## Etapa 2 — Autenticação Completa (concluída)
 
 ### Funcionalidades implementadas
-- Scaffold do projeto Next.js 16.3.5 (App Router, TypeScript strict, Tailwind CSS v4) em `casasync2`.
-- Dependências do Supabase instaladas: `@supabase/supabase-js` e `@supabase/ssr`.
+- **Shadcn UI configurado** (CLI v4, base Radix): `components/ui/{button,input,label,card,separator,tabs}.tsx` + `lib/utils.ts` + temas em `app/globals.css`.
+- **Fluxo de Auth completo:**
+  - Rota `GET /auth/callback`: troca `code` por sessão (Magic Link, Google OAuth, confirmação de e-mail) e redireciona para `/`.
+  - Login em `/login` com abas **Administrador** (E-mail/Senha ou Google OAuth) e **Dependente** (E-mail/Senha criados pelo Admin).
+  - Cadastro de novo ADMIN em `/register` (server action `registerAdmin`).
+- **Criação de Dependentes pelo ADMIN:** server action `createDependent` (um DEPENDENT nunca se cadastra sozinho).
+- **Proteção & redirecionamentos por role** no `proxy.ts` (via `updateSession`).
 
-### Arquivos / rotas criados
-- `.env.local` — placeholders `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (preencher com as chaves reais).
-- `utils/supabase/server.ts` — `createClient()` servidor (cookies async do App Router).
-- `utils/supabase/client.ts` — `createClient()` browser.
-- `utils/supabase/middleware.ts` — `updateSession()`: renova sessão e protege rotas autenticadas (redireciona não autenticados para `/login`).
-- `proxy.ts` (raiz) — exporta `proxy` (Next.js 16 substitui `middleware.ts`, descontinuado) com matcher que exclui assets estáticos.
-- `types/database.ts` — tipos das tabelas `profiles`, `houses`, `house_members`, `tasks`, `rewards`, `reward_redemptions` + enums (`member_role`, `task_status`, `redemption_status`) + helpers `Tables<T>` / `Enums<T>`.
-- `AGENTS.md` — diretrizes do projeto (stack, regras de negócio, protocolos do agente).
-- `PROJECT_STATUS.md` — este arquivo.
+### Rotas / arquivos criados
+- `app/auth/callback/route.ts` — callback do Supabase Auth.
+- `app/login/page.tsx` + `components/auth/login-form.tsx` — login ADMIN/DEPENDENT (Tabs).
+- `app/register/page.tsx` + `components/auth/register-form.tsx` — cadastro de ADMIN.
+- `components/auth/sign-out-button.tsx` — logout.
+- `app/dashboard/admin/page.tsx` e `app/dashboard/dependent/page.tsx` — placeholders protegidos por role.
+- `actions/types.ts` (tipo `ActionResult` + validação), `actions/auth.ts` (`registerAdmin`), `actions/create-dependent.ts` (`createDependent`).
+- `utils/supabase/admin.ts` — cliente **server-only** com `SUPABASE_SERVICE_ROLE_KEY`.
+- `types/database.ts` — enums `user_role` (ADMIN/DEPENDENT) e `member_role` (ADMIN/DEPENDENT) + coluna `profiles.user_role`.
+- `.env.local` — adicionado placeholder `SUPABASE_SERVICE_ROLE_KEY` (server-only).
 
 ### Decisões arquiteturais / pontos de atenção
-- **`proxy.ts` no lugar de `middleware.ts`:** Next.js 16.3.5 descontinuou `middleware.ts` e o renomeou para `proxy.ts` (mesma API, export renomeado). Build valida: `ƒ Proxy (Middleware)`.
-- `.env.local` ignorado pelo git (base do scaffold).
-- Atualmente NÃO existem rotas `/login` e `/auth` — o `updateSession` já redireciona para `/login`, então criar essas rotas é necessário antes do fluxo de auth funcionar em produção.
-- O tipo `Database` em `types/database.ts` é uma representação manual; sincronizar com o schema real do Supabase (gerar via `supabase gen types`) quando o banco for criado.
-- Enums atuais estão em bom caminho, mas o arquivo oficial decide o `user_role` (`ADMIN`/`DEPENDENT`) — ainda não modelado no `types/database.ts`.
+- **`membership`:** o ADMIN precisa estar vinculado a pelo menos uma casa (`house_members`) para criar dependentes; a casa do dependente é a casa atual do ADMIN.
+- **Sequência de segurança em `createDependent`:** valida sessão → confirma `user_role='ADMIN'` no perfil (via cliente autenticado, RLS) → busca `house_id` → usa o cliente admin (service role) para criar usuário (com `email_confirm: true`), upsert no perfil e vínculo em `house_members` com role `'DEPENDENT'`. Falhas intermediárias fazem cleanup (`deleteUser`).
+- **Redirecionamentos centrados no `proxy.ts`:** `/` e rotas públicas (`/login`, `/register`) só são permitidas a anônimos; autenticados vão ao dashboard conforme `user_role`. Rotas `/dashboard/admin` e `/dashboard/dependent` são validadas pela role do usuário preguiçosamente no proxy.
+- **Roles em caixa alta** (`'ADMIN'`/`'DEPENDENT'`) em `user_role` e `member_role` para alinhar a regra de negócio. **Validar com o schema real do Supabase.**
+- `SUPABASE_SERVICE_ROLE_KEY` é **server-only** (nunca importar `utils/supabase/admin.ts` em client).
+- Login dependente usa credenciais de e-mail/senha criadas pelo admin (não há Magic Link para dependentes nesta etapa).
 
 ### Próxima etapa
-1. Preencher `.env.local` com as chaves reais do projeto Supabase.
-2. Criar o schema no Supabase (tabelas, RLS, enums `user_role`) e sincronizar `types/database.ts`.
-3. Página `/login` (autenticação) + fluxo `/auth/callback` para o Supabase Auth.
-4. Autenticação de cadastro do ADMIN / criação de conta de `DEPENDENT` pelo ADMIN.
-5. Página inicial do dashboard (`ADMIN` vs `DEPENDENT`, isolamento por `house_id`).
+1. Preencher `.env.local` com chaves reais (URL, publishable key, service role key).
+2. Configurar no Supabase: provedor Google OAuth habilitado, `Site URL`/`Redirect URLs` apontando para o app (ex: `http://localhost:3000/auth/callback`).
+3. Etapa 3 — Gestão de Casa: criação de casa pelo ADMIN e área de criação de dependentes no `/dashboard/admin` (formulário chamando `createDependent`).
+4. Etapa 4 — Tarefas e Recompensas (painéis ADMIN/DEPENDENT, aprovação de resgates).

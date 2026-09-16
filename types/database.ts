@@ -14,6 +14,7 @@ export interface Database {
           id: string
           full_name: string | null
           avatar_url: string | null
+          user_role: Database['public']['Enums']['user_role']
           created_at: string
           updated_at: string
         }
@@ -21,6 +22,7 @@ export interface Database {
           id: string
           full_name?: string | null
           avatar_url?: string | null
+          user_role: Database['public']['Enums']['user_role']
           created_at?: string
           updated_at?: string
         }
@@ -28,6 +30,7 @@ export interface Database {
           id?: string
           full_name?: string | null
           avatar_url?: string | null
+          user_role?: Database['public']['Enums']['user_role']
           created_at?: string
           updated_at?: string
         }
@@ -311,7 +314,8 @@ export interface Database {
       [_ in never]: never
     }
     Enums: {
-      member_role: 'owner' | 'admin' | 'member'
+      user_role: 'ADMIN' | 'DEPENDENT'
+      member_role: 'ADMIN' | 'DEPENDENT'
       task_status: 'pending' | 'in_progress' | 'done'
       redemption_status: 'pending' | 'approved' | 'rejected'
     }
