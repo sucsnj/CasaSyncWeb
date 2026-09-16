@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import type { ActionResult } from './types'
@@ -8,7 +9,8 @@ import { validateCredentials } from './types'
 export async function createDependent(
   fullName: string,
   email: string,
-  password: string
+  password: string,
+  houseId?: string
 ): Promise<ActionResult> {
   const name = fullName.trim()
   const normalizedEmail = email.trim().toLowerCase()
@@ -42,17 +44,42 @@ export async function createDependent(
     return { ok: false, error: 'Apenas administradores podem criar dependentes.' }
   }
 
-  const { data: membership } = await supabase
-    .from('house_members')
-    .select('house_id')
-    .eq('profile_id', user.id)
-    .maybeSingle()
-
-  if (!membership) {
-    return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
-  }
-
   const admin = createAdminClient()
+
+  let targetHouseId: string
+
+  if (houseId) {
+    // ENSINO (teach): validar a posse da casa no servidor (via service role)
+    // impede que um ADMIN crie dependentes em casas que não lhe pertencem,
+    // mesmo que o formulário/cliente seja adulterado.
+    const { data: owned } = await admin
+      .from('houses')
+      .select('id')
+      .eq('id', houseId)
+      .eq('owner_id', user.id)
+      .maybeSingle()
+
+    if (!owned) {
+      return {
+        ok: false,
+        error: 'Você não pode adicionar dependentes a essa casa.',
+      }
+    }
+
+    targetHouseId = houseId
+  } else {
+    const { data: membership } = await supabase
+      .from('house_members')
+      .select('house_id')
+      .eq('profile_id', user.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
+    }
+
+    targetHouseId = membership.house_id
+  }
 
   const { data: createdUser, error: createError } =
     await admin.auth.admin.createUser({
@@ -88,16 +115,20 @@ export async function createDependent(
   const { error: membershipError } = await admin
     .from('house_members')
     .insert({
-      house_id: membership.house_id,
+      house_id: targetHouseId,
       profile_id: dependentUserId,
       role: 'DEPENDENT',
-      points: 0,
     })
 
   if (membershipError) {
     await admin.auth.admin.deleteUser(dependentUserId)
     return { ok: false, error: 'Falha ao vincular o dependente à casa.' }
   }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
 
   return {
     ok: true,

@@ -15,6 +15,7 @@ export interface Database {
           full_name: string | null
           avatar_url: string | null
           user_role: Database['public']['Enums']['user_role']
+          points: number
           created_at: string
           updated_at: string
         }
@@ -23,6 +24,7 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           user_role: Database['public']['Enums']['user_role']
+          points?: number
           created_at?: string
           updated_at?: string
         }
@@ -31,6 +33,7 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           user_role?: Database['public']['Enums']['user_role']
+          points?: number
           created_at?: string
           updated_at?: string
         }
@@ -85,7 +88,6 @@ export interface Database {
           house_id: string
           profile_id: string
           role: Database['public']['Enums']['member_role']
-          points: number
           created_at: string
           updated_at: string
         }
@@ -94,7 +96,6 @@ export interface Database {
           house_id: string
           profile_id: string
           role?: Database['public']['Enums']['member_role']
-          points?: number
           created_at?: string
           updated_at?: string
         }
@@ -103,7 +104,6 @@ export interface Database {
           house_id?: string
           profile_id?: string
           role?: Database['public']['Enums']['member_role']
-          points?: number
           created_at?: string
           updated_at?: string
         }
@@ -200,7 +200,7 @@ export interface Database {
           house_id: string
           title: string
           description: string | null
-          cost: number
+          points_cost: number
           emoji: string | null
           created_by: string
           created_at: string
@@ -211,7 +211,7 @@ export interface Database {
           house_id: string
           title: string
           description?: string | null
-          cost: number
+          points_cost: number
           emoji?: string | null
           created_by: string
           created_at?: string
@@ -222,7 +222,7 @@ export interface Database {
           house_id?: string
           title?: string
           description?: string | null
-          cost?: number
+          points_cost?: number
           emoji?: string | null
           created_by?: string
           created_at?: string
@@ -316,8 +316,8 @@ export interface Database {
     Enums: {
       user_role: 'ADMIN' | 'DEPENDENT'
       member_role: 'ADMIN' | 'DEPENDENT'
-      task_status: 'pending' | 'in_progress' | 'done'
-      redemption_status: 'pending' | 'approved' | 'rejected'
+      task_status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'APPROVED'
+      redemption_status: 'PENDING' | 'APPROVED' | 'REJECTED'
     }
     CompositeTypes: {
       [_ in never]: never
