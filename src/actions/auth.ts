@@ -8,6 +8,17 @@ import { createAdminClient } from '@/utils/supabase/admin'
 const ADMIN_EMAIL_DOMAIN = 'admin.casasync'
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
+/** Cliente service-role (server-only). Retorna `null` em vez de lançar exceção
+ *  quando a config de servidor está ausente — ações NÃO podem lançar, senão o
+ *  Next surface overlay de erro de dev com os argumentos da requisição. */
+function getAdminClient(): ReturnType<typeof createAdminClient> | null {
+  try {
+    return createAdminClient()
+  } catch {
+    return null
+  }
+}
+
 /**
  * Cadastro de ADMIN. Fluxo simplificado por PIN do sistema + username:
  *   1. Valida `masterPin === process.env.MASTER_PIN` (falha fechada quando
@@ -46,7 +57,10 @@ export async function registerAdmin(
     return { ok: false, error: 'PIN do sistema inválido' }
   }
 
-  const admin = createAdminClient()
+  const admin = getAdminClient()
+  if (!admin) {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
 
   // Username único em `profiles` (colunas com índice único no banco).
   const { data: existing } = await admin
@@ -115,7 +129,10 @@ export async function login(
     return { ok: false, error: 'Informe nome de usuário e senha.' }
   }
 
-  const admin = createAdminClient()
+  const admin = getAdminClient()
+  if (!admin) {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
 
   const { data: profile } = await admin
     .from('profiles')

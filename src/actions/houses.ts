@@ -178,7 +178,12 @@ export async function createDependent(
     return { ok: false, error: 'Apenas administradores podem criar dependentes.' }
   }
 
-  const admin = createAdminClient()
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
 
   const { data: existing } = await admin
     .from('profiles')

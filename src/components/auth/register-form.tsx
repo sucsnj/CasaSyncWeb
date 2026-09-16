@@ -19,31 +19,37 @@ import {
 export function RegisterForm() {
   const router = useRouter()
 
-  const [fullName, setFullName] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [masterPin, setMasterPin] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // currentTarget é nulled após o primeiro await — capturar a referência do
+    // form agora para poder chamar reset() depois do registerAdmin.
+    const form = event.currentTarget
+
     setFormError(null)
 
+    // Segurança: senha/PIN ficam apenas na DOM (inputs uncontrolled) e são
+    // lidos do FormData só no momento do submit. NUNCA entram em estado React
+    // (não ficam visíveis em DevTools/estado do componente).
+    const formData = new FormData(form)
+    const fullName = String(formData.get('fullName') ?? '').trim()
+    const username = String(formData.get('username') ?? '').trim()
+    const password = String(formData.get('password') ?? '')
+    const masterPin = String(formData.get('masterPin') ?? '')
+
     startTransition(async () => {
-      const result = await registerAdmin(
-        fullName,
-        username,
-        password,
-        masterPin
-      )
+      const result = await registerAdmin(fullName, username, password, masterPin)
 
       if (!result.ok) {
         setFormError(result.error)
         return
       }
 
-      // Conta criada e confirmada: volta para a aba de login entrar.
+      // Conta criada e confirmada: limpa o formulário e volta ao login.
+      form.reset()
       router.push('/login')
       router.refresh()
     })
@@ -68,8 +74,6 @@ export function RegisterForm() {
               type="text"
               autoComplete="name"
               placeholder="Seu nome"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
               required
             />
           </div>
@@ -82,8 +86,7 @@ export function RegisterForm() {
               type="text"
               autoComplete="username"
               placeholder="ex.: joao_silva (3-24 caracteres)"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              minLength={3}
               required
             />
           </div>
@@ -96,11 +99,9 @@ export function RegisterForm() {
               type="password"
               autoComplete="new-password"
               placeholder="Mínimo de 6 caracteres"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
               suppressHydrationWarning
-              required
               minLength={6}
+              required
             />
           </div>
 
@@ -112,8 +113,6 @@ export function RegisterForm() {
               type="password"
               autoComplete="off"
               placeholder="PIN fornecido pelo administrador geral"
-              value={masterPin}
-              onChange={(event) => setMasterPin(event.target.value)}
               suppressHydrationWarning
               required
             />

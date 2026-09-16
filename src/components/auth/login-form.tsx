@@ -26,8 +26,6 @@ export function LoginForm({
 }) {
   const router = useRouter()
 
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
   const [formError, setFormError] = useState<string | null>(
     error === 'auth_callback' ? 'Falha ao autenticar. Tente novamente.' : null
   )
@@ -36,6 +34,13 @@ export function LoginForm({
   function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
+
+    // Segurança: a senha fica só na DOM (input uncontrolled) e é lida do
+    // FormData no momento do submit. NUNCA entra em estado React, então não
+    // aparece em DevTools/console do lado do cliente.
+    const formData = new FormData(event.currentTarget)
+    const username = String(formData.get('username') ?? '').trim()
+    const password = String(formData.get('password') ?? '')
 
     startTransition(async () => {
       try {
@@ -89,8 +94,6 @@ export function LoginForm({
                     type="text"
                     autoComplete="username"
                     placeholder="Seu nome de usuário"
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
                     required
                   />
                 </div>
@@ -103,8 +106,6 @@ export function LoginForm({
                     type="password"
                     autoComplete="current-password"
                     placeholder="••••••••"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
                     suppressHydrationWarning
                     required
                   />

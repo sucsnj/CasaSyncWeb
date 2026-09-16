@@ -33,9 +33,6 @@ export function HousesManager({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
-  const [depName, setDepName] = useState('')
-  const [depUsername, setDepUsername] = useState('')
-  const [depPassword, setDepPassword] = useState('')
   const [depError, setDepError] = useState<string | null>(null)
   const [depPending, setDepPending] = useState(false)
 
@@ -56,6 +53,11 @@ export function HousesManager({
 
   async function handleCreateDependent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // currentTarget é nulled após o primeiro await — capturar a referência
+    // do form agora para poder chamar reset() depois do createDependent.
+    const form = event.currentTarget
+
     setDepError(null)
     setDepPending(true)
 
@@ -64,6 +66,13 @@ export function HousesManager({
         setDepError('Crie ou selecione uma casa antes de adicionar dependentes.')
         return
       }
+
+      // Segurança: a senha do dependente fica só na DOM (input uncontrolled) e é
+      // lida do FormData no submit. NUNCA entra em estado React.
+      const formData = new FormData(form)
+      const depName = String(formData.get('dependentName') ?? '').trim()
+      const depUsername = String(formData.get('dependentUsername') ?? '').trim()
+      const depPassword = String(formData.get('dependentPassword') ?? '')
 
       const result = await createDependent(
         depName,
@@ -77,9 +86,7 @@ export function HousesManager({
         return
       }
 
-      setDepName('')
-      setDepUsername('')
-      setDepPassword('')
+      form.reset()
       router.refresh()
     } finally {
       setDepPending(false)
@@ -195,8 +202,6 @@ export function HousesManager({
                   name="dependentName"
                   type="text"
                   placeholder="Ex.: Joana Silva"
-                  value={depName}
-                  onChange={(event) => setDepName(event.target.value)}
                   required
                 />
               </div>
@@ -209,8 +214,6 @@ export function HousesManager({
                   type="text"
                   autoComplete="username"
                   placeholder="ex.: joana_silva"
-                  value={depUsername}
-                  onChange={(event) => setDepUsername(event.target.value)}
                   required
                 />
               </div>
@@ -223,8 +226,6 @@ export function HousesManager({
                   type="password"
                   autoComplete="new-password"
                   placeholder="Mínimo de 6 caracteres"
-                  value={depPassword}
-                  onChange={(event) => setDepPassword(event.target.value)}
                   suppressHydrationWarning
                   required
                   minLength={6}

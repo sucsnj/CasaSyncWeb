@@ -96,14 +96,18 @@ export function RewardsAdmin({
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // currentTarget é nulled após o primeiro await — capturar o form agora.
+    const form = event.currentTarget
+
     setFormError(null)
-    const form = new FormData(event.currentTarget)
+    const formData = new FormData(form)
 
     startTransition(async () => {
       const result = await createReward({
-        title: String(form.get('title') ?? ''),
-        description: String(form.get('description') ?? ''),
-        pointsCost: Number(form.get('points_cost')),
+        title: String(formData.get('title') ?? ''),
+        description: String(formData.get('description') ?? ''),
+        pointsCost: Number(formData.get('points_cost')),
       })
 
       if (!result.ok) {
@@ -111,7 +115,7 @@ export function RewardsAdmin({
         return
       }
 
-      event.currentTarget.reset()
+      form.reset()
       router.refresh()
     })
   }

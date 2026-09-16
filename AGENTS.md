@@ -34,6 +34,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - `ADMIN`: cria/gerencia casas e contas de dependentes (via `createDependent` em `actions/houses.ts`, service role + `email_confirm: true`; DEPENDENT **nunca se cadastra sozinho**), cria/aprova tarefas e recompensas.
 - `DEPENDENT`: só vê as próprias tarefas/resgates.
 - Todo novo formulário com campo de senha deve marcar os `<Input>` com `suppressHydrationWarning` (extensões de gerenciador de senhas causam hydration mismatch — já ocorreu em 3 formulários).
+- **Credenciais fora do estado React:** senha/`masterPin` NUNCA em `useState`/inputs controlados. Inputs ficam **uncontrolled** (só `name`), lidos via `FormData(event.currentTarget)` no submit e descartados; forms de sucesso chamam `reset()`. Server Actions de credencial não podem lançar exceção não tratada (o Next sobreporia overlay de dev com os argumentos) — use try/catch e retorne `ActionResult` (`ok:false` + mensagem genérica).
 
 ## 5. Skills ativas
 - As skills vivem em `.agents/skills/` (NÃO em `.skills/`, apesar de `opencode.json` ainda citar o caminho antigo): **`grill-with-docs`** (questionar arquitetura/regras de negócio/DB antes de implementar) e **`teach`** (explicar padrões novos de Next.js/Supabase). Ative via ferramenta de skill quando aplicável.

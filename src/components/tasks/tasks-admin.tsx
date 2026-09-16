@@ -64,17 +64,20 @@ export function TasksAdmin({
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setFormError(null)
 
-    const form = new FormData(event.currentTarget)
+    // currentTarget é nulled após o primeiro await — capturar o form agora.
+    const form = event.currentTarget
+
+    setFormError(null)
+    const formData = new FormData(form)
 
     startTransition(async () => {
       const result = await createTask({
-        title: String(form.get('title') ?? ''),
-        description: String(form.get('description') ?? ''),
-        dueDate: String(form.get('due_date') ?? '') || null,
-        points: Number(form.get('points')),
-        assignedTo: String(form.get('assigned_to') ?? ''),
+        title: String(formData.get('title') ?? ''),
+        description: String(formData.get('description') ?? ''),
+        dueDate: String(formData.get('due_date') ?? '') || null,
+        points: Number(formData.get('points')),
+        assignedTo: String(formData.get('assigned_to') ?? ''),
       })
 
       if (!result.ok) {
@@ -83,7 +86,7 @@ export function TasksAdmin({
       }
 
       setFormError(null)
-      event.currentTarget.reset()
+      form.reset()
       // O INSERT também chega via Realtime; o refresh é a rede de segurança.
       router.refresh()
     })
