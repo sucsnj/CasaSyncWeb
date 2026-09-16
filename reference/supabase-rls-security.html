@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Church Dogmatics</title>
+<style>
+/* reference cheatsheet — reuses shared stylesheet, no lesson chrome */
+:root {
+  --bg:#fbfbf7; --ink:#1a1a1a; --ink-soft:#444; --accent:#3a5ce4; --accent-soft:#eef1fd;
+  --border:#d8d8d0; --code-bg:#f2f2ec; --warn:#b45309; --good:#166534;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,serif;line-height:1.55}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+h1,h2,h3{font-family:"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.2}
+h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:2rem;border-bottom:1px solid var(--border);padding-bottom:.25rem}
+code{font-family:"Cascadia Code",Consolas,monospace;font-size:.9em;background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:#17181c;color:#e6e6e6;padding:1rem 1.1rem;border-radius:8px;overflow-x:auto;font-size:.85rem}
+pre code{background:inherit;color:inherit;padding:0}
+pre .c{color:#9ca3af;font-style:italic}
+pre .k{color:#7dd3fc}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.92rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left}
+th{background:var(--accent-soft)}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);padding:.6rem .9rem;border-radius:0 6px 6px 0;margin:1rem 0}
+.warn{border-left-color:var(--warn);background:#fef3e2}
+.good{border-left-color:var(--good);background:#e9f7ef}
+ul{margin:.4rem 0}
+footer{margin-top:3rem;font-size:.85rem;color:var(--ink-soft);border-top:1px solid var(--border);padding-top:1rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Referência rápida — Segurança Supabase (RNL + Cliente SSR)</h1>
+<p class="good callout"><strong>Princípio</strong>: autorização vem da <em>sessão verificada no servidor</em>, nunca do input do navegador. A RNL é a última linha de defesa — o veto no banco, independente do caminho do app.</p>
+
+<h2>1. Como cada papel é executado</h2>
+<table>
+<tr><th>Papel Postgres</th><th>Chave</th><th>RNL</th><th>Onde usar</th></tr>
+<tr><td><code>anon</code></td><td>publishable (PÚBLICA)</td><td>Aplicada</td><td>nunca em dados privados — sem política = sem acesso</td></tr>
+<tr><td><code>authenticated</code></td><td>publishable + JWT da sessão</td><td>Aplicada</td><td>cliente SSR e client-side do app</td></tr>
+<tr><td><code>service_role</code></td><td><code>SUPABASE_SERVICE_ROLE_KEY</code> (SEGREDA)</td><td><strong>Ignorada</strong></td><td>Server-only: criar usuário, upsert de perfil, webhooks</td></tr>
+</table>
+
+<h2>2. Por que o helper <code>utils/supabase/server.ts</code></h2>
+<ul>
+<li>Liga o cliente à sessão do <em>request atual</em> via <code>cookies</code> (getAll/setAll). Cliente novo por request — nunca global.</li>
+<li><code>setAll</code> grava refresh de token; em Server Component falha e é ignorado no <code>try/catch</code> — o <strong>Proxy</strong> (<code>proxy.ts</code>) faz o refresh e repassa o token refeito.</li>
+<li>Usa a <strong>publishable key</strong>: toda query roda como <code>authenticated</code> → RNL aplicada.</li>
+<li>Centraliza tipagem <code>Database</code>, env vars e o "cola" frágil de cookies em um só lugar.</li>
+</ul>
+
+<h2>3. RNL: por que manipular IDs não vaza nada</h2>
+<pre><code><span class="c">-- pipeline de cada request</span>
+navegador → PostgREST valida assinatura do JWT → RNL usa <span class="k">auth.uid()</span> = <span class="c">sub</span> verificado
+→ usuário trocou <span class="k">?houseId=B</span>? Política filtra → 0 linhas, nunca dados da Casa B.</code></pre>
+<ul>
+<li><code>auth.uid()</code> lê o claim <strong>verificado</strong> do JWT; não é client-asserted.</li>
+<li>Política multi-tenant correta: subquery de membership SEMPRE escopada por <code>profile_id = (select auth.uid())</code>.</li>
+<li>Perf: escreva <code>(select auth.uid())</code> — initPlan calcula uma vez por statement.</li>
+</ul>
+
+<h2>4. Armadilhas comuns (checklist)</h2>
+<ul>
+<li>RNL desativada em tabela nova → exposta ao anon.</li>
+<li>Policy sem referência a <code>auth.uid()</code>/<code>auth.jwt()</code> em subquery → vaza tenant.</li>
+<li>Claim de autorização em <code>user_metadata</code> → usuário altera o próprio papel.</li>
+<li><code>service_role</code> no bundle client → RNL eliminada (tudo exposto).</li>
+<li>Testar RNL pelo SQL editor = inútil (é superuser, ignora RNL). Teste autenticado.</li>
+<li>UPDATE sem <code>WITH CHECK</code> → usuário move linha para outro tenant.</li>
+</ul>
+
+<h2>5. Esqueleto de policy segura (tasks)</h2>
+<pre><code><span class="k">create policy</span> <span class="s">"vê tarefas só da própria casa"</span>
+<span class="k">on</span> public.tasks <span class="k">for select</span> <span class="k">to</span> authenticated
+<span class="k">using</span> ( house_id <span class="k">in</span> (
+  <span class="k">select</span> house_id <span class="k">from</span> public.house_members
+  <span class="k">where</span> profile_id = (<span class="k">select</span> auth.uid())
+    <span class="k">and</span> role = <span class="s">'DEPENDENT'</span> ) );</code></pre>
+<p>Se <code>house_members</code> tiver RNL própria, pode haver recursão — nesse caso envie via função <code>security definer</code> em schema privado com <code>set search_path=''</code>.</p>
+
+<h2>6. Server Action — forma "defesa em camadas"</h2>
+<p>1º) Sessão via <code>createClient()</code> → identidade. 2º) Escopo derivado no servidor (membership). 3º) RNL como backstop do filtro. O navegador nunca envia <code>house_id</code> nem decide a quem pertence a linha.</p>
+
+<h2>Fontes</h2>
+<ul>
+<li>https://supabase.com/docs/guides/database/postgres/row-level-security</li>
+<li>https://supabase.com/docs/guides/auth/server-side/creating-a-client?framework=nextjs</li>
+<li>GuardLayer blog "Supabase multi-tenant RLS: isolating tenant data"</li>
+<li>PTKD Journal "Is supabase.auth.uid() safe for RLS checks?"</li>
+</ul>
+
+<footer>Ligação: lição <a href="../lessons/0001-supabase-rls-defesa-em-camadas.html">0001 — Supabase: defesa em camadas</a></footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0001 — Supabase: defesa em camadas (cliente SSR + RNL)</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<h1>0001 — Supabase: defesa em camadas</h1>
+<p class="lead">Por que CasaSync usa <code>utils/supabase/server.ts</code> + Row Level Security &mdash; e como isso impede um Dependente da Casa A de ver Tarefas da Casa B.</p>
+
+<h2>O que você leva desta lição</h2>
+<ul>
+<li>Entender que chamada de banco no servidor tem <em>dois</em> guardrails: o <strong>cliente SSR</strong> (quem você é) e a <strong>RNL</strong> (o que você pode enxergar) — e por que o segundo é o que de fato impede vazamento.</li>
+<li>Conseguir explicar o truque do <code>?houseId=B</code> que não leak de capacidade.</li>
+<li>Escrever uma Server Action de busca de tarefas limpa e segura.</li>
+</ul>
+
+<h2>1. Por que o helper <code>utils/supabase/server.ts</code>?</h2>
+
+<p>O Supabase não é chamado "direto" das páginas. Toda query que um Server Component faz precisa saber <em>de quem</em> é a sessão daquele request. Isso vem dos cookies. O <code>@supabase/ssr</code> entrega <code>createServerClient</code>, que é genérico de framework — ele <em>pendura</em> o cookie adapter em cada request:</p>
+
+<pre><code><span class="k">export async function</span> createClient() {
+  <span class="k">const</span> cookieStore = <span class="k">await</span> cookies()
+  <span class="k">return</span> createServerClient&lt;Database&gt;(URL, KEY, {
+    cookies: {
+      getAll() { <span class="k">return</span> cookieStore.getAll() },
+      setAll(cookiesToSet) {
+        <span class="k">try</span> {
+          cookiesToSet.forEach(<span class="k">async</span> ({ name, value, options }) =&gt;
+            cookieStore.set(name, value, options))
+        } <span class="k">catch</span> { <span class="c">/* Server Component não grava cookie: Proxy faz isso */</span> }
+      },
+    },
+  })
+}</code></pre>
+
+<p>Isso importa porque:</p>
+
+<ul>
+<li><strong>Identidade por request.</strong> O cliente do servidor "é basicamente um fetch configurado"; precisa ser recriado a cada request com os cookies daquele request. Quem compartilha cliente entre requests acaba vendo a sessão de outra pessoa — os docs do pacote chamam isso de "random logouts e sessões terminadas cedo".</li>
+<li><strong>Refresco de token.</strong> Quando o token expira, o SDK chama <code>setAll</code> para gravar o token refeito. Server Component não pode gravar cookie — por isso o <code>try/catch</code> ignora o erro. Quem grava <em>de verdade</em> é o <strong>Proxy</strong> (<code>proxy.ts</code> → <code>updateSession</code>), que roda antes da renderização, refresha com <code>auth.getUser()</code> e repassa o cookie no response.</li>
+<li><strong>Key publishable, nunca service role.</strong> O helper usa <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>. Com o JWT da sessão, o PostgREST executa a query como <code>authenticated</code> — e <strong>RNL se aplica</strong>. A <code>SUPABASE_SERVICE_ROLE_KEY</code> ignora RNL; por isso mora em <code>utils/supabase/admin.ts</code> e é server-only.</li>
+</ul>
+
+<div class="callout"><strong>Regra do projeto</strong>: Server Component / Server Action / Route Handler só tocam banco por <code>createClient()</code> de <code>@/utils/supabase/server</code>. Client Component usa <code>@/utils/supabase/client</code> (<code>createBrowserClient</code>). Quem cria o helper centraliza cookie, tipagem e env vars num único lugar — DRY + impossível esquecer o adapter.</div>
+
+<h2>2. RNL: por que o ID jogado na URL não vaza a Casa B</h2>
+
+<p>O navegador nunca fala com o banco diretamente. Ele envia HTTP ao PostgREST com <code>Authorization: Bearer &lt;JWT&gt;</code>. Antes de qualquer SQL, o PostgREST <strong>valida a assinatura</strong> do token. Então a política RNL roda com <code>auth.uid()</code> — que lê o claim <code>sub</code> <em>verificado</em>. Não é "o que o usuário disse", é "quem o servidor reconheceu".</p>
+
+<p>Agora o ataque: Dependente da Casa A abre a URL trocando o ID — <code>?houseId=B</code>, ou POSTa <code>{ "taskId": "…da Casa B" }</code>. O que muda é apenas <em>qual linha ele pediu</em>. O que não muda é <em>quem ele é</em> (vem do JWT, que ele não consegue forjar). A política RNL é uma condição sobre a linha, avaliada pelo banco:</p>
+
+<pre><code><span class="k">create policy</span> <span class="s">"dependente vê tarefas somente da própria casa"</span>
+<span class="k">on</span> public.tasks <span class="k">for select</span> <span class="k">to</span> authenticated
+<span class="k">using</span> (
+  house_id <span class="k">in</span> (
+    <span class="k">select</span> house_id <span class="k">from</span> public.house_members
+    <span class="k">where</span> profile_id = (<span class="k">select</span> auth.uid())   <span class="c">-- escopada ao usuário atual</span>
+      <span class="k">and</span> role = <span class="s">'DEPENDENT'</span>
+  )
+);</code></pre>
+
+<p>Para a Casa B, <code>auth.uid()</code> não pertence a nenhuma membership daquele house_id → a condição é falsa → Postgres retorna <strong>0 linhas</strong>. Um SQL perfeitamente válido que pedia a Casa B simplesmente não devolve nada.</p>
+
+<div class="warn callout"><strong>A armadilha clássica</strong>: subquery de membership <em>sem</em> escopo por <code>auth.uid()</code> (ex.: <code>house_id in (select distinct house_id from house_members)</code>) parece escopar, mas devolve as casas de <em>todos</em> os usuários — vaza tudo. O padrão seguro exige <code>where profile_id = (select auth.uid())</code> dentro da subquery. E não use claims de autorização em <code>user_metadata</code>: o próprio usuário consegue editá-las via SDK.</div>
+
+<h2>3. Server Action limpa: autorização da sessão + RNL como backstop</h2>
+
+<pre><code><span class="k">'use server'</span>
+
+<span class="k">import</span> { createClient } from <span class="s">'@/utils/supabase/server'</span>
+<span class="k">import</span> type { ActionResult } from <span class="s">'./types'</span>
+
+<span class="k">type</span> Task = {
+  id: <span class="n">string</span>
+  title: <span class="n">string</span>
+  reward_points: <span class="n">number</span>
+  due_date: <span class="n">string</span> | <span class="k">null</span>
+}
+
+<span class="k">export async</span> function fetchMyTasks():
+  Promise&lt;ActionResult &amp; { data?: Task[] }&gt; {
+
+  <span class="k">const</span> supabase = <span class="k">await</span> createClient()   <span class="c">// identidade vem da sessão</span>
+
+  <span class="k">const</span> { data: { user } } = <span class="k">await</span> supabase.auth.getUser()
+  <span class="k">if</span> (!user) <span class="k">return</span> { ok: <span class="k">false</span>, error: <span class="s">'Não autenticado.'</span> }
+
+  <span class="c">// Escopo derivado no servidor — o navegador não envia house_id.</span>
+  <span class="k">const</span> { data: membership } = <span class="k">await</span> supabase
+    .from(<span class="s">'house_members'</span>)
+    .select(<span class="s">'house_id'</span>)
+    .eq(<span class="s">'profile_id'</span>, user.id)
+    .maybeSingle()
+
+<span class="k">if</span> (!membership)
+    <span class="k">return</span> { ok: <span class="k">false</span>, error: <span class="s">'Conta não vinculada a uma casa.'</span> }
+
+  <span class="c">// RNL é o backstop: mesmo que este filtro sumisse, o banco veta a Casa B.</span>
+  <span class="k">const</span> { data, error } = <span class="k">await</span> supabase
+    .from(<span class="s">'tasks'</span>)
+    .select(<span class="s">'id, title, reward_points, due_date'</span>)
+    .eq(<span class="s">'house_id'</span>, membership.house_id)
+    .eq(<span class="s">'assigned_to'</span>, user.id)
+    .order(<span class="s">'due_date'</span>, { ascending: <span class="k">true</span> })
+
+  <span class="k">if</span> (error) <span class="k">return</span> { ok: <span class="k">false</span>, error: <span class="s">'Falha ao carregar tarefas.'</span> }
+
+  <span class="k">return</span> { ok: <span class="k">true</span>, data }
+}</code></pre>
+
+<p>Note as três camadas, em ordem de menor para maior confiança:</p>
+<ol>
+<li><strong>Identidade</strong> — <code>user.id</code> sai do JWT verificado (<code>getUser()</code>), nunca de argumento chamado pela UI.</li>
+<li><strong>Escopo explícito</strong> — <code>house_id</code> e <code>assigned_to</code> são derivados no servidor da membership daquela sessão.</li>
+<li><strong>Backstop</strong> — a política RNL aplica a mesma condição no banco. Se você tirar a camada 2 por engano, o vazamento continua bloqueado; se a RNL tiver a armadilha da seção 2, nenhuma camada de código conserta.</li>
+</ol>
+
+<div class="callout"><strong>Tradução para o projeto</strong>: isso já vive no seu código. Veja <code>actions/create-dependent.ts:27-52</code> — sessão → <code>user_role</code> → membership → ação. A próxima etapa (tarefas/recompensas) segue exatamente a mesma sequência com <code>fetchMyTasks</code> como template.</div>
+
+<h2>Verifique o que ficou (recall)</h2>
+<p>Tente responder antes de abrir as respostas. Cada opção tem o mesmo tamanho — não use a formatação como pista :)</p>
+
+<div class="quiz">
+<details>
+<summary>1. O que define, no banco, quais linhas você consegue enxergar?</summary>
+<ul>
+<li>A política RNL</li>
+<li>O ID enviado</li>
+<li>A minha senha</li>
+<li>A tabela usada</li>
+</ul>
+<p class="answer">Resposta: A política RNL</p>
+<p class="why"><strong>Por quê:</strong> o ID na URL só escolhe <em>qual linha pedir</em>; a RNL decide o <em>conjunto de linhas</em> que a sua sessão pode ver. Por isso trocar <code>?houseId=B</code> por si só não vaza nada.</p>
+</details>
+
+<details>
+<summary>2. De onde vem o <code>auth.uid()</code> usado na política?</summary>
+<ul>
+<li>Do JWT verificado</li>
+<li>Do input cliente</li>
+<li>De um cookie</li>
+<li>Do banco central</li>
+</ul>
+<p class="answer">Resposta: Do JWT verificado</p>
+<p class="why"><strong>Por quê:</strong> o PostgREST valida a assinatura do token antes do SQL e o <code>sub</code> verificado alimenta <code>auth.uid()</code>. É valor que o cliente não consegue forjar — exatamente o que torna o ataque de troca de ID ineficaz.</p>
+</details>
+</div>
+
+<h2>Para fixar de verdade</h2>
+<ol>
+<li><em>Revise</em> <code>utils/supabase/server.ts</code> e <code>proxy.ts</code> e identifique as três responsabilidades: criar cliente por request, adapter de cookies, refresh no Proxy.</li>
+<li><em>Escreva</em> a policy da seção 1 no seu projeto e teste autenticado como um usuário da Casa A pedindo loop pela Casa B — deve vir vazio (HTTP 200 com <code>[]</code>, não erro).</li>
+<li><em>Refatore</em>: mude <code>fetchMyTasks</code> para aceitar <code>houseId</code> do navegador e verifique que, com RNL correta, continua seguro — e então reverta, porque derivar no servidor é mais limpo.</li>
+</ol>
+
+<h2>Leitura primária recomendada</h2>
+<p><a href="https://supabase.com/docs/guides/database/postgres/row-level-security">Supabase Docs — Row Level Security</a>. A fonte canônica de <code>auth.uid()</code>/<code>auth.jwt()</code>, avisos sobre <code>user_metadata</code> e <code>service_role</code>. Complemente com a <a href="../reference/supabase-rls-security.html">folha de referência</a> deste workspace e com a doc local de Server Actions (<code>node_modules/next/dist/docs/01-app/02-guides/server-actions.md</code>, seção Security).</p>
+
+<footer>
+Volte para <a href="../reference/supabase-rls-security.html">Referência rápida</a> · Sessão guiada pela missão: <a href="../MISSION.md">MISSION.md</a> · Ficou alguma dúvida? <strong>Pergunte ao seu professor (o agente)</strong> — ele pode revisar políticas, rebater o exemplo ou desenhar a próxima lição (ex.: escrita com <code>WITH CHECK</code> em UPDATE/INSERT, ou <code>security definer</code> para membership).
+</footer>
+
+</div>
+</body>
+</html>

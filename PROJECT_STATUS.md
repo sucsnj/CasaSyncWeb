@@ -1,5 +1,24 @@
 # CasaSync Web — PROJECT STATUS
 
+## Material de ensino — Segurança Supabase (workspace teach)
+
+### O que foi criado
+- Sessão da skill `teach` ativa (skill registrada em `skills-lock.json`, arquivos em `.agents/skills/teach/` — não em `.skills/`).
+- `MISSION.md`, `RESOURCES.md`, `NOTES.md` (raiz) — workspace de ensino.
+- `assets/lesson.css` — stylesheet compartilhado das lições.
+- `lessons/0001-supabase-rls-defesa-em-camadas.html` — lição 1: cliente SSR (`utils/supabase/server.ts`) + RLS multi-tenant + Server Action `fetchMyTasks` de exemplo (defesa em camadas). Aberta no navegador.
+- `reference/supabase-rls-security.html` — folha de referência (papéis anon/authenticated/service_role, padrão de policy seguro, checklist de armadilhas).
+
+### Pontos de atenção
+- Nenhum código de produção foi alterado; `fetchMyTasks` é ilustrativo (a tabela `tasks` ainda pertence à Etapa 4).
+- Anotado como evolução futura: migrar `supabase.auth.getUser()` → `supabase.auth.getClaims()` no `updateSession` (docs atuais do Supabase preferem `getClaims()` no Proxy por validar assinatura do JWT a cada request).
+- Conteúdo ensinado: autorização deriva da sessão (JWT verificado), nunca do input; RLS como backstop; padrão seguro `profile_id = (select auth.uid())` em policy multi-tenant; `user_metadata` não é lugar para claims de autorização; service role é server-only.
+
+### Próxima etapa (ensino)
+- Confirmação do quiz na lição 1 (2 perguntas) antes de registrar learning record.
+- Lição 2 sugerida: escrita segura com `WITH CHECK` (INSERT/UPDATE) para tarefas e recompensas, ou `security definer` para evitá-la.
+- Manter o restante da Etapa 4 do produto inalterado.
+
 ## Etapa 2 — Autenticação Completa (concluída)
 
 ### Funcionalidades implementadas

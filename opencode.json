@@ -1,0 +1,10 @@
+{
+  "instructions": [
+    "AGENTS.md",
+    "PROJECT_STATUS.md"
+  ],
+  "skills": [
+    ".skills/teach",
+    ".skills/grill-with-docs"
+  ]
+}
