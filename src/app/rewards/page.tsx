@@ -167,7 +167,7 @@ export default async function RewardsPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 md:p-6">
+    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-6">
       <DashboardNav items={isAdmin ? adminItems : dependentItems} />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

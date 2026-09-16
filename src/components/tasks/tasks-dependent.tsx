@@ -2,11 +2,18 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { CircleCheck, ListTodo } from 'lucide-react'
 import { completeTask } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import type { Tables } from '@/types/database'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  POINTS_PILL_CLASS,
+  taskAccentByStatus,
+  taskChipByStatus,
+} from './task-styles'
 
 type Task = Tables<'tasks'>
 
@@ -80,7 +87,7 @@ export function TasksDependent({
     <div className="flex flex-col gap-6">
       {error ? (
         <p
-          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {error}
@@ -88,34 +95,60 @@ export function TasksDependent({
       ) : null}
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-base font-medium">Suas tarefas</h2>
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+          <ListTodo className="size-4 text-blue-600" />
+          Suas tarefas
+        </h2>
 
         {openTasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500">
             Nenhuma tarefa pendente. Aproveite!
           </p>
         ) : (
           openTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium">{task.title}</p>
+            <Card
+              key={task.id}
+              className={cn('border-l-4', taskAccentByStatus[task.status])}
+            >
+              <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-slate-800">{task.title}</p>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                        taskChipByStatus[task.status].className
+                      )}
+                    >
+                      {taskChipByStatus[task.status].label}
+                    </span>
+                  </div>
                   {task.description ? (
-                    <p className="text-sm text-muted-foreground">
+                    <p className="mt-1 text-sm text-slate-500">
                       {task.description}
                     </p>
                   ) : null}
-                  <p className="text-sm text-muted-foreground">
-                    {task.points} pts
-                    {task.due_date
-                      ? ` · até ${new Date(task.due_date).toLocaleString('pt-BR')}`
-                      : ''}
+                  <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 font-semibold',
+                        POINTS_PILL_CLASS
+                      )}
+                    >
+                      {task.points} pts
+                    </span>
+                    {task.due_date ? (
+                      <span>
+                        até{' '}
+                        {new Date(task.due_date).toLocaleString('pt-BR')}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
                 <Button
                   onClick={() => handleComplete(task)}
                   disabled={pending}
-                  className="shrink-0"
+                  className="w-full shrink-0 sm:w-auto"
                 >
                   {pending ? 'Enviando...' : 'Concluir tarefa'}
                 </Button>
@@ -127,14 +160,22 @@ export function TasksDependent({
 
       {awaitingTasks.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-base font-medium">
+          <h2 className="font-heading text-base font-semibold text-slate-800">
             Aguardando aprovação
           </h2>
           {awaitingTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent>
-                <p className="font-medium">{task.title}</p>
-                <p className="text-sm text-muted-foreground">
+            <Card
+              key={task.id}
+              className="border-l-4 border-l-amber-400"
+            >
+              <CardContent className="py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-slate-800">{task.title}</p>
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                    {taskChipByStatus.COMPLETED.label}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
                   {task.points} pts · o administrador precisa aprovar
                 </p>
               </CardContent>
@@ -145,12 +186,23 @@ export function TasksDependent({
 
       {doneTasks.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-base font-medium">Concluídas</h2>
+          <h2 className="font-heading text-base font-semibold text-slate-800">
+            Concluídas
+          </h2>
           {doneTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent>
-                <p className="font-medium">{task.title}</p>
-                <p className="text-sm text-muted-foreground">
+            <Card
+              key={task.id}
+              className="border-l-4 border-l-emerald-500"
+            >
+              <CardContent className="py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-slate-800">{task.title}</p>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                    {taskChipByStatus.APPROVED.label}
+                  </span>
+                </div>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                  <CircleCheck className="size-4 shrink-0 text-emerald-500" />
                   {task.points} pts · pontos creditados
                 </p>
               </CardContent>

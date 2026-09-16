@@ -9,6 +9,8 @@ import { DebouncedField } from './debounced-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ClipboardList, CircleCheckBig, ListTodo } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   Card,
   CardContent,
@@ -16,6 +18,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  POINTS_PILL_CLASS,
+  taskAccentByStatus,
+  taskChipByStatus,
+} from './task-styles'
 
 type Task = Tables<'tasks'>
 type Assignee = { id: string; full_name: string }
@@ -155,7 +162,7 @@ export function TasksAdmin({
                 name="assigned_to"
                 required
                 defaultValue=""
-                className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
                 <option value="" disabled>
                   Selecionar...
@@ -193,7 +200,7 @@ export function TasksAdmin({
                 name="description"
                 rows={2}
                 placeholder="Opcional"
-                className="h-auto w-full min-w-0 resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               />
             </div>
 
@@ -213,15 +220,38 @@ export function TasksAdmin({
       </Card>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-base font-medium">Pendentes</h2>
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+          <ListTodo className="size-4 text-blue-600" />
+          Pendentes
+        </h2>
         {pendingTasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhuma tarefa pendente.
-          </p>
+          <p className="text-sm text-slate-500">Nenhuma tarefa pendente.</p>
         ) : (
           pendingTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent className="flex flex-col gap-3">
+            <Card
+              key={task.id}
+              className={cn('border-l-4', taskAccentByStatus[task.status])}
+            >
+              <CardContent className="flex flex-col gap-3 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                      taskChipByStatus[task.status].className
+                    )}
+                  >
+                    {taskChipByStatus[task.status].label}
+                  </span>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                      POINTS_PILL_CLASS
+                    )}
+                  >
+                    {task.points} pts
+                  </span>
+                </div>
+
                 <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                   <DebouncedField
                     value={task.title}
@@ -230,11 +260,11 @@ export function TasksAdmin({
                   />
 
                   <label className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Atribuída a</span>
+                    <span className="text-slate-500">Atribuída a</span>
                     <select
                       value={task.assigned_to ?? ''}
                       onChange={(event) => changeAssignee(task, event.target.value)}
-                      className="h-6 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring"
+                      className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
                     >
                       <option value="">Sem atribuição</option>
                       {assignees.map((assignee) => (
@@ -255,7 +285,7 @@ export function TasksAdmin({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1">
-                    <span className="text-xs text-muted-foreground">Pontos</span>
+                    <span className="text-xs text-slate-500">Pontos</span>
                     <DebouncedField
                       value={String(task.points)}
                       onSave={savePoints(task.id)}
@@ -263,7 +293,7 @@ export function TasksAdmin({
                     />
                   </div>
                   <div className="grid gap-1">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-slate-500">
                       Data limite
                     </span>
                     <DebouncedField
@@ -280,27 +310,45 @@ export function TasksAdmin({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-base font-medium">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+          <ClipboardList className="size-4 text-amber-500" />
           Concluídas — aguardando aprovação
         </h2>
         {completedTasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500">
             Nenhuma tarefa pendente de aprovação.
           </p>
         ) : (
           completedTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Card
+              key={task.id}
+              className="border-l-4 border-l-amber-400"
+            >
+              <CardContent className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-medium">{task.title}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {assigneeName(task.assigned_to)} · {task.points} pts
+                  <div className="flex items-start gap-2">
+                    <p className="font-semibold text-slate-800">{task.title}</p>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {assigneeName(task.assigned_to)} ·{' '}
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 font-semibold',
+                        POINTS_PILL_CLASS
+                      )}
+                    >
+                      {task.points} pts
+                    </span>
                     {task.completed_at
                       ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
                       : ''}
                   </p>
                 </div>
-                <Button onClick={() => handleApprove(task)} disabled={pending}>
+                <Button
+                  onClick={() => handleApprove(task)}
+                  disabled={pending}
+                  className="w-full shrink-0 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+                >
                   {pending ? 'Aprovando...' : 'Aprovar e creditar pontos'}
                 </Button>
               </CardContent>
@@ -311,13 +359,32 @@ export function TasksAdmin({
 
       {approvedTasks.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-base font-medium">Aprovadas</h2>
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+            <CircleCheckBig className="size-4 text-emerald-500" />
+            Aprovadas
+          </h2>
           {approvedTasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent className="flex flex-col gap-1">
-                <p className="font-medium">{task.title}</p>
-                <p className="text-sm text-muted-foreground">
-                  {assigneeName(task.assigned_to)} · {task.points} pts
+            <Card
+              key={task.id}
+              className="border-l-4 border-l-emerald-500"
+            >
+              <CardContent className="flex flex-col gap-1 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-slate-800">{task.title}</p>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                    {taskChipByStatus.APPROVED.label}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {assigneeName(task.assigned_to)} ·{' '}
+                  <span
+                    className={cn(
+                      'rounded-full px-2 py-0.5 font-semibold',
+                      POINTS_PILL_CLASS
+                    )}
+                  >
+                    {task.points} pts
+                  </span>
                   {' · '}pontos creditados
                 </p>
               </CardContent>

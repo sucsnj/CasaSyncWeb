@@ -8,6 +8,8 @@ import type { Tables } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Gift, ClipboardList, Layers } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   Card,
   CardContent,
@@ -192,7 +194,7 @@ export function RewardsAdmin({
                   name="description"
                   rows={2}
                   placeholder="Opcional"
-                  className="h-auto w-full min-w-0 resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                  className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 />
               </div>
 
@@ -211,12 +213,15 @@ export function RewardsAdmin({
 
         <Card>
           <CardHeader>
-            <CardTitle>Catálogo</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Gift className="size-4 text-blue-600" />
+              Catálogo
+            </CardTitle>
             <CardDescription>Recompensas disponíveis na casa.</CardDescription>
           </CardHeader>
           <CardContent>
             {rewards.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-500">
                 Nenhuma recompensa criada ainda.
               </p>
             ) : (
@@ -224,17 +229,22 @@ export function RewardsAdmin({
                 {rewards.map((reward) => (
                   <li
                     key={reward.id}
-                    className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm"
                   >
                     <div>
-                      <p className="font-medium">{reward.title}</p>
+                      <p className="font-medium text-slate-800">
+                        {reward.emoji ? `${reward.emoji} ` : ''}
+                        {reward.title}
+                      </p>
                       {reward.description ? (
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-slate-500">
                           {reward.description}
                         </p>
                       ) : null}
                     </div>
-                    <span className="shrink-0 text-sm">{reward.points_cost} pts</span>
+                    <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-sky-700">
+                      {reward.points_cost} pts
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -244,28 +254,35 @@ export function RewardsAdmin({
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-base font-medium">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+          <ClipboardList className="size-4 text-amber-500" />
           Solicitações de resgate
         </h2>
 
         {pendingRedemptions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500">
             Nenhuma solicitação pendente.
           </p>
         ) : (
           pendingRedemptions.map((redemption) => (
-            <Card key={redemption.id}>
-              <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Card
+              key={redemption.id}
+              className="border-l-4 border-l-amber-400"
+            >
+              <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-medium">
+                  <p className="font-semibold text-slate-800">
                     {redemption.dependentName} quer {redemption.rewardTitle}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    {redemption.points_cost} pts ·{' '}
+                  <p className="mt-1 text-sm text-slate-500">
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">
+                      {redemption.points_cost} pts
+                    </span>{' '}
+                    ·{' '}
                     {new Date(redemption.created_at).toLocaleString('pt-BR')}
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
                     onClick={() => handleResolve(redemption, false)}
@@ -276,6 +293,7 @@ export function RewardsAdmin({
                   <Button
                     onClick={() => handleResolve(redemption, true)}
                     disabled={pending}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
                     Aprovar e debitar
                   </Button>
@@ -288,22 +306,33 @@ export function RewardsAdmin({
 
       {resolvedRedemptions.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-base font-medium">Histórico</h2>
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+            <Layers className="size-4 text-slate-500" />
+            Histórico
+          </h2>
           {resolvedRedemptions.map((redemption) => (
-            <Card key={redemption.id}>
-              <CardContent className="flex items-center justify-between gap-2">
+            <Card
+              key={redemption.id}
+              className={cn(
+                'border-l-4',
+                redemption.status === 'APPROVED'
+                  ? 'border-l-emerald-500'
+                  : 'border-l-rose-400'
+              )}
+            >
+              <CardContent className="flex items-center justify-between gap-2 py-3">
                 <div>
-                  <p className="text-sm font-medium">
+                  <p className="text-sm font-semibold text-slate-800">
                     {redemption.dependentName} · {redemption.rewardTitle}
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-slate-500">
                     {redemption.points_cost} pts · tratado em{' '}
                     {new Date(redemption.created_at).toLocaleString('pt-BR')}
                   </p>
                 </div>
                 <span
                   data-status={redemption.status}
-                  className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground data-[status=APPROVED]:bg-emerald-100 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-destructive/10 data-[status=REJECTED]:text-destructive"
+                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-100 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
                 >
                   {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
                 </span>

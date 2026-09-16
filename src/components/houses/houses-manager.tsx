@@ -162,8 +162,8 @@ export function HousesManager({
                     disabled={pending || active}
                     data-active={active}
                     className={cn(
-                      'flex items-center justify-between rounded-lg border border-input px-3 py-2 text-left text-sm transition-colors',
-                      'hover:bg-muted disabled:cursor-default data-active:border-primary data-active:bg-muted/60'
+                      'flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3 py-3 text-left text-sm shadow-sm transition-colors',
+                      'hover:bg-muted disabled:cursor-default data-active:border-blue-600 data-active:bg-sky-50'
                     )}
                   >
                     <span className="font-medium">{house.name}</span>
@@ -273,7 +273,10 @@ export function HousesManager({
                   className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
                 >
                   <span className="font-medium">{member.fullName}</span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  <span
+                    data-role={member.role.toLowerCase()}
+                    className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 data-[role=admin]:bg-sky-100 data-[role=admin]:text-sky-700"
+                  >
                     {member.role === 'ADMIN' ? 'Administrador' : 'Dependente'}
                   </span>
                 </li>
