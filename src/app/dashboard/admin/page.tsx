@@ -44,7 +44,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="rounded-2xl bg-gradient-to-br from-blue-600 to-sky-500 p-5 text-white shadow-md">
+      <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
         <p className="text-sm font-medium text-white/80">Área do administrador</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Visão geral</h1>
         <p className="mt-1 text-sm text-white/85">
@@ -57,7 +57,7 @@ export default async function AdminDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         {actions.map((action) => (
           <Link key={action.href} href={action.href}>
-            <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+            <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
               <CardHeader className="gap-3">
                 <span
                   className={`flex size-11 items-center justify-center rounded-xl ${action.accent}`}

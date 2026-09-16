@@ -40,7 +40,7 @@ export default async function DependentDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="rounded-2xl bg-gradient-to-br from-blue-600 to-sky-500 p-5 text-white shadow-md">
+      <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
         <p className="text-sm font-medium text-white/80">
           {firstName ? `Bem-vindo(a), ${firstName}!` : 'Bem-vindo(a)!'}
         </p>
@@ -52,10 +52,10 @@ export default async function DependentDashboardPage() {
         </p>
       </header>
 
-      <Card className="border-0 bg-gradient-to-br from-sky-400 to-blue-500 text-white shadow-md">
+      <Card className="border-0 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
         <CardHeader>
           <CardTitle className="text-white/90">Seu saldo</CardTitle>
-          <CardDescription className="text-white/80">
+          <CardDescription className="text-white/85">
             Pontos acumulados com tarefas aprovadas.
           </CardDescription>
         </CardHeader>
@@ -69,7 +69,7 @@ export default async function DependentDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         {actions.map((action) => (
           <Link key={action.href} href={action.href}>
-            <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+            <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
               <CardHeader className="gap-3">
                 <span
                   className={`flex size-11 items-center justify-center rounded-xl ${action.accent}`}

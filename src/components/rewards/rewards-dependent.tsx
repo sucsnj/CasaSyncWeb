@@ -8,6 +8,7 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useProfilePoints } from '@/hooks/use-profile-points'
 import type { Tables } from '@/types/database'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   Card,
   CardContent,
@@ -116,13 +117,13 @@ export function RewardsDependent({
 
   return (
     <div className="flex flex-col gap-6">
-      <Card className="border-0 bg-gradient-to-br from-blue-600 to-sky-500 text-white shadow-md">
+      <Card className="border-0 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-white/90">
             <Coins className="size-5" />
             Seu saldo
           </CardTitle>
-          <CardDescription className="text-white/80">
+          <CardDescription className="text-white/85">
             Pontos acumulados com tarefas aprovadas.
           </CardDescription>
         </CardHeader>
@@ -149,9 +150,12 @@ export function RewardsDependent({
         </h2>
 
         {rewards.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Nenhuma recompensa disponível por enquanto.
-          </p>
+          <EmptyState
+            icon={Gift}
+            accent="bg-amber-100 text-amber-600"
+            title="Loja vazia por enquanto"
+            message="O administrador está preparando novidades para você. 🎁"
+          />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {rewards.map((reward) => {
@@ -165,7 +169,7 @@ export function RewardsDependent({
                         {reward.emoji ? `${reward.emoji} ` : ''}
                         {reward.title}
                       </p>
-                      <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-sky-700">
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                         {reward.points_cost} pts
                       </span>
                     </div>
@@ -208,9 +212,12 @@ export function RewardsDependent({
         </h2>
 
         {myRedemptions.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Você ainda não solicitou nenhum resgate.
-          </p>
+          <EmptyState
+            icon={PartyPopper}
+            accent="bg-violet-100 text-violet-600"
+            title="Nenhum resgate solicitado ainda"
+            message="Ao trocar seus pontos, o pedido aparece aqui. 🎁"
+          />
         ) : (
           myRedemptions.map((redemption) => (
             <Card
@@ -230,7 +237,7 @@ export function RewardsDependent({
                 </div>
                 <span
                   data-status={redemption.status}
-                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=PENDING]:bg-amber-100 data-[status=PENDING]:text-amber-700 data-[status=APPROVED]:bg-emerald-100 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
+                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=PENDING]:bg-amber-100 data-[status=PENDING]:text-amber-700 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
                 >
                   {redemption.status === 'PENDING'
                     ? 'Aguardando aprovação'

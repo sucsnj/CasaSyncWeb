@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Gift, ClipboardList, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   Card,
   CardAction,
@@ -238,9 +239,12 @@ export function RewardsAdmin({
           </CardHeader>
           <CardContent>
             {rewards.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Nenhuma recompensa criada ainda.
-              </p>
+              <EmptyState
+                icon={Gift}
+                accent="bg-amber-100 text-amber-600"
+                title="Nenhuma recompensa criada ainda"
+                message="Crie a primeira recompensa para os dependentes. 🎁"
+              />
             ) : (
               <ul className="flex flex-col gap-2">
                 {rewards.map((reward) => (
@@ -259,7 +263,7 @@ export function RewardsAdmin({
                         </p>
                       ) : null}
                     </div>
-                    <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-sky-700">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                       {reward.points_cost} pts
                     </span>
                   </li>
@@ -277,9 +281,12 @@ export function RewardsAdmin({
         </h2>
 
         {pendingRedemptions.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Nenhuma solicitação pendente.
-          </p>
+          <EmptyState
+            icon={ClipboardList}
+            accent="bg-amber-100 text-amber-600"
+            title="Nenhuma solicitação pendente"
+            message="Quando um dependente resgatar pontos, o pedido aparece aqui. 🎁"
+          />
         ) : (
           pendingRedemptions.map((redemption) => (
             <Card
@@ -292,7 +299,7 @@ export function RewardsAdmin({
                     {redemption.dependentName} quer {redemption.rewardTitle}
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
                       {redemption.points_cost} pts
                     </span>{' '}
                     ·{' '}
@@ -310,7 +317,7 @@ export function RewardsAdmin({
                   <Button
                     onClick={() => handleResolve(redemption, true)}
                     disabled={pending}
-                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                    className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e debitar
                   </Button>
@@ -349,7 +356,7 @@ export function RewardsAdmin({
                 </div>
                 <span
                   data-status={redemption.status}
-                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-100 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
+                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
                 >
                   {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
                 </span>

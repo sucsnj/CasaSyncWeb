@@ -39,7 +39,7 @@ export function DashboardNav({ items }: { items: NavItem[] }) {
                 href={item.href}
                 data-active={active}
                 className={cn(
-                  'rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                  'rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-95',
                   'text-slate-500 hover:bg-muted hover:text-slate-800',
                   'data-[active=true]:bg-blue-600 data-[active=true]:text-white'
                 )}
@@ -66,7 +66,7 @@ export function DashboardNav({ items }: { items: NavItem[] }) {
                 aria-current={active ? 'page' : undefined}
                 data-active={active}
                 className={cn(
-                  'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-slate-500 transition-colors',
+                  'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-slate-500 transition-all duration-200 active:scale-95',
                   'active:text-blue-700',
                   'data-[active=true]:text-blue-600'
                 )}

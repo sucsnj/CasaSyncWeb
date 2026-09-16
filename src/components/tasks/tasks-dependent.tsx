@@ -2,13 +2,14 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CircleCheck, ListTodo } from 'lucide-react'
+import { CircleCheck, ListTodo, Sparkles } from 'lucide-react'
 import { completeTask } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
@@ -101,9 +102,12 @@ export function TasksDependent({
         </h2>
 
         {openTasks.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Nenhuma tarefa pendente. Aproveite!
-          </p>
+          <EmptyState
+            icon={Sparkles}
+            accent="bg-sky-100 text-sky-600"
+            title="Nenhuma tarefa pendente"
+            message="Tudo limpo por aqui! Aproveite o momento. 🎉"
+          />
         ) : (
           openTasks.map((task) => (
             <Card
@@ -148,7 +152,7 @@ export function TasksDependent({
                 <Button
                   onClick={() => handleComplete(task)}
                   disabled={pending}
-                  className="w-full shrink-0 sm:w-auto"
+                  className="w-full shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
                 >
                   {pending ? 'Enviando...' : 'Concluir tarefa'}
                 </Button>
@@ -171,7 +175,12 @@ export function TasksDependent({
               <CardContent className="py-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold text-slate-800">{task.title}</p>
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                      taskChipByStatus.COMPLETED.className
+                    )}
+                  >
                     {taskChipByStatus.COMPLETED.label}
                   </span>
                 </div>
@@ -197,7 +206,12 @@ export function TasksDependent({
               <CardContent className="py-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold text-slate-800">{task.title}</p>
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                      taskChipByStatus.APPROVED.className
+                    )}
+                  >
                     {taskChipByStatus.APPROVED.label}
                   </span>
                 </div>

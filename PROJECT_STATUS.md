@@ -22,6 +22,11 @@
 - Exceto os de **autenticação**, todo formulário de criação só aparece ao clicar num botão: **Nova casa**, **Novo dependente** (`houses-manager.tsx`), **Nova tarefa** (`tasks-admin.tsx`) e **Nova recompensa** (`rewards-admin.tsx`).
 - Padrão: `CardAction` com `Button variant="outline" size="sm"` no header do card que alterna `showXForm` (`useState`); form fecha ao sucesso (função de criar → `setShowXForm(false)`). "Novo dependente" fica `disabled` se não há casa ativa.
 
+### Gamificação & micro-interações
+- **Paleta de significado:** saldo/placar de pontos em **gradiente ouro** (`from-amber-500 via-yellow-500 to-amber-600` + `shadow-amber-500/20`); ações de sucesso em **esmeralda** (`bg-emerald-500 hover:bg-emerald-600` + `shadow-emerald-500/25`) com badges `bg-emerald-50 text-emerald-700`; hero/banners de boas-vindas em **gradiente azul→índigo** (`from-blue-600 to-indigo-600`, `rounded-3xl`, `p-6`); pills de pontos agora âmbar (`bg-amber-100 text-amber-700`).
+- **Feedback tátil:** `Button` (primitiva) ganhou `active:scale-95 transition-all duration-200` global e sombra azul no variant default (`shadow-lg shadow-blue-500/25`); cards interativos e itens da bottom/top nav com `active:scale-95`/`active:scale-[0.98]`.
+- **Empty states (`components/ui/empty-state.tsx`):** card centralizado com ícone grande em círculo de fundo suave, borda tracejada (`border-dashed`), título + mensagem motivacional com emoji ("Tudo limpo por aqui! 🎉", "Loja vazia por enquanto… 🎁"). Aplicado em tarefas pendentes/aprovação, loja vazia e resgates vazios (ADMIN e DEPENDENT).
+
 ### Verificação
 `npm run lint` ✓ · `npx tsc --noEmit` ✓ · `npm run build` ✓ · dev smoke test: `/login` e `/register` → 200 com marca renderizada.
 

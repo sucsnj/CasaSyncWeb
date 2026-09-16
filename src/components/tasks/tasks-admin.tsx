@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ClipboardList, CircleCheckBig, ListTodo } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils'
 import {
   Card,
@@ -242,7 +243,12 @@ export function TasksAdmin({
           Pendentes
         </h2>
         {pendingTasks.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhuma tarefa pendente.</p>
+          <EmptyState
+            icon={ListTodo}
+            accent="bg-sky-100 text-sky-600"
+            title="Nenhuma tarefa pendente"
+            message="Tudo limpo por aqui! Crie o próximo desafio. 🎉"
+          />
         ) : (
           pendingTasks.map((task) => (
             <Card
@@ -332,9 +338,12 @@ export function TasksAdmin({
           Concluídas — aguardando aprovação
         </h2>
         {completedTasks.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Nenhuma tarefa pendente de aprovação.
-          </p>
+          <EmptyState
+            icon={ClipboardList}
+            accent="bg-amber-100 text-amber-600"
+            title="Nenhuma tarefa para aprovar"
+            message="Quando um dependente concluir uma tarefa, ela aparece aqui. 🎉"
+          />
         ) : (
           completedTasks.map((task) => (
             <Card
@@ -364,7 +373,7 @@ export function TasksAdmin({
                 <Button
                   onClick={() => handleApprove(task)}
                   disabled={pending}
-                  className="w-full shrink-0 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+                  className="w-full shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
                 >
                   {pending ? 'Aprovando...' : 'Aprovar e creditar pontos'}
                 </Button>
@@ -388,7 +397,7 @@ export function TasksAdmin({
               <CardContent className="flex flex-col gap-1 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold text-slate-800">{task.title}</p>
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                     {taskChipByStatus.APPROVED.label}
                   </span>
                 </div>

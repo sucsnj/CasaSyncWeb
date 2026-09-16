@@ -17,9 +17,9 @@ export const taskChipByStatus = {
     label: 'Aguardando aprovação',
     className: 'bg-amber-100 text-amber-700',
   },
-  APPROVED: { label: 'Concluída', className: 'bg-emerald-100 text-emerald-700' },
+  APPROVED: { label: 'Concluída', className: 'bg-emerald-50 text-emerald-700' },
 } as const
 
-export const POINTS_PILL_CLASS = 'bg-sky-100 text-sky-700'
+export const POINTS_PILL_CLASS = 'bg-amber-100 text-amber-700'
 
 export type TaskStatus = keyof typeof taskChipByStatus
