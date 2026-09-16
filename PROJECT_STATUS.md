@@ -1,5 +1,71 @@
 # CasaSync Web — PROJECT STATUS
 
+## Manutenção pós-migração para `src/` (concluída)
+
+### Verificação
+`npm run lint` ✓ · `npx tsc --noEmit` ✓ · `npm run build` ✓ · `next dev` ✓ (rotas/proxy OK; `/login` e `/register` renderizando sem erros; rotas protegidas redirecionando para `/login`).
+
+### Bugs reais encontrados e corrigidos
+- **`updateTask` com `assigned_to: ''`:** ao desatribuir um dependente ("Sem atribuição"), uma string vazia era enviada para a coluna `uuid` → erro do Postgres. Agora `''` é normalizado para `null` (`src/actions/tasks.ts`).
+- **Dropdown de atribuição sem update otimista:** o `<select>` controlado só refletia a mudança quando o Realtime ecoava (ou nunca, sem publication). Agora atualiza o estado otimista e envia `null` para desatribuir (`src/components/tasks/tasks-admin.tsx`).
+- **`handleRedeem`/`handleComplete` sem catch:** se a Server Action disparasse uma exceção de rede, `pendingId` ficava travado em "Resgatando..." e a rejection ficava sem tratamento. Protegidos com `try/catch/finally` (`src/components/rewards/rewards-dependent.tsx`, `src/components/tasks/tasks-dependent.tsx`).
+
+---
+
+## Refatoração de estrutura (concluída)
+
+### O que foi feito
+- **Migração para `src/`:** todo o código de aplicação foi movido para uma pasta `src/` (Next.js passa a usar `src/app` como rota do App Router — detectado automaticamente).
+- **`@/` alias atualizado:** `tsconfig.json` agora mapeia `"@/*": ["./src/*"]`; todas as importações `@/...` continuam resolvendo sem alteração de arquivo.
+- **`proxy.ts` movido para `src/proxy.ts`:** conforme docs do Next.js 16, o arquivo de proxy deve ficar no mesmo nível de `app` (`src/app`) — build continua exibindo `ƒ Proxy (Middleware)`.
+- **Route group `(auth)`:** `/login` e `/register` agora vivem em `src/app/(auth)/` (grupo de rota sem efeito na URL; `PUBLIC_PATHS` do proxy segue válido).
+- **Server Actions reunidas por domínio:** `createDependent` foi mesclado em `src/actions/houses.ts` (junto de `createHouse`/`selectHouse`), removendo `actions/create-dependent.ts`.
+- **`components.json` atualizado:** caminho do CSS global para `src/app/globals.css` (aliases `@/components`, `@/lib/utils`, `@/hooks` já compatíveis).
+- Sem mudança de importações nos componentes (padrão já usava alias `@/`); `next-env.d.ts`, `next.config.ts` e `.env.local` permanecem na raiz.
+
+### Nova árvore de diretórios
+```
+src/
+├─ app/                        # Rotas do App Router (src/app)
+│  ├─ (auth)/                  # Grupo de rota (sem efeito na URL)
+│  │  ├─ login/page.tsx
+│  │  └─ register/page.tsx
+│  ├─ auth/callback/route.ts   # Route handler do callback Supabase
+│  ├─ dashboard/
+│  │  ├─ admin/                # Visão ADMIN (layout, visão geral, houses/)
+│  │  └─ dependent/            # Visão DEPENDENT (layout, visão geral)
+│  ├─ tasks/page.tsx           # Tarefas (role-aware)
+│  ├─ rewards/page.tsx         # Recompensas (role-aware)
+│  ├─ layout.tsx · globals.css · page.tsx
+├─ components/                 # Componentes por domínio
+│  ├─ ui/                      # Shadcn UI (button, card, input, label, separator, tabs)
+│  ├─ auth/                    # login-form, register-form, sign-out-button
+│  ├─ dashboard/               # dashboard-nav
+│  ├─ tasks/                   # debounced-field, tasks-admin, tasks-dependent
+│  ├─ rewards/                 # rewards-admin, rewards-dependent
+│  └─ houses/                  # houses-manager
+├─ actions/                    # Server Actions por domínio
+│  ├─ auth.ts · types.ts
+│  ├─ houses.ts                # createHouse, selectHouse, createDependent
+│  ├─ tasks.ts
+│  └─ rewards.ts
+├─ utils/
+│  ├─ house.ts                 # helpers de sessão/casa ativa
+│  └─ supabase/                # server.ts, client.ts, admin.ts, middleware.ts
+├─ types/
+│  └─ database.ts              # schema tipado (profiles, tasks, rewards…)
+├─ hooks/                      # use-postgres-changes, use-profile-points
+└─ lib/
+   └─ utils.ts                 # cn() (é a lib habitada; componentes ui usam pkg `cn`)
+proxy.ts                        # proxy (Middleware) — raiz do src/
+```
+Raiz mantém: `AGENTS.md`, `PROJECT_STATUS.md`, `next.config.ts`, `tsconfig.json`, `components.json`, `eslint.config.mjs`, `.env.local`, `next-env.d.ts`, docs de ensino.
+
+### Verificação
+`npx tsc --noEmit` ✓ · `npm run lint` ✓ · `npm run build` ✓ (rotas idênticas às de antes; `ƒ Proxy (Middleware)` ativo).
+
+---
+
 ## Etapa 3 — Casas, Tarefas, Pontos e Recompensas (concluída)
 
 ### Funcionalidades implementadas

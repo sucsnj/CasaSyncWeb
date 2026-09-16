@@ -146,12 +146,16 @@ export async function updateTask(
     updates.due_date = patch.due_date ? patch.due_date : null
   }
   if ('assigned_to' in patch) {
-    if (patch.assigned_to) {
+    // '' vindo do select "Sem atribuição" é normalizado para null — a coluna
+    // é uuid e Postgres rejeitaria uma string vazia.
+    const nextAssignee = patch.assigned_to ? patch.assigned_to : null
+
+    if (nextAssignee) {
       const { data: assignee } = await admin
         .from('house_members')
         .select('id')
         .eq('house_id', activeHouse.id)
-        .eq('profile_id', patch.assigned_to)
+        .eq('profile_id', nextAssignee)
         .eq('role', 'DEPENDENT')
         .maybeSingle()
 
@@ -159,7 +163,7 @@ export async function updateTask(
         return { ok: false, error: 'O dependente selecionado não pertence a esta casa.' }
       }
     }
-    updates.assigned_to = patch.assigned_to
+    updates.assigned_to = nextAssignee
   }
 
   if (Object.keys(updates).length === 0) return { ok: true }

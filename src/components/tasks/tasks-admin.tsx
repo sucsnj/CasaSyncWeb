@@ -122,8 +122,12 @@ export function TasksAdmin({
   const saveDueDate = (taskId: string) => async (value: string) =>
     updateTask(taskId, { due_date: value ? value : null })
 
-  const saveAssignee = (taskId: string) => async (assigneeId: string) =>
-    updateTask(taskId, { assigned_to: assigneeId })
+  function changeAssignee(task: Task, assigneeId: string) {
+    const next = assigneeId || null
+    // Otimista: o select controlado reage na hora (o Realtime confirma depois).
+    setTasks((prev) => upsertTask(prev, { ...task, assigned_to: next }))
+    void updateTask(task.id, { assigned_to: next })
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,9 +230,7 @@ export function TasksAdmin({
                     <span className="text-muted-foreground">Atribuída a</span>
                     <select
                       value={task.assigned_to ?? ''}
-                      onChange={(event) => {
-                        void saveAssignee(task.id)(event.target.value)
-                      }}
+                      onChange={(event) => changeAssignee(task, event.target.value)}
                       className="h-6 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring"
                     >
                       <option value="">Sem atribuição</option>

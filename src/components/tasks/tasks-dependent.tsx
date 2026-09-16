@@ -47,22 +47,26 @@ export function TasksDependent({
     setError(null)
 
     startTransition(async () => {
-      const result = await completeTask(task.id)
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
+      try {
+        const result = await completeTask(task.id)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
 
-      if (task.status !== 'COMPLETED' && task.status !== 'APPROVED') {
-        setTasks((prev) =>
-          upsertTask(prev, {
-            ...task,
-            status: 'COMPLETED',
-            completed_at: new Date().toISOString(),
-          })
-        )
+        if (task.status !== 'COMPLETED' && task.status !== 'APPROVED') {
+          setTasks((prev) =>
+            upsertTask(prev, {
+              ...task,
+              status: 'COMPLETED',
+              completed_at: new Date().toISOString(),
+            })
+          )
+        }
+        router.refresh()
+      } catch {
+        setError('Falha de conexão. Tente novamente.')
       }
-      router.refresh()
     })
   }
 

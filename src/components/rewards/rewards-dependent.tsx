@@ -95,14 +95,19 @@ export function RewardsDependent({
     setPendingId(reward.id)
 
     void (async () => {
-      const result = await requestRedemption(reward.id)
-      setPendingId(null)
-      if (!result.ok) {
-        setError(result.error)
-        return
+      try {
+        const result = await requestRedemption(reward.id)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        // O INSERT chega também via Realtime; refresh é a rede de segurança.
+        router.refresh()
+      } catch {
+        setError('Falha de conexão. Tente novamente.')
+      } finally {
+        setPendingId(null)
       }
-      // O INSERT chega também via Realtime; refresh é a rede de segurança.
-      router.refresh()
     })()
   }
 
