@@ -40,3 +40,14 @@ Ao finalizar QUALQUER implementação ou refatoração:
    - Novas tabelas, rotas ou componentes criados.
    - Pontos de atenção ou decisões arquiteturais tomadas.
    - O que deve ser feito na próxima etapa.
+
+## 5. Skills Ativas do Projeto
+Este projeto utiliza as skills do ecossistema Agent Skills (`.skills/`):
+
+- **`grill-with-me`**: 
+  - **Uso:** Acione/solicite quando for discutir arquitetura de novas funcionalidades, regras de negócio complexas ou refatorações do banco de dados antes da implementação.
+  - **Comportamento:** Faça perguntas críticas, questiona suposições, aponte casos de borda e furos de segurança antes de gerar o código final.
+
+- **`teach`**:
+  - **Uso:** Ativada ao criar/modificar padrões de código, utilizar recursos novos do Next.js/Supabase ou quando solicitado explicitamente.
+  - **Comportamento:** Explique de forma didática o racional por trás das decisões de código, padrões utilizados, convenções de tipo e potenciais armadilhas a evitar.
