@@ -1,4 +1,5 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
+import { getSessionProfile } from '@/utils/house'
 
 const adminItems: NavItem[] = [
   { href: '/dashboard/admin', label: 'Visão geral' },
@@ -7,14 +8,20 @@ const adminItems: NavItem[] = [
   { href: '/rewards', label: 'Recompensas' },
 ]
 
-export default function AdminDashboardLayout({
+export default async function AdminDashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const { profile } = await getSessionProfile()
+
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-6">
-      <DashboardNav items={adminItems} />
+    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+      <DashboardNav
+        items={adminItems}
+        userName={profile?.full_name}
+        points={profile?.points}
+      />
       {children}
     </div>
   )

@@ -6,9 +6,11 @@
 - **Paleta global (`globals.css`, tokens shadcn):** background `slate-50`, texto `slate-800`, primária `blue-600` (hover `blue-700`), border/input `slate-200`, muted `slate-100`, ring azul. Cards `bg-white` com `rounded-2xl` + `border-slate-200/80` (primitiva `Card`), botões/inputs com `min-h-12` (48px de toque) e `rounded-xl`.
 - **Primitivas ajustadas:** `card.tsx` (rounded-2xl, borda suave, shadow-sm), `button.tsx` (default `bg-blue-600`, tamanhos com altura mínima de 48px), `input.tsx` (min-h-12, bg-white). `layout.tsx` ganhou `bg-slate-50`/`text-slate-800`/`antialiased` e `lang="pt-BR"`.
 
-### Navegação mobile (bottom nav)
-- `dashboard-nav.tsx` agora renderiza **top nav no desktop** (`md:flex`) e **bottom navigation fixa no mobile**: `fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/90 backdrop-blur-md`, com ícones (lucide) por rota (Início, Casas, Tarefas, Recompensas), item ativo em azul, safe-area inset (iPhone) e slot de **Sair** quando há < 4 itens (dependentes).
-- Containers dos layouts admin/dependent e das páginas `/tasks` e `/rewards` ganharam `pb-24 md:pb-6` para o conteúdo não ser coberto pela barra fixa.
+### Cabeçalho fixo & bottom nav (dark, alto contraste)
+- **Header fixo em todas as viewports** (`dashboard-nav.tsx`): `fixed inset-x-0 top-0 z-50 bg-blue-700 text-white shadow-md`, com marca (ícone `House` âmbar), **nav central no desktop** (`md:flex`, item ativo `bg-white/20`), **badge de pontos** `bg-amber-400 text-slate-900 font-bold`, avatar com inicial e nome do usuário (desktop) e `Sair` (desktop).
+- **Bottom navigation mobile** escura: `fixed inset-x-0 bottom-0 z-50 bg-slate-900 text-slate-300 border-t border-white/10 pb-[env(safe-area-inset-bottom)] shadow`; item ativo com **pílula `bg-blue-600 text-white` no ícone** + label `text-sky-400`; slot de **Sair** quando há < 4 itens (dependentes).
+- **Canvas (`layout.tsx`):** fundo global `bg-slate-100` (cards brancos ganham contraste); containers dos layouts admin/dependent e das páginas `/tasks` e `/rewards` passaram a `p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6` para conteúdo não ficar escondido atrás do header/bottom nav fixos.
+- `DashboardNav` agora recebe `userName` e `points` (layouts/páginas via `getSessionProfile`).
 
 ### Cards, tarefas e recompensas
 - **Tarefas (`task-styles.ts`):** mapa compartilhado de status → card com **borda esquerda colorida** (Pendente azul, Em andamento sky, Concluída âmbar, Aprovada verde) + **chip de status** e pill de pontos (`bg-sky-100 text-sky-700`). Botão "Aprovar e creditar" em verde, ícones em cada seção.
