@@ -9,7 +9,9 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import type { ActionResult } from './types'
-import { validateCredentials } from './types'
+import { validatePassword, validateUsername } from './types'
+
+const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
@@ -135,20 +137,25 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
 
 export async function createDependent(
   fullName: string,
-  email: string,
+  username: string,
   password: string,
   houseId?: string
 ): Promise<ActionResult> {
   const name = fullName.trim()
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedUsername = username.trim().toLowerCase()
 
   if (!name) {
     return { ok: false, error: 'Informe o nome do dependente.' }
   }
 
-  const validationError = validateCredentials(normalizedEmail, password)
-  if (validationError) {
-    return { ok: false, error: validationError }
+  const usernameError = validateUsername(normalizedUsername)
+  if (usernameError) {
+    return { ok: false, error: usernameError }
+  }
+
+  const passwordError = validatePassword(password)
+  if (passwordError) {
+    return { ok: false, error: passwordError }
   }
 
   const supabase = await createClient()
@@ -172,6 +179,16 @@ export async function createDependent(
   }
 
   const admin = createAdminClient()
+
+  const { data: existing } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('username', normalizedUsername)
+    .maybeSingle()
+
+  if (existing) {
+    return { ok: false, error: 'Este nome de usuário já está em uso.' }
+  }
 
   let targetHouseId: string
 
@@ -208,13 +225,16 @@ export async function createDependent(
     targetHouseId = membership.house_id
   }
 
+  const email = `${normalizedUsername}@${DEPENDENT_EMAIL_DOMAIN}`
+
   const { data: createdUser, error: createError } =
     await admin.auth.admin.createUser({
-      email: normalizedEmail,
+      email,
       password,
       email_confirm: true,
       user_metadata: {
         full_name: name,
+        username: normalizedUsername,
         user_role: 'DEPENDENT',
       },
     })
@@ -229,6 +249,7 @@ export async function createDependent(
     {
       id: dependentUserId,
       full_name: name,
+      username: normalizedUsername,
       user_role: 'DEPENDENT',
     },
     { onConflict: 'id' }

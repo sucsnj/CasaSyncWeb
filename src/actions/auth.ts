@@ -1,37 +1,74 @@
 'use server'
 
 import type { ActionResult } from './types'
-import { validateCredentials } from './types'
+import { validatePassword, validateUsername } from './types'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 
+const ADMIN_EMAIL_DOMAIN = 'admin.casasync'
+const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
+
+/**
+ * Cadastro de ADMIN. Fluxo simplificado por PIN do sistema + username:
+ *   1. Valida `masterPin === process.env.MASTER_PIN` (falha fechada quando
+ *      a env não está configurada).
+ *   2. Verifica se o username já existe em `profiles` (via service role).
+ *   3. Monta o e-mail sintético `${username}@admin.casasync` e cria o usuário
+ *      autenticado já 100% confirmado (`email_confirm: true`) — sem e-mails
+ *      de confirmação.
+ *   4. Grava o perfil em `public.profiles`. Falha no perfil → rollback
+ *      (`deleteUser`) para não deixar usuários órfãos.
+ */
 export async function registerAdmin(
   fullName: string,
-  email: string,
-  password: string
+  username: string,
+  password: string,
+  masterPin: string
 ): Promise<ActionResult> {
   const name = fullName.trim()
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedUsername = username.trim().toLowerCase()
 
   if (!name) {
     return { ok: false, error: 'Informe o nome completo.' }
   }
 
-  const validationError = validateCredentials(normalizedEmail, password)
-  if (validationError) {
-    return { ok: false, error: validationError }
+  const usernameError = validateUsername(normalizedUsername)
+  if (usernameError) {
+    return { ok: false, error: usernameError }
   }
 
-  const supabase = await createClient()
+  const passwordError = validatePassword(password)
+  if (passwordError) {
+    return { ok: false, error: passwordError }
+  }
 
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
+  if (masterPin !== process.env.MASTER_PIN) {
+    return { ok: false, error: 'PIN do sistema inválido' }
+  }
+
+  const admin = createAdminClient()
+
+  // Username único em `profiles` (colunas com índice único no banco).
+  const { data: existing } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('username', normalizedUsername)
+    .maybeSingle()
+
+  if (existing) {
+    return { ok: false, error: 'Este nome de usuário já está em uso.' }
+  }
+
+  const email = `${normalizedUsername}@${ADMIN_EMAIL_DOMAIN}`
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
     password,
-    options: {
-      data: {
-        full_name: name,
-        user_role: 'ADMIN',
-      },
+    email_confirm: true,
+    user_metadata: {
+      full_name: name,
+      username: normalizedUsername,
+      user_role: 'ADMIN',
     },
   })
 
@@ -39,12 +76,11 @@ export async function registerAdmin(
     return { ok: false, error: error?.message ?? 'Falha ao criar a conta.' }
   }
 
-  const admin = createAdminClient()
-
   const { error: profileError } = await admin.from('profiles').upsert(
     {
       id: data.user.id,
       full_name: name,
+      username: normalizedUsername,
       user_role: 'ADMIN',
     },
     { onConflict: 'id' }
@@ -56,5 +92,61 @@ export async function registerAdmin(
     return { ok: false, error: 'Falha ao criar o perfil do administrador.' }
   }
 
-  return { ok: true }
+  return { ok: true, message: 'Conta de administrador criada.' }
+}
+
+/**
+ * Login por username + senha. O username mapeia para o e-mail sintético e o
+ * domínio depende da role da conta (ADMIN → `@admin.casasync`, DEPENDENT →
+ * `@dependente.casasync`). Como payload de e-mail e senha devem chegar juntos,
+ * primeiro resolvemos o domínio na tabela `profiles` (via service role — o
+ * usuário ainda não está autenticado) e então chamamos `signInWithPassword`
+ * com o cliente do servidor, que grava as cookies de sessão na própria action.
+ * Erros de "não encontrado" e "senha inválida" retornam a mesma mensagem para
+ * não revelar quais usernames existem.
+ */
+export async function login(
+  username: string,
+  password: string
+): Promise<ActionResult> {
+  const normalizedUsername = username.trim().toLowerCase()
+
+  if (!normalizedUsername || !password) {
+    return { ok: false, error: 'Informe nome de usuário e senha.' }
+  }
+
+  const admin = createAdminClient()
+
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('user_role')
+    .eq('username', normalizedUsername)
+    .maybeSingle()
+
+  if (!profile) {
+    return { ok: false, error: 'Credenciais inválidas.' }
+  }
+
+  const email = `${normalizedUsername}@${
+    profile.user_role === 'ADMIN' ? ADMIN_EMAIL_DOMAIN : DEPENDENT_EMAIL_DOMAIN
+  }`
+
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+
+  if (error || !data.user) {
+    return { ok: false, error: 'Credenciais inválidas.' }
+  }
+
+  return {
+    ok: true,
+    redirectTo:
+      profile.user_role === 'ADMIN'
+        ? '/dashboard/admin'
+        : '/dashboard/dependent',
+  }
 }

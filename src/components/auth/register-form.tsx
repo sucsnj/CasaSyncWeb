@@ -20,8 +20,9 @@ export function RegisterForm() {
   const router = useRouter()
 
   const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [masterPin, setMasterPin] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -30,16 +31,20 @@ export function RegisterForm() {
     setFormError(null)
 
     startTransition(async () => {
-      const result = await registerAdmin(fullName, email, password)
+      const result = await registerAdmin(
+        fullName,
+        username,
+        password,
+        masterPin
+      )
 
       if (!result.ok) {
         setFormError(result.error)
         return
       }
 
-      // Após o cadastro (e confirmação de e-mail, se exigida),
-      // `/` redireciona para o dashboard do ADMIN via proxy.ts.
-      router.push('/')
+      // Conta criada e confirmada: volta para a aba de login entrar.
+      router.push('/login')
       router.refresh()
     })
   }
@@ -70,15 +75,15 @@ export function RegisterForm() {
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="email">E-mail</Label>
+            <Label htmlFor="username">Nome de usuário</Label>
             <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder="voce@exemplo.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              placeholder="ex.: joao_silva (3-24 caracteres)"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
               required
             />
           </div>
@@ -93,8 +98,24 @@ export function RegisterForm() {
               placeholder="Mínimo de 6 caracteres"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              suppressHydrationWarning
               required
               minLength={6}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="master-pin">PIN do sistema</Label>
+            <Input
+              id="master-pin"
+              name="masterPin"
+              type="password"
+              autoComplete="off"
+              placeholder="PIN fornecido pelo administrador geral"
+              value={masterPin}
+              onChange={(event) => setMasterPin(event.target.value)}
+              suppressHydrationWarning
+              required
             />
           </div>
 

@@ -34,7 +34,7 @@ export function HousesManager({
   const [pending, startTransition] = useTransition()
 
   const [depName, setDepName] = useState('')
-  const [depEmail, setDepEmail] = useState('')
+  const [depUsername, setDepUsername] = useState('')
   const [depPassword, setDepPassword] = useState('')
   const [depError, setDepError] = useState<string | null>(null)
   const [depPending, setDepPending] = useState(false)
@@ -67,7 +67,7 @@ export function HousesManager({
 
       const result = await createDependent(
         depName,
-        depEmail,
+        depUsername,
         depPassword,
         activeHouseId
       )
@@ -78,7 +78,7 @@ export function HousesManager({
       }
 
       setDepName('')
-      setDepEmail('')
+      setDepUsername('')
       setDepPassword('')
       router.refresh()
     } finally {
@@ -202,14 +202,15 @@ export function HousesManager({
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="dependent-email">E-mail</Label>
+                <Label htmlFor="dependent-username">Nome de usuário</Label>
                 <Input
-                  id="dependent-email"
-                  name="dependentEmail"
-                  type="email"
-                  placeholder="joana@exemplo.com"
-                  value={depEmail}
-                  onChange={(event) => setDepEmail(event.target.value)}
+                  id="dependent-username"
+                  name="dependentUsername"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="ex.: joana_silva"
+                  value={depUsername}
+                  onChange={(event) => setDepUsername(event.target.value)}
                   required
                 />
               </div>
@@ -224,6 +225,7 @@ export function HousesManager({
                   placeholder="Mínimo de 6 caracteres"
                   value={depPassword}
                   onChange={(event) => setDepPassword(event.target.value)}
+                  suppressHydrationWarning
                   required
                   minLength={6}
                 />

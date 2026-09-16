@@ -12,6 +12,7 @@ export interface Database {
       profiles: {
         Row: {
           id: string
+          username: string | null
           full_name: string | null
           avatar_url: string | null
           user_role: Database['public']['Enums']['user_role']
@@ -21,6 +22,7 @@ export interface Database {
         }
         Insert: {
           id: string
+          username?: string | null
           full_name?: string | null
           avatar_url?: string | null
           user_role: Database['public']['Enums']['user_role']
@@ -30,6 +32,7 @@ export interface Database {
         }
         Update: {
           id?: string
+          username?: string | null
           full_name?: string | null
           avatar_url?: string | null
           user_role?: Database['public']['Enums']['user_role']
