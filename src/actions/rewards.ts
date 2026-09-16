@@ -13,6 +13,16 @@ type CreateRewardInput = {
   title: string
   description: string | null
   pointsCost: number
+  emoji: string | null
+  imageUrl: string | null
+}
+
+export type RewardPatch = {
+  title?: string
+  description?: string | null
+  points_cost?: number
+  emoji?: string | null
+  image_url?: string | null
 }
 
 async function assertAdminCanManage(
@@ -57,6 +67,8 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     title,
     description: input.description?.trim() ? input.description.trim() : null,
     points_cost: input.pointsCost,
+    emoji: input.emoji?.trim() ? input.emoji.trim().slice(0, 8) : null,
+    image_url: input.imageUrl?.trim() ? input.imageUrl.trim() : null,
     created_by: auth.adminId,
   })
 
@@ -224,4 +236,168 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
 
   revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }
+}
+
+/** ADMIN edita uma recompensa da casa ativa (sem excluir). */
+export async function updateReward(
+  rewardId: string,
+  patch: RewardPatch
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const updates: RewardPatch = {}
+  if ('title' in patch) {
+    const title = patch.title?.trim()
+    if (!title) return { ok: false, error: 'Informe o título da recompensa.' }
+    updates.title = title
+  }
+  if ('description' in patch) {
+    updates.description = patch.description?.trim() || null
+  }
+  if ('points_cost' in patch) {
+    const cost = patch.points_cost
+    if (cost === undefined || cost <= 0) {
+      return { ok: false, error: 'O custo deve ser maior que zero.' }
+    }
+    updates.points_cost = cost
+  }
+  if ('emoji' in patch) {
+    updates.emoji = patch.emoji?.trim().slice(0, 8) || null
+  }
+  if ('image_url' in patch) {
+    updates.image_url = patch.image_url?.trim() || null
+  }
+
+  if (Object.keys(updates).length === 0) return { ok: true }
+
+  const { data: reward } = await admin
+    .from('rewards')
+    .select('house_id')
+    .eq('id', rewardId)
+    .maybeSingle()
+
+  if (!reward || reward.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Recompensa não encontrada nesta casa.' }
+  }
+
+  const { error } = await admin
+    .from('rewards')
+    .update(updates)
+    .eq('id', rewardId)
+    .eq('house_id', activeHouse.id)
+
+  if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
+
+  revalidatePath('/rewards')
+  return { ok: true, message: 'Recompensa atualizada.' }
+}
+
+type CreateSuggestionInput = {
+  title: string
+  description: string | null
+  pointsCost: number | null
+  imageUrl: string | null
+}
+
+/** DEPENDENTE sugere uma recompensa — o ADMIN aprova/cria ou rejeita. */
+export async function createRewardSuggestion(
+  input: CreateSuggestionInput
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || profile?.user_role !== 'DEPENDENT') {
+    return { ok: false, error: 'Apenas dependentes podem sugerir recompensas.' }
+  }
+
+  const house = await getDependentHouse(user.id)
+  if (!house) return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
+
+  const title = input.title.trim()
+  if (!title) return { ok: false, error: 'Informe o nome da recompensa.' }
+  if (input.pointsCost !== null && input.pointsCost <= 0) {
+    return { ok: false, error: 'O custo deve ser maior que zero.' }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from('reward_suggestions').insert({
+    house_id: house.id,
+    profile_id: user.id,
+    title,
+    description: input.description?.trim() ? input.description.trim() : null,
+    points_cost: input.pointsCost,
+    image_url: input.imageUrl?.trim() ? input.imageUrl.trim() : null,
+    status: 'PENDING',
+  })
+
+  if (error) return { ok: false, error: 'Falha ao enviar a sugestão.' }
+
+  revalidatePath('/rewards')
+  return { ok: true, message: 'Sugestão enviada para aprovação.' }
+}
+
+/**
+ * ADMIN aprova (cria a recompensa real e marca a sugestão como APPROVED) ou
+ * rejeita. Escrita condicional `.eq('status','PENDING')` + rollback impedem
+ * que uma sugestão vire duas recompensas em requisições concorrentes.
+ */
+export async function resolveRewardSuggestion(
+  suggestionId: string,
+  approve: boolean
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: suggestion } = await admin
+    .from('reward_suggestions')
+    .select('id, house_id, profile_id, title, description, points_cost, image_url, status')
+    .eq('id', suggestionId)
+    .maybeSingle()
+
+  if (!suggestion || suggestion.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Sugestão não encontrada nesta casa.' }
+  }
+  if (suggestion.status !== 'PENDING') {
+    return { ok: false, error: 'Esta sugestão já foi resolvida.' }
+  }
+
+  const { data: resolved, error: statusError } = await admin
+    .from('reward_suggestions')
+    .update({ status: approve ? 'APPROVED' : 'REJECTED' })
+    .eq('id', suggestionId)
+    .eq('status', 'PENDING')
+    .select('id')
+
+  if (statusError || !resolved || resolved.length === 0) {
+    return { ok: false, error: 'Sugestão já resolvida por outra solicitação.' }
+  }
+
+  if (approve) {
+    const { error: rewardError } = await admin.from('rewards').insert({
+      house_id: activeHouse.id,
+      title: suggestion.title,
+      description: suggestion.description,
+      points_cost: suggestion.points_cost ?? 5,
+      image_url: suggestion.image_url,
+      created_by: auth.adminId,
+    })
+
+    if (rewardError) {
+      await admin
+        .from('reward_suggestions')
+        .update({ status: 'PENDING' })
+        .eq('id', suggestionId)
+      return { ok: false, error: 'Falha ao criar a recompensa. Sugestão revertida.' }
+    }
+  }
+
+  revalidatePath('/rewards')
+  return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }
 }

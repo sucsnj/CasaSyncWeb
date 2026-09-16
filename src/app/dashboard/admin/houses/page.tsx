@@ -25,13 +25,15 @@ export default async function AdminHousesPage() {
 
   const { data: houses } = await supabase
     .from('houses')
-    .select('id, name')
+    .select('id, name, image_url')
     .eq('owner_id', user.id)
     .order('created_at', { ascending: true })
 
   let members: {
     profileId: string
     fullName: string
+    username: string | null
+    avatarUrl: string | null
     role: 'ADMIN' | 'DEPENDENT'
   }[] = []
 
@@ -43,24 +45,27 @@ export default async function AdminHousesPage() {
 
     const profileIds = houseMembers?.map((member) => member.profile_id) ?? []
 
-    let nameById = new Map<string, string>()
+    let infoById = new Map<string, { full_name: string | null; username: string | null; avatar_url: string | null }>()
     if (profileIds.length > 0) {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('id, full_name, username, avatar_url')
         .in('id', profileIds)
 
-      nameById = new Map(
-        (profiles ?? []).map((p) => [p.id, p.full_name ?? 'Sem nome'])
-      )
+      infoById = new Map((profiles ?? []).map((p) => [p.id, p]))
     }
 
     members =
-      houseMembers?.map((member) => ({
-        profileId: member.profile_id,
-        fullName: nameById.get(member.profile_id) ?? 'Sem nome',
-        role: member.role,
-      })) ?? []
+      houseMembers?.map((member) => {
+        const info = infoById.get(member.profile_id)
+        return {
+          profileId: member.profile_id,
+          fullName: info?.full_name ?? 'Sem nome',
+          username: info?.username ?? null,
+          avatarUrl: info?.avatar_url ?? null,
+          role: member.role,
+        }
+      }) ?? []
   }
 
   return (
@@ -68,6 +73,7 @@ export default async function AdminHousesPage() {
       houses={houses ?? []}
       activeHouseId={activeHouse?.id ?? null}
       activeHouseName={activeHouse?.name ?? null}
+      activeHouseImageUrl={activeHouse?.image_url ?? null}
       members={members}
     />
   )

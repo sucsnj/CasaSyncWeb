@@ -2,18 +2,22 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CircleCheck, ListTodo, Sparkles } from 'lucide-react'
-import { completeTask } from '@/actions/tasks'
+import { CircleCheck, Clock3, ListTodo, Sparkles } from 'lucide-react'
+import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { getTaskSlaStatus } from '@/utils/task-sla'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Modal } from '@/components/ui/modal'
 import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
   taskChipByStatus,
+  taskSlaBadge,
+  taskSlaCardClass,
 } from './task-styles'
 
 type Task = Tables<'tasks'>
@@ -37,6 +41,8 @@ export function TasksDependent({
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [extendingTask, setExtendingTask] = useState<Task | null>(null)
+  const [extensionError, setExtensionError] = useState<string | null>(null)
 
   // ENSINO (teach): o evento de UPDATE é recebido ao vivo. Quando o ADMIN
   // aprova (APPROVED) a lista muda na hora; quando o ADMIN cria (INSERT) uma
@@ -78,6 +84,34 @@ export function TasksDependent({
     })
   }
 
+  function handleRequestExtension(task: Task, form: HTMLFormElement) {
+    setExtensionError(null)
+    const data = new FormData(form)
+    const reason = String(data.get('extensionReason') ?? '')
+    form.reset()
+
+    startTransition(async () => {
+      try {
+        const result = await requestTaskExtension(task.id, reason)
+        if (!result.ok) {
+          setExtensionError(result.error)
+          return
+        }
+        setExtendingTask(null)
+        setTasks((prev) =>
+          upsertTask(prev, {
+            ...task,
+            extension_requested: true,
+            extension_reason: reason,
+          })
+        )
+        router.refresh()
+      } catch {
+        setExtensionError('Falha de conexão. Tente novamente.')
+      }
+    })
+  }
+
   const openTasks = tasks.filter(
     (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS'
   )
@@ -109,56 +143,103 @@ export function TasksDependent({
             message="Tudo limpo por aqui! Aproveite o momento. 🎉"
           />
         ) : (
-          openTasks.map((task) => (
-            <Card
-              key={task.id}
-              className={cn('border-l-4', taskAccentByStatus[task.status])}
-            >
-              <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-semibold text-slate-800">{task.title}</p>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                        taskChipByStatus[task.status].className
-                      )}
-                    >
-                      {taskChipByStatus[task.status].label}
-                    </span>
-                  </div>
-                  {task.description ? (
-                    <p className="mt-1 text-sm text-slate-500">
-                      {task.description}
-                    </p>
-                  ) : null}
-                  <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-0.5 font-semibold',
-                        POINTS_PILL_CLASS
-                      )}
-                    >
-                      {task.points} pts
-                    </span>
-                    {task.due_date ? (
-                      <span>
-                        até{' '}
-                        {new Date(task.due_date).toLocaleString('pt-BR')}
-                      </span>
+          openTasks.map((task) => {
+            const sla = getTaskSlaStatus(task.created_at, task.due_date)
+            const slaInfo = taskSlaBadge[sla]
+            const cardClass =
+              sla === 'normal'
+                ? cn('border-l-4', taskAccentByStatus[task.status])
+                : taskSlaCardClass[sla]
+
+            return (
+              <Card key={task.id} className={cardClass}>
+                <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    {task.image_url ? (
+                      <img
+                        src={task.image_url}
+                        alt=""
+                        className="mb-3 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                      />
                     ) : null}
-                  </p>
-                </div>
-                <Button
-                  onClick={() => handleComplete(task)}
-                  disabled={pending}
-                  className="w-full shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
-                >
-                  {pending ? 'Enviando...' : 'Concluir tarefa'}
-                </Button>
-              </CardContent>
-            </Card>
-          ))
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-slate-800">{task.title}</p>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {slaInfo ? (
+                          <span
+                            className={cn(
+                              'rounded-full px-2.5 py-1 text-xs font-medium',
+                              slaInfo.className
+                            )}
+                          >
+                            {slaInfo.label}
+                          </span>
+                        ) : null}
+                        <span
+                          className={cn(
+                            'rounded-full px-2.5 py-1 text-xs font-medium',
+                            taskChipByStatus[task.status].className
+                          )}
+                        >
+                          {taskChipByStatus[task.status].label}
+                        </span>
+                      </span>
+                    </div>
+                    {task.description ? (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {task.description}
+                      </p>
+                    ) : null}
+                    <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 font-semibold',
+                          POINTS_PILL_CLASS
+                        )}
+                      >
+                        {task.points} pts
+                      </span>
+                      {task.due_date ? (
+                        <span>
+                          até{' '}
+                          {new Date(task.due_date).toLocaleString('pt-BR')}
+                        </span>
+                      ) : null}
+                      {task.extension_requested ? (
+                        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          <Clock3 className="size-3" />
+                          Aguardando adiamento
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+                    <Button
+                      onClick={() => handleComplete(task)}
+                      disabled={pending}
+                      className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
+                    >
+                      {pending ? 'Enviando...' : 'Concluir tarefa'}
+                    </Button>
+                    {task.due_date && !task.extension_requested ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-9 w-full text-slate-600 sm:w-auto"
+                        onClick={() => {
+                          setExtensionError(null)
+                          setExtendingTask(task)
+                        }}
+                      >
+                        <Clock3 className="size-3.5" />
+                        Pedir mais tempo
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })
         )}
       </section>
 
@@ -224,6 +305,47 @@ export function TasksDependent({
           ))}
         </section>
       ) : null}
+
+      <Modal
+        open={!!extendingTask}
+        onClose={() => setExtendingTask(null)}
+        title={`Pedir mais tempo — ${extendingTask?.title ?? ''}`}
+      >
+        {extensionError ? (
+          <p
+            className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            role="alert"
+          >
+            {extensionError}
+          </p>
+        ) : null}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (extendingTask) {
+              handleRequestExtension(extendingTask, event.currentTarget)
+            }
+          }}
+          className="flex flex-col gap-4"
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-slate-700">
+              Justificativa
+            </span>
+            <textarea
+              name="extensionReason"
+              required
+              maxLength={500}
+              rows={3}
+              placeholder="Explique o motivo: provas, viagem, compromissos…"
+              className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+          </label>
+          <Button type="submit" disabled={pending} className="w-full">
+            {pending ? 'Enviando...' : 'Enviar pedido'}
+          </Button>
+        </form>
+      </Modal>
     </div>
   )
 }

@@ -56,6 +56,7 @@ export interface Database {
           name: string
           code: string
           owner_id: string
+          image_url: string | null
           created_at: string
           updated_at: string
         }
@@ -64,6 +65,7 @@ export interface Database {
           name: string
           code: string
           owner_id: string
+          image_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -72,6 +74,7 @@ export interface Database {
           name?: string
           code?: string
           owner_id?: string
+          image_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -140,6 +143,9 @@ export interface Database {
           completed_by: string | null
           completed_at: string | null
           due_date: string | null
+          image_url: string | null
+          extension_requested: boolean
+          extension_reason: string | null
           created_at: string
           updated_at: string
         }
@@ -155,6 +161,9 @@ export interface Database {
           completed_by?: string | null
           completed_at?: string | null
           due_date?: string | null
+          image_url?: string | null
+          extension_requested?: boolean
+          extension_reason?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -170,6 +179,9 @@ export interface Database {
           completed_by?: string | null
           completed_at?: string | null
           due_date?: string | null
+          image_url?: string | null
+          extension_requested?: boolean
+          extension_reason?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -205,6 +217,7 @@ export interface Database {
           description: string | null
           points_cost: number
           emoji: string | null
+          image_url: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -216,6 +229,7 @@ export interface Database {
           description?: string | null
           points_cost: number
           emoji?: string | null
+          image_url?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -227,6 +241,7 @@ export interface Database {
           description?: string | null
           points_cost?: number
           emoji?: string | null
+          image_url?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -302,6 +317,60 @@ export interface Database {
           },
           {
             foreignKeyName: 'reward_redemptions_profile_id_fkey'
+            columns: ['profile_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      reward_suggestions: {
+        Row: {
+          id: string
+          house_id: string
+          profile_id: string
+          title: string
+          description: string | null
+          points_cost: number | null
+          image_url: string | null
+          status: 'PENDING' | 'APPROVED' | 'REJECTED'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          profile_id: string
+          title: string
+          description?: string | null
+          points_cost?: number | null
+          image_url?: string | null
+          status?: 'PENDING' | 'APPROVED' | 'REJECTED'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          profile_id?: string
+          title?: string
+          description?: string | null
+          points_cost?: number | null
+          image_url?: string | null
+          status?: 'PENDING' | 'APPROVED' | 'REJECTED'
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'reward_suggestions_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'reward_suggestions_profile_id_fkey'
             columns: ['profile_id']
             isOneToOne: false
             referencedRelation: 'profiles'

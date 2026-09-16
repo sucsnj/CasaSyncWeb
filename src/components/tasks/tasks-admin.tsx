@@ -2,14 +2,27 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveTask, createTask, updateTask } from '@/actions/tasks'
+import {
+  approveTask,
+  createTask,
+  resolveTaskExtension,
+  updateTask,
+} from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { getTaskSlaStatus } from '@/utils/task-sla'
 import type { Tables } from '@/types/database'
 import { DebouncedField } from './debounced-field'
+import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ClipboardList, CircleCheckBig, ListTodo } from 'lucide-react'
+import {
+  CircleCheckBig,
+  ClipboardList,
+  Clock3,
+  ListTodo,
+  X,
+} from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils'
 import {
@@ -24,6 +37,8 @@ import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
   taskChipByStatus,
+  taskSlaBadge,
+  taskSlaCardClass,
 } from './task-styles'
 
 type Task = Tables<'tasks'>
@@ -51,6 +66,7 @@ export function TasksAdmin({
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
   // (UPDATE), o payload chega aqui instantaneamente e a lista do ADMIN é
@@ -88,6 +104,7 @@ export function TasksAdmin({
         dueDate: String(formData.get('due_date') ?? '') || null,
         points: Number(formData.get('points')),
         assignedTo: String(formData.get('assigned_to') ?? ''),
+        imageUrl: String(formData.get('image_url') ?? '') || null,
       })
 
       if (!result.ok) {
@@ -96,6 +113,7 @@ export function TasksAdmin({
       }
 
       setFormError(null)
+      setTaskImageUrl(null)
       form.reset()
       setShowTaskForm(false)
       // O INSERT também chega via Realtime; o refresh é a rede de segurança.
@@ -114,6 +132,26 @@ export function TasksAdmin({
       // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'APPROVED' })
+      )
+      router.refresh()
+    })
+  }
+
+  function handleResolveExtension(task: Task, approve: boolean) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await resolveTaskExtension(task.id, approve)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+
+      setTasks((prev) =>
+        upsertTask(prev, {
+          ...task,
+          extension_requested: false,
+          extension_reason: null,
+        })
       )
       router.refresh()
     })
@@ -221,6 +259,17 @@ export function TasksAdmin({
               />
             </div>
 
+            <div className="flex flex-col gap-2 md:col-span-2">
+              <Label>Imagem (opcional)</Label>
+              <ImageUpload
+                folder="tasks"
+                ownerId={houseId}
+                value={taskImageUrl}
+                onChange={setTaskImageUrl}
+              />
+              <input type="hidden" name="image_url" value={taskImageUrl ?? ''} />
+            </div>
+
             {formError ? (
               <p className="text-sm text-destructive md:col-span-2" role="alert">
                 {formError}
@@ -250,20 +299,44 @@ export function TasksAdmin({
             message="Tudo limpo por aqui! Crie o próximo desafio. 🎉"
           />
         ) : (
-          pendingTasks.map((task) => (
-            <Card
-              key={task.id}
-              className={cn('border-l-4', taskAccentByStatus[task.status])}
-            >
+          pendingTasks.map((task) => {
+            const sla = getTaskSlaStatus(task.created_at, task.due_date)
+            const slaInfo = taskSlaBadge[sla]
+            const cardClass =
+              sla === 'normal'
+                ? cn('border-l-4', taskAccentByStatus[task.status])
+                : taskSlaCardClass[sla]
+
+            return (
+            <Card key={task.id} className={cardClass}>
               <CardContent className="flex flex-col gap-3 py-3">
+                {task.image_url ? (
+                  <img
+                    src={task.image_url}
+                    alt=""
+                    className="h-32 w-full rounded-xl border border-slate-200 object-cover"
+                  />
+                ) : null}
                 <div className="flex items-start justify-between gap-2">
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                      taskChipByStatus[task.status].className
-                    )}
-                  >
-                    {taskChipByStatus[task.status].label}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {slaInfo ? (
+                      <span
+                        className={cn(
+                          'rounded-full px-2.5 py-1 text-xs font-medium',
+                          slaInfo.className
+                        )}
+                      >
+                        {slaInfo.label}
+                      </span>
+                    ) : null}
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                        taskChipByStatus[task.status].className
+                      )}
+                    >
+                      {taskChipByStatus[task.status].label}
+                    </span>
                   </span>
                   <span
                     className={cn(
@@ -306,6 +379,39 @@ export function TasksAdmin({
                   placeholder="Descrição (opcional)"
                 />
 
+                {task.extension_requested ? (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+                      <Clock3 className="size-4" />
+                      Pedido de adiamento
+                    </p>
+                    <p className="mt-1 text-sm text-blue-700">
+                      {task.extension_reason ?? 'Sem justificativa informada.'}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={pending}
+                        className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                        onClick={() => handleResolveExtension(task, true)}
+                      >
+                        Aprovar (+3 dias)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={pending}
+                        className="min-h-9 text-slate-600"
+                        onClick={() => handleResolveExtension(task, false)}
+                      >
+                        <X className="size-3.5" /> Rejeitar
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1">
                     <span className="text-xs text-slate-500">Pontos</span>
@@ -328,7 +434,8 @@ export function TasksAdmin({
                 </div>
               </CardContent>
             </Card>
-          ))
+            )
+})
         )}
       </section>
 
@@ -411,7 +518,7 @@ export function TasksAdmin({
                   >
                     {task.points} pts
                   </span>
-                  {' · '}pontos creditados
+{' · '}pontos creditados
                 </p>
               </CardContent>
             </Card>

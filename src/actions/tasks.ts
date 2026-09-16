@@ -15,6 +15,7 @@ type TaskPatch = {
   due_date?: string | null
   points?: number
   assigned_to?: string | null
+  image_url?: string | null
 }
 
 type CreateTaskInput = {
@@ -23,6 +24,7 @@ type CreateTaskInput = {
   dueDate: string | null
   points: number
   assignedTo: string
+  imageUrl: string | null
 }
 
 /**
@@ -88,6 +90,7 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
     assigned_to: input.assignedTo,
     created_by: auth.adminId,
     status: 'PENDING',
+    image_url: input.imageUrl,
   })
 
   if (error) return { ok: false, error: 'Falha ao criar a tarefa.' }
@@ -164,6 +167,9 @@ export async function updateTask(
       }
     }
     updates.assigned_to = nextAssignee
+  }
+  if ('image_url' in patch) {
+    updates.image_url = patch.image_url?.trim() ? patch.image_url.trim() : null
   }
 
   if (Object.keys(updates).length === 0) return { ok: true }
@@ -295,5 +301,117 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   return {
     ok: true,
     message: `Tarefa aprovada: ${task.points} ponto(s) creditado(s).`,
+  }
+}
+
+/**
+ * DEPENDENTE pede mais tempo para uma tarefa aberta.
+ * Marca `extension_requested = true` + `extension_reason` para o ADMIN resolver.
+ */
+export async function requestTaskExtension(
+  taskId: string,
+  reason: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || profile?.user_role !== 'DEPENDENT') {
+    return { ok: false, error: 'Apenas dependentes podem pedir adiamento.' }
+  }
+
+  const house = await getDependentHouse(user.id)
+  if (!house) return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
+
+  const justification = reason.trim()
+  if (!justification) {
+    return { ok: false, error: 'Informe o motivo do pedido.' }
+  }
+  if (justification.length > 500) {
+    return { ok: false, error: 'Justificativa muito longa (máximo 500 caracteres).' }
+  }
+
+  const admin = createAdminClient()
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, assigned_to, status, extension_requested')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== house.id) {
+    return { ok: false, error: 'Tarefa não encontrada na sua casa.' }
+  }
+  if (task.assigned_to !== user.id) {
+    return { ok: false, error: 'Esta tarefa não está atribuída a você.' }
+  }
+  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+    return { ok: false, error: 'Tarefa já finalizada.' }
+  }
+  if (task.extension_requested) {
+    return { ok: false, error: 'Já existe um pedido de adiamento para esta tarefa.' }
+  }
+
+  const { error } = await admin
+    .from('tasks')
+    .update({ extension_requested: true, extension_reason: justification })
+    .eq('id', taskId)
+
+  if (error) return { ok: false, error: 'Falha ao registrar o pedido.' }
+
+  revalidatePath('/tasks')
+  return { ok: true, message: 'Pedido de adiamento enviado.' }
+}
+
+/**
+ * ADMIN aprova (usa o prazo atual, ou hoje, e soma 3 dias) ou rejeita o
+ * pedido de adiamento — em ambos os casos a flag é limpa.
+ */
+export async function resolveTaskExtension(
+  taskId: string,
+  approve: boolean
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status, due_date, extension_requested')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+  if (!task.extension_requested) {
+    return { ok: false, error: 'Esta tarefa não tem um pedido de adiamento pendente.' }
+  }
+
+  const updates: {
+    extension_requested: boolean
+    extension_reason: null
+    due_date?: string
+  } = {
+    extension_requested: false,
+    extension_reason: null,
+  }
+
+  if (approve) {
+    const currentDue = task.due_date ? new Date(task.due_date) : new Date()
+    const base = currentDue.getTime() > Date.now() ? currentDue : new Date()
+    updates.due_date = new Date(
+      base.getTime() + 3 * 24 * 60 * 60 * 1000
+    ).toISOString()
+  }
+
+  const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
+
+  if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
+
+  revalidatePath('/tasks')
+  return {
+    ok: true,
+    message: approve ? 'Adiamento aprovado (+3 dias).' : 'Pedido de adiamento rejeitado.',
   }
 }

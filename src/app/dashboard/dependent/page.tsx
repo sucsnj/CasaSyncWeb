@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Gift, ListTodo } from 'lucide-react'
-import { getDependentHouse, getSessionProfile } from '@/utils/house'
+import { Gift, GraduationCap, ListTodo } from 'lucide-react'
+import {
+  getDependentHouse,
+  getHouseTutor,
+  getSessionProfile,
+} from '@/utils/house'
 import {
   Card,
   CardContent,
@@ -37,6 +41,7 @@ export default async function DependentDashboardPage() {
   const { user, profile } = await getSessionProfile()
   const house = user ? await getDependentHouse(user.id) : null
   const firstName = profile?.full_name?.split(' ')[0] ?? ''
+  const tutor = house ? await getHouseTutor(house.id) : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,6 +70,38 @@ export default async function DependentDashboardPage() {
           </p>
         </CardContent>
       </Card>
+
+      {tutor ? (
+        <Card>
+          <CardHeader className="gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="size-5 text-blue-600" />
+              Seu tutor
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center gap-3">
+            {tutor.avatar_url ? (
+              <img
+                src={tutor.avatar_url}
+                alt=""
+                className="size-14 shrink-0 rounded-full border-2 border-blue-200 object-cover"
+              />
+            ) : (
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
+                {(tutor.full_name ?? '?').charAt(0).toUpperCase()}
+              </span>
+            )}
+            <div>
+              <p className="font-semibold text-slate-800">
+                {tutor.full_name ?? 'Administrador'}
+              </p>
+              <p className="text-sm text-slate-500">
+                Responsável da sua casa — aprova suas tarefas e resgates.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {actions.map((action) => (

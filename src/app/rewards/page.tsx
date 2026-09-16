@@ -57,7 +57,7 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }, { data: members }] =
+      const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
         await Promise.all([
           supabase
             .from('rewards')
@@ -74,6 +74,11 @@ export default async function RewardsPage() {
             .select('profile_id')
             .eq('house_id', activeHouse.id)
             .eq('role', 'DEPENDENT'),
+          supabase
+            .from('reward_suggestions')
+            .select('*')
+            .eq('house_id', activeHouse.id)
+            .order('created_at', { ascending: false }),
         ])
 
       const profileIds = members?.map((member) => member.profile_id) ?? []
@@ -103,12 +108,24 @@ export default async function RewardsPage() {
         })
       )
 
+      const suggestionViews = (suggestions ?? []).map((suggestion) => ({
+        id: suggestion.id,
+        title: suggestion.title,
+        description: suggestion.description,
+        points_cost: suggestion.points_cost,
+        image_url: suggestion.image_url,
+        status: suggestion.status,
+        created_at: suggestion.created_at,
+        profileName: nameById.get(suggestion.profile_id) ?? 'Dependente',
+      }))
+
       content = (
         <RewardsAdmin
           key={activeHouse.id}
           houseId={activeHouse.id}
           initialRewards={rewards ?? []}
           initialRedemptions={redemptionViews}
+          initialSuggestions={suggestionViews}
           dependents={Array.from(nameById, ([id, full_name]) => ({
             id,
             full_name,
@@ -125,19 +142,26 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }] = await Promise.all([
-        supabase
-          .from('rewards')
-          .select('*')
-          .eq('house_id', house.id)
-          .order('created_at', { ascending: true }),
-        supabase
-          .from('reward_redemptions')
-          .select('*')
-          .eq('house_id', house.id)
-          .eq('profile_id', user.id)
-          .order('created_at', { ascending: true }),
-      ])
+      const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
+        await Promise.all([
+          supabase
+            .from('rewards')
+            .select('*')
+            .eq('house_id', house.id)
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('reward_redemptions')
+            .select('*')
+            .eq('house_id', house.id)
+            .eq('profile_id', user.id)
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('reward_suggestions')
+            .select('*')
+            .eq('house_id', house.id)
+            .eq('profile_id', user.id)
+            .order('created_at', { ascending: false }),
+        ])
 
       const rewardTitleById = new Map(
         (rewards ?? []).map((reward) => [reward.id, reward.title])
@@ -161,6 +185,14 @@ export default async function RewardsPage() {
           initialPoints={profile.points}
           initialRewards={rewards ?? []}
           initialRedemptions={redemptionViews}
+          initialSuggestions={(suggestions ?? []).map((suggestion) => ({
+            id: suggestion.id,
+            title: suggestion.title,
+            description: suggestion.description,
+            points_cost: suggestion.points_cost,
+            status: suggestion.status,
+            created_at: suggestion.created_at,
+          }))}
         />
       )
     }

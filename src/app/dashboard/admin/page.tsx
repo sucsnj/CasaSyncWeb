@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Gift, House, ListTodo } from 'lucide-react'
-import { getActiveAdminHouse } from '@/utils/house'
+import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
+import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import {
   Card,
   CardDescription,
@@ -40,6 +41,7 @@ const actions = [
 ] as const
 
 export default async function AdminDashboardPage() {
+  const { user, profile } = await getSessionProfile()
   const activeHouse = await getActiveAdminHouse()
 
   return (
@@ -71,6 +73,14 @@ export default async function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+
+      {user && profile ? (
+        <ProfileEditor
+          userId={user.id}
+          fullName={profile.full_name}
+          avatarUrl={profile.avatar_url}
+        />
+      ) : null}
     </div>
   )
 }

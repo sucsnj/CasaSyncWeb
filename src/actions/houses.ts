@@ -288,3 +288,145 @@ export async function createDependent(
     message: `Dependente ${name} criado e vinculado à casa.`,
   }
 }
+
+/** ADMIN edita (nome/foto) uma casa que lhe pertence — sem excluir. */
+export async function updateHouse(
+  houseId: string,
+  patch: { name?: string; imageUrl?: string | null }
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem editar casas.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const { data: house } = await admin
+    .from('houses')
+    .select('id')
+    .eq('id', houseId)
+    .eq('owner_id', user.id)
+    .maybeSingle()
+
+  if (!house) {
+    return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
+  }
+
+  const updates: { name?: string; image_url?: string | null } = {}
+  if (patch.name !== undefined) {
+    const name = patch.name.trim()
+    if (!name) return { ok: false, error: 'Informe um nome para a casa.' }
+    updates.name = name
+  }
+  if (patch.imageUrl !== undefined) {
+    updates.image_url = patch.imageUrl?.trim() ? patch.imageUrl.trim() : null
+  }
+  if (Object.keys(updates).length === 0) return { ok: true }
+
+  const { error } = await admin.from('houses').update(updates).eq('id', houseId)
+  if (error) return { ok: false, error: 'Falha ao atualizar a casa.' }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return { ok: true, message: 'Casa atualizada.' }
+}
+
+/** ADMIN edita nome/username/avatar de um dependente de uma casa sua. */
+export async function updateDependentProfile(
+  dependentId: string,
+  patch: {
+    fullName?: string
+    username?: string
+    avatarUrl?: string | null
+  }
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem editar dependentes.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const { data: member } = await admin
+    .from('house_members')
+    .select('house_id')
+    .eq('profile_id', dependentId)
+    .eq('role', 'DEPENDENT')
+    .maybeSingle()
+
+  if (!member) {
+    return { ok: false, error: 'Dependente não encontrado.' }
+  }
+
+  const { data: owned } = await admin
+    .from('houses')
+    .select('id')
+    .eq('id', member.house_id)
+    .eq('owner_id', user.id)
+    .maybeSingle()
+
+  if (!owned) {
+    return { ok: false, error: 'Dependente não pertence a uma casa sua.' }
+  }
+
+  const updates: {
+    full_name?: string
+    username?: string
+    avatar_url?: string | null
+  } = {}
+
+  if (patch.fullName !== undefined) {
+    const name = patch.fullName.trim()
+    if (!name) return { ok: false, error: 'Informe o nome do dependente.' }
+    updates.full_name = name
+  }
+  if (patch.username !== undefined) {
+    const normalized = patch.username.trim().toLowerCase()
+    const usernameError = validateUsername(normalized)
+    if (usernameError) return { ok: false, error: usernameError }
+
+    const { data: existing } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('username', normalized)
+      .neq('id', dependentId)
+      .maybeSingle()
+
+    if (existing) {
+      return { ok: false, error: 'Este nome de usuário já está em uso.' }
+    }
+    updates.username = normalized
+  }
+  if (patch.avatarUrl !== undefined) {
+    updates.avatar_url = patch.avatarUrl?.trim() ? patch.avatarUrl.trim() : null
+  }
+  if (Object.keys(updates).length === 0) return { ok: true }
+
+  const { error } = await admin
+    .from('profiles')
+    .update(updates)
+    .eq('id', dependentId)
+  if (error) return { ok: false, error: 'Falha ao atualizar o dependente.' }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return { ok: true, message: 'Dependente atualizado.' }
+}

@@ -1,5 +1,30 @@
 # CasaSync Web — PROJECT STATUS
 
+## Edição completa ADMIN, imagens, SLA, sugestões e extensões (concluída)
+
+### O que foi implementado
+- **Edição sem DELETE:** ADMIN edita casas (nome+foto), dependentes (nome/username/avatar), recompensas (título/custo/descrição/emoji/foto) e o próprio perfil (nome+avatar). `updateHouse`, `updateDependentProfile`, `updateReward`, `updateOwnProfile` — sempre validando posse via service role (`houses.owner_id`).
+- **Uploads (Supabase Storage):** bucket público `casasync-media` (pastas avatars/houses/rewards/tasks/suggestions). Helper `src/utils/media.ts` (uploadMedia) + componente `ImageUpload` (prévia, remover, estado de envio). `tasks`/`houses`/`rewards` ganharam `image_url` nos cards.
+- **SLA de prazos:** `src/utils/task-sla.ts` → `getTaskSlaStatus(createdAt, dueDate)`: **Atrasada** (agora > prazo; card `border-red-500 bg-red-50 text-red-700`) e **Prazo próximo** (restante ≤ 20% do total; `border-amber-400 bg-amber-50 text-amber-800`). Aplicado nos cards abertos de ADMIN e DEPENDENT via `task-styles.ts`.
+- **Sugestões de recompensa (`reward_suggestions`):** dependente envia (título/descrição/custo/foto) pela loja; o ADMIN aprova (**cria a recompensa real** — transição guardada `PENDING→APPROVED` com rollback) ou rejeita. Realtime e seção "Suas sugestões" no lado do dependente.
+- **Pedido de adiamento:** dependente clica "Pedir mais tempo" (justificativa obrigatória) → `tasks.extension_requested=true` + `extension_reason`. ADMIN vê banner no card pendente e **Aprova (+3 dias sobre o prazo atual ou hoje)** ou **Rejeita** (`resolveTaskExtension`). Flags limpas nos dois casos.
+- **Identificação do tutor:** card "Seu tutor" no dashboard do dependente (avatar+nome do ADMIN via `getHouseTutor`, service role). `getSessionProfile` agora expõe `avatar_url`.
+- **Types:** `src/types/database.ts` espelha o schema real (`image_url` nas 3 tabelas, `extension_*`, tabela `reward_suggestions` com relationships).
+
+### SQL necessário no Supabase
+O script `supabase/migration_features.sql` cria as colunas, a tabela de sugestões (RLS select para membros da casa; escritas via service role), o bucket público `casasync-media` com policies e inclui `reward_suggestions` na publication `supabase_realtime`. **Sem rodá-lo, as features de imagem/sugestão/extensão falham em runtime.**
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` — `<img>` deliberado para URLs do Storage) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo) · smoke dev: `/login` 200, `/register` 200, `/tasks`/`/rewards`/dashboards 307 (proxy).
+
+### Decisões / pontos de atenção
+- Padrão mantido: escritas só via `createAdminClient()`; autorização via sessão + posse (`assertAdminCanManage`/`owner_id`). Senhas continuam fora de estado React.
+- Sugestão aprovada usa `points_cost ?? 5` se o dependente não informou custo; resgate de sugestão vira recompensa real de imediato.
+- Extensão aprovada SEMPRE soma 3 dias (base: prazo atual se futuro, senão agora) — o prazo final fica no `due_date`.
+- UI de upload reutilizada em 6 lugares; keeps `next/image` fora porque as imagens vivem em URL pública de Storage.
+
+---
+
 ## UI/UX Mobile-First — redesign visual (concluída)
 
 ### Design system

@@ -3,10 +3,19 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { createDependent, createHouse, selectHouse } from '@/actions/houses'
+import {
+  createDependent,
+  createHouse,
+  selectHouse,
+  updateDependentProfile,
+  updateHouse,
+} from '@/actions/houses'
+import { ImageUpload } from '@/components/ui/image-upload'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Pencil } from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -16,17 +25,28 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
+type House = { id: string; name: string; image_url: string | null }
+type Member = {
+  profileId: string
+  fullName: string
+  username: string | null
+  avatarUrl: string | null
+  role: 'ADMIN' | 'DEPENDENT'
+}
+
 type HousesManagerProps = {
-  houses: { id: string; name: string }[]
+  houses: House[]
   activeHouseId: string | null
   activeHouseName: string | null
-  members: { profileId: string; fullName: string; role: 'ADMIN' | 'DEPENDENT' }[]
+  activeHouseImageUrl: string | null
+  members: Member[]
 }
 
 export function HousesManager({
   houses,
   activeHouseId,
   activeHouseName,
+  activeHouseImageUrl,
   members,
 }: HousesManagerProps) {
   const router = useRouter()
@@ -38,6 +58,14 @@ export function HousesManager({
   const [depPending, setDepPending] = useState(false)
   const [showHouseForm, setShowHouseForm] = useState(false)
   const [showDependentForm, setShowDependentForm] = useState(false)
+
+  const [editingHouse, setEditingHouse] = useState<House | null>(null)
+  const [houseImageUrl, setHouseImageUrl] = useState<string | null>(null)
+
+  const [editingDependent, setEditingDependent] = useState<Member | null>(null)
+  const [dependentAvatarUrl, setDependentAvatarUrl] = useState<string | null>(
+    null
+  )
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -57,11 +85,7 @@ export function HousesManager({
 
   async function handleCreateDependent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
-    // currentTarget é nulled após o primeiro await — capturar a referência
-    // do form agora para poder chamar reset() depois do createDependent.
     const form = event.currentTarget
-
     setDepError(null)
     setDepPending(true)
 
@@ -70,9 +94,6 @@ export function HousesManager({
         setDepError('Crie ou selecione uma casa antes de adicionar dependentes.')
         return
       }
-
-      // Segurança: a senha do dependente fica só na DOM (input uncontrolled) e é
-      // lida do FormData no submit. NUNCA entra em estado React.
       const formData = new FormData(form)
       const depName = String(formData.get('dependentName') ?? '').trim()
       const depUsername = String(formData.get('dependentUsername') ?? '').trim()
@@ -102,6 +123,51 @@ export function HousesManager({
     startTransition(async () => {
       const result = await selectHouse(houseId)
       if (!result.ok) setError(result.error)
+      router.refresh()
+    })
+  }
+
+  function handleSaveHouse(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingHouse) return
+    const form = event.currentTarget
+    setError(null)
+    const formData = new FormData(form)
+
+    startTransition(async () => {
+      const result = await updateHouse(editingHouse.id, {
+        name: String(formData.get('houseName') ?? ''),
+        imageUrl: String(formData.get('image_url') ?? '') || null,
+      })
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setEditingHouse(null)
+      setHouseImageUrl(null)
+      router.refresh()
+    })
+  }
+
+  function handleSaveDependent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingDependent) return
+    const form = event.currentTarget
+    setDepError(null)
+    const formData = new FormData(form)
+
+    startTransition(async () => {
+      const result = await updateDependentProfile(editingDependent.profileId, {
+        fullName: String(formData.get('dependentName') ?? ''),
+        username: String(formData.get('dependentUsername') ?? ''),
+        avatarUrl: String(formData.get('avatar_url') ?? '') || null,
+      })
+      if (!result.ok) {
+        setDepError(result.error)
+        return
+      }
+      setEditingDependent(null)
+      setDependentAvatarUrl(null)
       router.refresh()
     })
   }
@@ -161,7 +227,7 @@ export function HousesManager({
         <CardHeader>
           <CardTitle>Suas casas</CardTitle>
           <CardDescription>
-            Clique para alternar a casa ativa.
+            Clique para alternar a casa ativa · lápis para editar.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -174,22 +240,54 @@ export function HousesManager({
               {houses.map((house) => {
                 const active = house.id === activeHouseId
                 return (
-                  <button
+                  <div
                     key={house.id}
-                    type="button"
-                    onClick={() => handleSelect(house.id)}
-                    disabled={pending || active}
-                    data-active={active}
                     className={cn(
-                      'flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3 py-3 text-left text-sm shadow-sm transition-colors',
-                      'hover:bg-muted disabled:cursor-default data-active:border-blue-600 data-active:bg-sky-50'
+                      'flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm transition-colors',
+                      active && 'border-blue-600 bg-sky-50'
                     )}
                   >
-                    <span className="font-medium">{house.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {active ? 'Ativa' : 'Alternar'}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(house.id)}
+                      disabled={pending || active}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      {house.image_url ? (
+                        <img
+                          src={house.image_url}
+                          alt=""
+                          className="size-10 shrink-0 rounded-lg border border-slate-200 object-cover"
+                        />
+                      ) : (
+                        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-lg font-bold text-sky-700">
+                          {house.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate font-medium text-slate-800">
+                          {house.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {active ? 'Casa ativa' : 'Alternar'}
+                        </span>
+                      </span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-9 shrink-0 px-2 text-xs text-slate-500"
+                      onClick={() => {
+                        setError(null)
+                        setHouseImageUrl(house.image_url)
+                        setEditingHouse(house)
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                      Editar
+                    </Button>
+                  </div>
                 )
               })}
             </div>
@@ -284,7 +382,14 @@ export function HousesManager({
 
       <Card className="md:col-span-2">
         <CardHeader>
-          <CardTitle>
+          <CardTitle className="flex items-center gap-3">
+            {activeHouseImageUrl ? (
+              <img
+                src={activeHouseImageUrl}
+                alt=""
+                className="size-9 rounded-lg border border-slate-200 object-cover"
+              />
+            ) : null}
             Membros {activeHouseName ? `de ${activeHouseName}` : ''}
           </CardTitle>
           <CardDescription>
@@ -306,14 +411,45 @@ export function HousesManager({
               {members.map((member) => (
                 <li
                   key={member.profileId}
-                  className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-input px-3 py-2 text-sm"
                 >
-                  <span className="font-medium">{member.fullName}</span>
-                  <span
-                    data-role={member.role.toLowerCase()}
-                    className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 data-[role=admin]:bg-sky-100 data-[role=admin]:text-sky-700"
-                  >
-                    {member.role === 'ADMIN' ? 'Administrador' : 'Dependente'}
+                  <span className="flex min-w-0 items-center gap-3">
+                    {member.avatarUrl ? (
+                      <img
+                        src={member.avatarUrl}
+                        alt=""
+                        className="size-9 shrink-0 rounded-full border border-slate-200 object-cover"
+                      />
+                    ) : (
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sky-100 font-semibold text-sky-700">
+                        {member.fullName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="truncate font-medium">{member.fullName}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span
+                      data-role={member.role.toLowerCase()}
+                      className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 data-[role=admin]:bg-sky-100 data-[role=admin]:text-sky-700"
+                    >
+                      {member.role === 'ADMIN' ? 'Administrador' : 'Dependente'}
+                    </span>
+                    {member.role === 'DEPENDENT' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-9 px-2 text-xs text-slate-500"
+                        onClick={() => {
+                          setDepError(null)
+                          setDependentAvatarUrl(member.avatarUrl)
+                          setEditingDependent(member)
+                        }}
+                      >
+                        <Pencil className="size-3.5" />
+                        Editar
+                      </Button>
+                    ) : null}
                   </span>
                 </li>
               ))}
@@ -321,6 +457,101 @@ export function HousesManager({
           )}
         </CardContent>
       </Card>
+
+      <Modal
+        open={!!editingHouse}
+        onClose={() => {
+          setEditingHouse(null)
+          setHouseImageUrl(null)
+        }}
+        title={`Editar casa — ${editingHouse?.name ?? ''}`}
+      >
+        {editingHouse ? (
+          <form onSubmit={handleSaveHouse} className="flex flex-col gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-house-name">Nome da casa</Label>
+              <Input
+                id="edit-house-name"
+                name="houseName"
+                type="text"
+                defaultValue={editingHouse.name}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Imagem</Label>
+              <ImageUpload
+                folder="houses"
+                ownerId={editingHouse.id}
+                value={houseImageUrl}
+                onChange={setHouseImageUrl}
+              />
+              <input type="hidden" name="image_url" value={houseImageUrl ?? ''} />
+            </div>
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Salvando...' : 'Salvar alterações'}
+            </Button>
+          </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!editingDependent}
+        onClose={() => {
+          setEditingDependent(null)
+          setDependentAvatarUrl(null)
+        }}
+        title={`Editar — ${editingDependent?.fullName ?? ''}`}
+      >
+        {editingDependent ? (
+          <form onSubmit={handleSaveDependent} className="flex flex-col gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-dependent-name">Nome completo</Label>
+              <Input
+                id="edit-dependent-name"
+                name="dependentName"
+                type="text"
+                defaultValue={editingDependent.fullName}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-dependent-username">Nome de usuário</Label>
+              <Input
+                id="edit-dependent-username"
+                name="dependentUsername"
+                type="text"
+                autoComplete="off"
+                defaultValue={editingDependent.username ?? ''}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Avatar</Label>
+              <ImageUpload
+                folder="avatars"
+                ownerId={editingDependent.profileId}
+                value={dependentAvatarUrl}
+                onChange={setDependentAvatarUrl}
+              />
+              <input type="hidden" name="avatar_url" value={dependentAvatarUrl ?? ''} />
+            </div>
+            {depError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {depError}
+              </p>
+            ) : null}
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Salvando...' : 'Salvar alterações'}
+            </Button>
+          </form>
+        ) : null}
+      </Modal>
     </div>
   )
 }

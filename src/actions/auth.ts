@@ -1,7 +1,9 @@
 'use server'
 
 import type { ActionResult } from './types'
+import { revalidatePath } from 'next/cache'
 import { validatePassword, validateUsername } from './types'
+import { getSessionProfile } from '@/utils/house'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 
@@ -166,4 +168,40 @@ export async function login(
         ? '/dashboard/admin'
         : '/dashboard/dependent',
   }
+}
+
+/** Usuário autenticado edita o próprio perfil (nome completo + avatar). */
+export async function updateOwnProfile(patch: {
+  fullName?: string
+  avatarUrl?: string | null
+}): Promise<ActionResult> {
+  const { user } = await getSessionProfile()
+  if (!user) return { ok: false, error: 'Você precisa estar autenticado.' }
+
+  const updates: { full_name?: string; avatar_url?: string | null } = {}
+  if (patch.fullName !== undefined) {
+    const name = patch.fullName.trim()
+    if (!name) return { ok: false, error: 'Informe seu nome completo.' }
+    updates.full_name = name
+  }
+  if (patch.avatarUrl !== undefined) {
+    updates.avatar_url = patch.avatarUrl?.trim() ? patch.avatarUrl.trim() : null
+  }
+  if (Object.keys(updates).length === 0) return { ok: true }
+
+  const admin = getAdminClient()
+  if (!admin) {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const { error } = await admin
+    .from('profiles')
+    .update(updates)
+    .eq('id', user.id)
+  if (error) return { ok: false, error: 'Falha ao atualizar o perfil.' }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/dependent')
+
+  return { ok: true, message: 'Perfil atualizado.' }
 }
