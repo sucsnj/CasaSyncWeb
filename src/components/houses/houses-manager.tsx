@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -35,6 +36,8 @@ export function HousesManager({
 
   const [depError, setDepError] = useState<string | null>(null)
   const [depPending, setDepPending] = useState(false)
+  const [showHouseForm, setShowHouseForm] = useState(false)
+  const [showDependentForm, setShowDependentForm] = useState(false)
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -47,6 +50,7 @@ export function HousesManager({
         return
       }
       setHouseName('')
+      setShowHouseForm(false)
       router.refresh()
     })
   }
@@ -87,6 +91,7 @@ export function HousesManager({
       }
 
       form.reset()
+      setShowDependentForm(false)
       router.refresh()
     } finally {
       setDepPending(false)
@@ -105,37 +110,51 @@ export function HousesManager({
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Criar nova casa</CardTitle>
-          <CardDescription>
-            A casa criada passa a ser a casa ativa e você vira o administrador dela.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreate} className="flex flex-col gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="house-name">Nome da casa</Label>
-              <Input
-                id="house-name"
-                name="houseName"
-                type="text"
-                placeholder="Ex.: Família Silva"
-                value={houseName}
-                onChange={(event) => setHouseName(event.target.value)}
-                required
-              />
-            </div>
-
-            {error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <Button type="submit" disabled={pending}>
-              {pending ? 'Criando...' : 'Criar casa'}
+          <div>
+            <CardTitle>Nova casa</CardTitle>
+            <CardDescription>
+              A casa criada passa a ser a casa ativa e você vira o administrador dela.
+            </CardDescription>
+          </div>
+          <CardAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHouseForm((value) => !value)}
+            >
+              {showHouseForm ? 'Fechar' : 'Nova casa'}
             </Button>
-          </form>
-        </CardContent>
+          </CardAction>
+        </CardHeader>
+        {showHouseForm ? (
+          <CardContent>
+            <form onSubmit={handleCreate} className="flex flex-col gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="house-name">Nome da casa</Label>
+                <Input
+                  id="house-name"
+                  name="houseName"
+                  type="text"
+                  placeholder="Ex.: Família Silva"
+                  value={houseName}
+                  onChange={(event) => setHouseName(event.target.value)}
+                  required
+                />
+              </div>
+
+              {error ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : null}
+
+              <Button type="submit" disabled={pending}>
+                {pending ? 'Criando...' : 'Criar casa'}
+              </Button>
+            </form>
+          </CardContent>
+        ) : null}
       </Card>
 
       <Card>
@@ -180,17 +199,30 @@ export function HousesManager({
 
       <Card>
         <CardHeader>
-          <CardTitle>Criar dependente</CardTitle>
-          <CardDescription>
-            Cria a conta do dependente e o vincula à casa ativa.
-          </CardDescription>
+          <div>
+            <CardTitle>Novo dependente</CardTitle>
+            <CardDescription>
+              Cria a conta do dependente e o vincula à casa ativa.
+            </CardDescription>
+          </div>
+          <CardAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!activeHouseId}
+              onClick={() => setShowDependentForm((value) => !value)}
+            >
+              {showDependentForm ? 'Fechar' : 'Novo dependente'}
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {!activeHouseId ? (
             <p className="text-sm text-muted-foreground">
               Selecione ou crie uma casa ativa para adicionar dependentes.
             </p>
-          ) : (
+          ) : showDependentForm ? (
             <form
               onSubmit={handleCreateDependent}
               className="flex flex-col gap-3"
@@ -242,6 +274,10 @@ export function HousesManager({
                 {depPending ? 'Criando...' : 'Criar dependente'}
               </Button>
             </form>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Toque em &quot;Novo dependente&quot; para adicionar alguém à casa ativa.
+            </p>
           )}
         </CardContent>
       </Card>

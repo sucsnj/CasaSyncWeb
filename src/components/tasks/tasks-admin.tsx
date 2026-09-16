@@ -13,6 +13,7 @@ import { ClipboardList, CircleCheckBig, ListTodo } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -47,6 +48,7 @@ export function TasksAdmin({
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [pending, startTransition] = useTransition()
+  const [showTaskForm, setShowTaskForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
@@ -94,6 +96,7 @@ export function TasksAdmin({
 
       setFormError(null)
       form.reset()
+      setShowTaskForm(false)
       // O INSERT também chega via Realtime; o refresh é a rede de segurança.
       router.refresh()
     })
@@ -143,13 +146,26 @@ export function TasksAdmin({
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Nova tarefa</CardTitle>
-          <CardDescription>
-            Atribua uma tarefa a um dependente da casa ativa.
-          </CardDescription>
+          <div>
+            <CardTitle>Nova tarefa</CardTitle>
+            <CardDescription>
+              Atribua uma tarefa a um dependente da casa ativa.
+            </CardDescription>
+          </div>
+          <CardAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTaskForm((value) => !value)}
+            >
+              {showTaskForm ? 'Fechar' : 'Nova tarefa'}
+            </Button>
+          </CardAction>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
+        {showTaskForm ? (
+          <CardContent>
+            <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="task-title">Título</Label>
               <Input id="task-title" name="title" required placeholder="Ex.: Arrumar o quarto" />
@@ -216,7 +232,8 @@ export function TasksAdmin({
               </Button>
             </div>
           </form>
-        </CardContent>
+          </CardContent>
+        ) : null}
       </Card>
 
       <section className="flex flex-col gap-3">

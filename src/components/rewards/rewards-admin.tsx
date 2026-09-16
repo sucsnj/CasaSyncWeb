@@ -12,6 +12,7 @@ import { Gift, ClipboardList, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -47,6 +48,7 @@ export function RewardsAdmin({
     initialRedemptions
   )
   const [pending, startTransition] = useTransition()
+  const [showRewardForm, setShowRewardForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   const rewardById = useMemo(
@@ -118,6 +120,7 @@ export function RewardsAdmin({
       }
 
       form.reset()
+      setShowRewardForm(false)
       router.refresh()
     })
   }
@@ -157,13 +160,26 @@ export function RewardsAdmin({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Nova recompensa</CardTitle>
-            <CardDescription>
-              Item resgatável pelos dependentes da casa.
-            </CardDescription>
+            <div>
+              <CardTitle>Nova recompensa</CardTitle>
+              <CardDescription>
+                Item resgatável pelos dependentes da casa.
+              </CardDescription>
+            </div>
+            <CardAction>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRewardForm((value) => !value)}
+              >
+                {showRewardForm ? 'Fechar' : 'Nova recompensa'}
+              </Button>
+            </CardAction>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreate} className="grid gap-3">
+          {showRewardForm ? (
+            <CardContent>
+              <form onSubmit={handleCreate} className="grid gap-3">
               <div className="grid gap-2">
                 <Label htmlFor="reward-title">Título</Label>
                 <Input
@@ -208,7 +224,8 @@ export function RewardsAdmin({
                 {pending ? 'Criando...' : 'Criar recompensa'}
               </Button>
             </form>
-          </CardContent>
+            </CardContent>
+          ) : null}
         </Card>
 
         <Card>
