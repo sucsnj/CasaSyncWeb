@@ -64,6 +64,18 @@ function nowDateTimeLocalValue(): string {
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Soma dias/horas a um valor `datetime-local` (base: agora se vazio). */
+function modifyDateTimeLocal(value: string, days = 0, hours = 0): string {
+  const date = value ? new Date(value) : new Date()
+  if (Number.isNaN(date.getTime())) return nowDateTimeLocalValue()
+  date.setDate(date.getDate() + days)
+  date.setHours(date.getHours() + hours)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 function upsertTask(list: Task[], task: Task): Task[] {
   const exists = list.some((item) => item.id === task.id)
   const next = exists
@@ -87,6 +99,7 @@ export function TasksAdmin({
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
+  const [dueDate, setDueDate] = useState(nowDateTimeLocalValue)
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
   // (UPDATE), o payload chega aqui instantaneamente e a lista do ADMIN é
@@ -134,6 +147,7 @@ export function TasksAdmin({
 
       setFormError(null)
       setTaskImageUrl(null)
+      setDueDate(nowDateTimeLocalValue())
       form.reset()
       setShowTaskForm(false)
       // O INSERT também chega via Realtime; o refresh é a rede de segurança.
@@ -224,7 +238,7 @@ export function TasksAdmin({
         </CardHeader>
         {showTaskForm ? (
           <CardContent>
-            <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
+            <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2 md:items-start">
             <div className="grid gap-2">
               <Label htmlFor="task-title">Título</Label>
               <Input id="task-title" name="title" required placeholder="Ex.: Arrumar o quarto" />
@@ -256,9 +270,36 @@ export function TasksAdmin({
                 id="task-due-date"
                 name="due_date"
                 type="datetime-local"
-                defaultValue={nowDateTimeLocalValue()}
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
                 suppressHydrationWarning
               />
+              <div className="flex gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 1))}
+                >
+                  +1 Dia
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 0, 2))}
+                >
+                  +2h
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setDueDate(nowDateTimeLocalValue())}
+                >
+                  Limpar
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-2">
