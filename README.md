@@ -8,7 +8,7 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 
 ## Funcionalidades
 - **Auth por username:** ADMIN cadastra-se com o PIN do sistema (`MASTER_PIN`); DEPENDENT é criado pelo ADMIN (nunca se cadastra sozinho). Sem e-mails reais — `${username}@admin.casasync` / `${username}@dependente.casasync`, criados já confirmados.
-- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes.
+- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes e **reset de senha** de qualquer membro (dependente ou co-ADMIN) pelo ADMIN, sem e-mail.
 - **Tarefas:** ciclo `PENDING → COMPLETED → APPROVED` (aprovação credita pontos), desaprovação, **"não entregue"** com penalidade (o saldo pode ficar negativo), **restauração** de tarefas aprovadas, SLA de prazo e **pedido de adiamento** (+1/+3 dias).
 - **Recompensas:** catálogo, resgate com validação de saldo, aprovação/rejeição de resgates e **sugestões** enviadas pelo dependente.
 - **Notificações:** sino no cabeçalho azul para "o outro lado" da ação (dependente ↔ ADMINs), marcar como lida/todas, apagar uma/todas; lidas são apagadas após 5 dias. Ver ADR-0009.

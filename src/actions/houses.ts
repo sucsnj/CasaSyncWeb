@@ -520,3 +520,79 @@ export async function updateDependentProfile(
 
   return { ok: true, message: 'Dependente atualizado.' }
 }
+
+/**
+ * ADMIN redefine a senha/PIN de um membro (dependente ou co-ADMIN) de uma casa
+ * que controla, via service role — sem e-mail de recuperação.
+ *
+ * Autorização SEMPRE derivada da sessão: o ator precisa ser ADMIN membro de ao
+ * menos uma casa, e o alvo precisa ser membro de uma dessas casas. Nunca se
+ * confia no `targetUserId` vindo do cliente sem essa checagem (evita redefinir
+ * a senha de usuários de outras casas). A nova senha nunca é logada.
+ */
+export async function updateMemberPassword(
+  targetUserId: string,
+  newPassword: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem redefinir senhas.' }
+  }
+
+  const passwordError = validatePassword(newPassword)
+  if (passwordError) {
+    return { ok: false, error: passwordError }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  // Casas que o ator controla (dono ou co-gerente via PIN).
+  const { data: actorHouses } = await admin
+    .from('house_members')
+    .select('house_id')
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
+
+  const houseIds = actorHouses?.map((member) => member.house_id) ?? []
+  if (houseIds.length === 0) {
+    return { ok: false, error: 'Você não controla nenhuma casa.' }
+  }
+
+  // O alvo precisa ser membro de uma dessas casas (dependente ou co-ADMIN).
+  const { data: targetMembership } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('profile_id', targetUserId)
+    .in('house_id', houseIds)
+    .limit(1)
+    .maybeSingle()
+
+  if (!targetMembership) {
+    return {
+      ok: false,
+      error: 'Membro não pertence a uma casa que você controla.',
+    }
+  }
+
+  try {
+    const { error } = await admin.auth.admin.updateUserById(targetUserId, {
+      password: newPassword,
+    })
+    if (error) {
+      return { ok: false, error: 'Falha ao redefinir a senha.' }
+    }
+  } catch {
+    return { ok: false, error: 'Falha ao redefinir a senha.' }
+  }
+
+  return {
+    ok: true,
+    message: 'Senha atualizada. O membro já pode entrar com a nova senha.',
+  }
+}

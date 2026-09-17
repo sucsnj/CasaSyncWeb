@@ -2,6 +2,25 @@
 
 > **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
 
+## Reset de senha de membros pelo ADMIN (concluída)
+
+### O que foi implementado
+- **Server Action `updateMemberPassword(targetUserId, newPassword)`** (`src/actions/houses.ts`, junto do domínio de membros/casas): o ADMIN redefine a senha de qualquer membro de uma casa que controla — dependentes E co-ADMINs — usando `createAdminClient().auth.admin.updateUserById(...)` (service role, **sem e-mail de recuperação**).
+- **Autorização derivada da sessão:** exige `user_role='ADMIN'`; busca as casas em que o ator é `house_members.role='ADMIN'` e confirma que o alvo é membro de pelo menos uma delas **antes** de agir (o `targetUserId` do cliente nunca é confiado). Action nunca lança (`try/catch` → `ActionResult`).
+- **Validação:** reutiliza `validatePassword` (**>= 6**), igual ao cadastro/login.
+- **UI (`houses-manager.tsx`):** botão **"Senha"** (ícone `Key`) em cada membro abre um `Modal` com input de senha **uncontrolled** (`name="newPassword"`, lido via `FormData` no submit — ADR-0003) e feedback **inline** (erro `role="alert"` / sucesso `role="status"`); a linha de membros passou a `flex-wrap` para não espremer em telas estreitas.
+- **Efeito:** a senha muda imediatamente; o próximo login já usa a nova. Sessões ativas do alvo **não** são revogadas (comportamento padrão do Supabase).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Implementado seguindo as convenções do repo (a spec original citava `src/actions/members.ts` e uma rota `/members`, que não existem): action em `houses.ts`, UI em `houses-manager.tsx`.
+- Feedback inline em vez de toast (o app não tem lib de toast).
+- Detalhamento do "porquê" no **ADR-0011** (`docs/adr/0011-reset-de-senha-pelo-admin.md`).
+
+---
+
 ## Responsivo dos cards de tarefas (concluída)
 
 ### O que foi implementado

@@ -10,13 +10,14 @@ import {
   selectHouse,
   updateDependentProfile,
   updateHouse,
+  updateMemberPassword,
 } from '@/actions/houses'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Copy, Pencil } from 'lucide-react'
+import { Copy, Key, Pencil } from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -68,6 +69,11 @@ export function HousesManager({
   const [dependentAvatarUrl, setDependentAvatarUrl] = useState<string | null>(
     null
   )
+
+  const [passwordMember, setPasswordMember] = useState<Member | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
+  const [passwordPending, setPasswordPending] = useState(false)
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -194,6 +200,35 @@ export function HousesManager({
       setDependentAvatarUrl(null)
       router.refresh()
     })
+  }
+
+  async function handleSavePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!passwordMember) return
+
+    const form = event.currentTarget
+    setPasswordError(null)
+    setPasswordSuccess(null)
+    setPasswordPending(true)
+
+    try {
+      // Senha lida do FormData no submit e descartada — nunca vai para o
+      // estado do React (ver ADR-0003).
+      const result = await updateMemberPassword(
+        passwordMember.profileId,
+        String(new FormData(form).get('newPassword') ?? '')
+      )
+
+      if (!result.ok) {
+        setPasswordError(result.error)
+        return
+      }
+
+      form.reset()
+      setPasswordSuccess(result.message ?? 'Senha atualizada.')
+    } finally {
+      setPasswordPending(false)
+    }
   }
 
   return (
@@ -522,7 +557,7 @@ export function HousesManager({
               {members.map((member) => (
                 <li
                   key={member.profileId}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-input px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border border-input px-3 py-2 text-sm"
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     {member.avatarUrl ? (
@@ -538,13 +573,27 @@ export function HousesManager({
                     )}
                     <span className="truncate font-medium">{member.fullName}</span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
+                  <span className="flex flex-wrap items-center justify-end gap-2">
                     <span
                       data-role={member.role.toLowerCase()}
                       className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 data-[role=admin]:bg-sky-100 data-[role=admin]:text-sky-700"
                     >
                       {member.role === 'ADMIN' ? 'Administrador' : 'Dependente'}
                     </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-9 px-2 text-xs text-slate-500"
+                      onClick={() => {
+                        setPasswordError(null)
+                        setPasswordSuccess(null)
+                        setPasswordMember(member)
+                      }}
+                    >
+                      <Key className="size-3.5" />
+                      Senha
+                    </Button>
                     {member.role === 'DEPENDENT' ? (
                       <Button
                         type="button"
@@ -659,6 +708,62 @@ export function HousesManager({
             ) : null}
             <Button type="submit" disabled={pending}>
               {pending ? 'Salvando...' : 'Salvar alterações'}
+            </Button>
+          </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!passwordMember}
+        onClose={() => {
+          setPasswordMember(null)
+          setPasswordError(null)
+          setPasswordSuccess(null)
+        }}
+        title={`Redefinir senha — ${passwordMember?.fullName ?? ''}`}
+      >
+        {passwordMember ? (
+          <form
+            key={passwordMember.profileId}
+            onSubmit={handleSavePassword}
+            className="flex flex-col gap-3"
+          >
+            <p className="text-sm text-muted-foreground">
+              Defina uma nova senha para{' '}
+              <strong>{passwordMember.fullName}</strong>
+              {passwordMember.username
+                ? ` (@${passwordMember.username})`
+                : ''}
+              . Ela passa a valer no próximo login.
+            </p>
+
+            <div className="grid gap-2">
+              <Label htmlFor="member-new-password">Nova senha / PIN</Label>
+              <Input
+                id="member-new-password"
+                name="newPassword"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Mínimo de 6 caracteres"
+                suppressHydrationWarning
+                required
+                minLength={6}
+              />
+            </div>
+
+            {passwordError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {passwordError}
+              </p>
+            ) : null}
+            {passwordSuccess ? (
+              <p className="text-sm font-medium text-emerald-600" role="status">
+                {passwordSuccess}
+              </p>
+            ) : null}
+
+            <Button type="submit" disabled={passwordPending}>
+              {passwordPending ? 'Salvando...' : 'Salvar Nova Senha'}
             </Button>
           </form>
         ) : null}
