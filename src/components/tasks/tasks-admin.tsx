@@ -55,6 +55,15 @@ function toDateTimeLocalValue(value: string | null): string {
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Agora em formato aceito por <input type="datetime-local">. */
+function nowDateTimeLocalValue(): string {
+  const date = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 function upsertTask(list: Task[], task: Task): Task[] {
   const exists = list.some((item) => item.id === task.id)
   const next = exists
@@ -243,7 +252,13 @@ export function TasksAdmin({
 
             <div className="grid gap-2">
               <Label htmlFor="task-due-date">Data/hora limite</Label>
-              <Input id="task-due-date" name="due_date" type="datetime-local" />
+              <Input
+                id="task-due-date"
+                name="due_date"
+                type="datetime-local"
+                defaultValue={nowDateTimeLocalValue()}
+                suppressHydrationWarning
+              />
             </div>
 
             <div className="grid gap-2">
