@@ -327,6 +327,50 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 }
 
 /**
+ * ADMIN desaprova a conclusão do dependente: devolve a tarefa de COMPLETED
+ * para PENDING e limpa `completed_by`/`completed_at` (o dependente pode
+ * refazer e marcar novamente). Transição guardada para não reabrir uma tarefa
+ * que já tenha sido aprovada/creditada em outra aba.
+ */
+export async function rejectCompletedTask(taskId: string): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+  if (task.status !== 'COMPLETED') {
+    return { ok: false, error: 'Somente tarefas concluídas podem ser desaprovadas.' }
+  }
+
+  const { data: reopened, error } = await admin
+    .from('tasks')
+    .update({ status: 'PENDING', completed_by: null, completed_at: null })
+    .eq('id', taskId)
+    .eq('status', 'COMPLETED') // guard: não reabre tarefa já aprovada
+    .select('id')
+
+  if (error || !reopened || reopened.length === 0) {
+    return { ok: false, error: 'A tarefa já foi aprovada por outra pessoa.' }
+  }
+
+  revalidatePath('/tasks')
+  revalidatePath('/dashboard/dependent')
+
+  return { ok: true, message: 'Tarefa devolvida ao dependente.' }
+}
+
+/**
  * ADMIN conclui e aprova a tarefa em um único passo, creditando os pontos
  * mesmo que o prazo ainda não tenha vencido. Transição guardada
  * (PENDING/IN_PROGRESS -> APPROVED) impede crédito duplicado em cliques

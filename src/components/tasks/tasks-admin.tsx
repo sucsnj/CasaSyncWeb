@@ -6,6 +6,7 @@ import {
   adminCompleteTask,
   approveTask,
   createTask,
+  rejectCompletedTask,
   resolveTaskExtension,
   updateTask,
 } from '@/actions/tasks'
@@ -18,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  ChevronDown,
   CircleCheckBig,
   ClipboardList,
   Clock3,
@@ -101,6 +103,8 @@ export function TasksAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState(nowDateTimeLocalValue)
+  // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
   // (UPDATE), o payload chega aqui instantaneamente e a lista do ADMIN é
@@ -167,6 +171,28 @@ export function TasksAdmin({
       // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'APPROVED' })
+      )
+      router.refresh()
+    })
+  }
+
+  function handleRejectComplete(task: Task) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await rejectCompletedTask(task.id)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+
+      // Otimista: devolve o card à lista de pendentes na hora.
+      setTasks((prev) =>
+        upsertTask(prev, {
+          ...task,
+          status: 'PENDING',
+          completed_by: null,
+          completed_at: null,
+        })
       )
       router.refresh()
     })
@@ -256,6 +282,18 @@ export function TasksAdmin({
     // Otimista: o select controlado reage na hora (o Realtime confirma depois).
     setTasks((prev) => upsertTask(prev, { ...task, assigned_to: next }))
     void updateTask(task.id, { assigned_to: next })
+  }
+
+  function toggleExpanded(taskId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
   }
 
   return (
@@ -416,18 +454,17 @@ export function TasksAdmin({
               sla === 'normal'
                 ? cn('border-l-4', taskAccentByStatus[task.status])
                 : taskSlaCardClass[sla]
+            const isExpanded = expandedIds.has(task.id)
 
             return (
             <Card key={task.id} className={cardClass}>
               <CardContent className="flex flex-col gap-3 py-3">
-                {task.image_url ? (
-                  <img
-                    src={task.image_url}
-                    alt=""
-                    className="h-32 w-full rounded-xl border border-slate-200 object-cover"
-                  />
-                ) : null}
-                <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(task.id)}
+                  aria-expanded={isExpanded}
+                  className="flex w-full items-center gap-2 text-left"
+                >
                   <span className="flex shrink-0 items-center gap-1.5">
                     {slaInfo ? (
                       <span
@@ -448,6 +485,9 @@ export function TasksAdmin({
                       {taskChipByStatus[task.status].label}
                     </span>
                   </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+                    {task.title}
+                  </span>
                   <span
                     className={cn(
                       'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
@@ -456,7 +496,23 @@ export function TasksAdmin({
                   >
                     {task.points} pts
                   </span>
-                </div>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                      isExpanded && 'rotate-180'
+                    )}
+                  />
+                </button>
+
+                {isExpanded ? (
+                  <>
+                {task.image_url ? (
+                  <img
+                    src={task.image_url}
+                    alt=""
+                    className="h-32 w-full rounded-xl border border-slate-200 object-cover"
+                  />
+                ) : null}
 
                 <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                   <DebouncedField
@@ -560,6 +616,8 @@ export function TasksAdmin({
                   >
                     {pending ? 'Concluindo...' : 'Concluir e creditar pontos'}
                   </Button>
+                  </>
+                ) : null}
               </CardContent>
             </Card>
             )
@@ -580,17 +638,65 @@ export function TasksAdmin({
             message="Quando um dependente concluir uma tarefa, ela aparece aqui. 🎉"
           />
         ) : (
-          completedTasks.map((task) => (
+          completedTasks.map((task) => {
+            const isExpanded = expandedIds.has(task.id)
+
+            return (
             <Card
               key={task.id}
               className="border-l-4 border-l-amber-400"
             >
-              <CardContent className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex items-start gap-2">
-                    <p className="font-semibold text-slate-800">{task.title}</p>
+              <CardContent className="flex flex-col gap-2 py-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(task.id)}
+                    aria-expanded={isExpanded}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                      {taskChipByStatus.COMPLETED.label}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                      {task.title}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleRejectComplete(task)}
+                      disabled={pending}
+                      className="min-h-9 shrink-0 text-slate-600"
+                    >
+                      Desaprovar
+                    </Button>
+                    <Button
+                      onClick={() => handleApprove(task)}
+                      disabled={pending}
+                      className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
+                    >
+                      {pending ? (
+                        'Aprovando...'
+                      ) : (
+                        <>
+                          <span className="hidden sm:inline">
+                            Aprovar e creditar pontos
+                          </span>
+                          <span className="sm:hidden">Aprovar</span>
+                        </>
+                      )}
+                    </Button>
                   </div>
-                  <p className="mt-1 text-sm text-slate-500">
+                </div>
+
+                {isExpanded ? (
+                  <p className="text-sm text-slate-500">
                     {assigneeName(task.assigned_to)} ·{' '}
                     <span
                       className={cn(
@@ -604,17 +710,11 @@ export function TasksAdmin({
                       ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
                       : ''}
                   </p>
-                </div>
-                <Button
-                  onClick={() => handleApprove(task)}
-                  disabled={pending}
-                  className="w-full shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
-                >
-                  {pending ? 'Aprovando...' : 'Aprovar e creditar pontos'}
-                </Button>
+                ) : null}
               </CardContent>
             </Card>
-          ))
+            )
+          })
         )}
       </section>
 
@@ -624,33 +724,52 @@ export function TasksAdmin({
             <CircleCheckBig className="size-4 text-emerald-500" />
             Aprovadas
           </h2>
-          {approvedTasks.map((task) => (
+          {approvedTasks.map((task) => {
+            const isExpanded = expandedIds.has(task.id)
+
+            return (
             <Card
               key={task.id}
               className="border-l-4 border-l-emerald-500"
             >
               <CardContent className="flex flex-col gap-1 py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold text-slate-800">{task.title}</p>
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(task.id)}
+                  aria-expanded={isExpanded}
+                  className="flex w-full items-center gap-2 text-left"
+                >
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                     {taskChipByStatus.APPROVED.label}
                   </span>
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {assigneeName(task.assigned_to)} ·{' '}
-                  <span
-                    className={cn(
-                      'rounded-full px-2 py-0.5 font-semibold',
-                      POINTS_PILL_CLASS
-                    )}
-                  >
-                    {task.points} pts
+                  <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                    {task.title}
                   </span>
-{' · '}pontos creditados
-                </p>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                      isExpanded && 'rotate-180'
+                    )}
+                  />
+                </button>
+                {isExpanded ? (
+                  <p className="mt-1 text-sm text-slate-500">
+                    {assigneeName(task.assigned_to)} ·{' '}
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 font-semibold',
+                        POINTS_PILL_CLASS
+                      )}
+                    >
+                      {task.points} pts
+                    </span>
+                    {' · '}pontos creditados
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </section>
       ) : null}
     </div>
