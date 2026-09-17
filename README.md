@@ -1,34 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CasaSync Web
 
-## Getting Started
+Sistema de organização familiar: casas, tarefas com pontos e recompensas (gamificação), com login por username. Multi-tenant (Admin → Casas → Dependentes), isolamento por `house_id` via Supabase RLS.
 
-First, run the development server:
+## Stack
+- Next.js 16 (App Router, `src/`) + React 19 + Tailwind 4 + shadcn/ui
+- Supabase (Auth, Postgres, Realtime, Storage)
 
+## Comandos
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev        # dev server
+npm run build      # build de produção (rode antes do dev p/ evitar conflito de .next)
+npm run lint       # eslint
+npm run typecheck  # npx tsc --noEmit
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sem testes configurados. Verificação antes de entregar: **lint → typecheck → build**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
+1. `npm install`
+2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN`.
+3. Aplicar no dashboard do Supabase: schema (ver `docs/schema.md`), RLS e publication Realtime. Migrações SQL não ficam no repo.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Guias
+- `AGENTS.md` — convenções e regras de negócio (obrigatório ler)
+- `PROJECT_STATUS.md` — estado do projeto / changelog
+- `docs/schema.md` — snapshot do schema Supabase
+- `docs/adr/` — decisões arquiteturais
