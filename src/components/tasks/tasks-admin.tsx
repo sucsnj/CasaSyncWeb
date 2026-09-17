@@ -189,10 +189,10 @@ export function TasksAdmin({
     })
   }
 
-  function handleResolveExtension(task: Task, approve: boolean) {
+  function handleResolveExtension(task: Task, approve: boolean, days = 3) {
     setFormError(null)
     startTransition(async () => {
-      const result = await resolveTaskExtension(task.id, approve)
+      const result = await resolveTaskExtension(task.id, approve, days)
       if (!result.ok) {
         setFormError(result.error)
         return
@@ -223,8 +223,33 @@ export function TasksAdmin({
     return updateTask(taskId, { points })
   }
 
-  const saveDueDate = (taskId: string) => async (value: string) =>
-    updateTask(taskId, { due_date: value ? value : null })
+  const saveDueDate = (taskId: string) => async (value: string) => {
+    const nextDue = value ? new Date(value).toISOString() : null
+
+    const result = await updateTask(taskId, {
+      due_date: value ? value : null,
+    })
+    if (!result.ok) return result
+
+    // Atualização determinística do card local: o auto-aceite do adiamento por
+    // edição de prazo limpa as flags no banco; refletir aqui sem depender do
+    // eco do Realtime. Só limpa se houver pedido pendente E o instante mudou.
+    setTasks((prev) =>
+      prev.map((item) => {
+        if (item.id !== taskId) return item
+        const changed =
+          (item.due_date ? new Date(item.due_date).getTime() : null) !==
+          (nextDue ? new Date(nextDue).getTime() : null)
+        const cleared =
+          item.extension_requested && changed
+            ? { extension_requested: false, extension_reason: null }
+            : {}
+        return { ...item, due_date: nextDue, ...cleared }
+      })
+    )
+    router.refresh()
+    return result
+  }
 
   function changeAssignee(task: Task, assigneeId: string) {
     const next = assigneeId || null
@@ -479,7 +504,16 @@ export function TasksAdmin({
                         size="sm"
                         disabled={pending}
                         className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                        onClick={() => handleResolveExtension(task, true)}
+                        onClick={() => handleResolveExtension(task, true, 1)}
+                      >
+                        Aprovar (+1 dia)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={pending}
+                        className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                        onClick={() => handleResolveExtension(task, true, 3)}
                       >
                         Aprovar (+3 dias)
                       </Button>

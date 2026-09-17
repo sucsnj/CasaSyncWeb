@@ -99,6 +99,15 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
   return { ok: true, message: `Tarefa "${title}" criada.` }
 }
 
+/** Compara dois prazos (timestamptz do banco vs valor `datetime-local`). */
+function dueDateChanged(prev: string | null, next: string | null): boolean {
+  if (prev === next) return false
+  const prevTime = prev ? new Date(prev).getTime() : null
+  const nextTime = next ? new Date(next).getTime() : null
+  if (prevTime === null || nextTime === null) return prevTime !== nextTime
+  return prevTime !== nextTime
+}
+
 /**
  * Salvamento automático (debounce) de edição do ADMIN.
  * Aceita apenas campos da whitelist; valida novamente a propriedade da casa.
@@ -116,7 +125,7 @@ export async function updateTask(
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status')
+    .select('house_id, status, due_date, extension_requested')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -129,7 +138,10 @@ export async function updateTask(
     return { ok: false, error: 'Tarefa já concluída ou aprovada.' }
   }
 
-  const updates: TaskPatch = {}
+  const updates: TaskPatch & {
+    extension_requested?: boolean
+    extension_reason?: string | null
+  } = {}
   if ('title' in patch) {
     const title = patch.title?.trim()
     if (!title) return { ok: false, error: 'O título não pode ser vazio.' }
@@ -146,7 +158,15 @@ export async function updateTask(
     updates.points = patch.points
   }
   if ('due_date' in patch) {
-    updates.due_date = patch.due_date ? patch.due_date : null
+    const nextDue = patch.due_date ? patch.due_date : null
+    updates.due_date = nextDue
+
+    // Pedido de adiamento pendente + prazo alterado para um valor diferente
+    // do atual => o pedido é considerado aceito automaticamente com a nova data.
+    if (task.extension_requested && dueDateChanged(task.due_date, nextDue)) {
+      updates.extension_requested = false
+      updates.extension_reason = null
+    }
   }
   if ('assigned_to' in patch) {
     // '' vindo do select "Sem atribuição" é normalizado para null — a coluna
@@ -452,12 +472,13 @@ export async function requestTaskExtension(
 }
 
 /**
- * ADMIN aprova (usa o prazo atual, ou hoje, e soma 3 dias) ou rejeita o
- * pedido de adiamento — em ambos os casos a flag é limpa.
+ * ADMIN aprova (usa o prazo atual, ou hoje, e soma `days` dias ao prazo) ou
+ * rejeita o pedido de adiamento — em ambos os casos a flag é limpa.
  */
 export async function resolveTaskExtension(
   taskId: string,
-  approve: boolean
+  approve: boolean,
+  days = 3
 ): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
@@ -478,6 +499,9 @@ export async function resolveTaskExtension(
   if (!task.extension_requested) {
     return { ok: false, error: 'Esta tarefa não tem um pedido de adiamento pendente.' }
   }
+  if (approve && days < 1) {
+    return { ok: false, error: 'Dias de adiamento inválidos.' }
+  }
 
   const updates: {
     extension_requested: boolean
@@ -492,7 +516,7 @@ export async function resolveTaskExtension(
     const currentDue = task.due_date ? new Date(task.due_date) : new Date()
     const base = currentDue.getTime() > Date.now() ? currentDue : new Date()
     updates.due_date = new Date(
-      base.getTime() + 3 * 24 * 60 * 60 * 1000
+      base.getTime() + days * 24 * 60 * 60 * 1000
     ).toISOString()
   }
 
@@ -503,6 +527,8 @@ export async function resolveTaskExtension(
   revalidatePath('/tasks')
   return {
     ok: true,
-    message: approve ? 'Adiamento aprovado (+3 dias).' : 'Pedido de adiamento rejeitado.',
+    message: approve
+      ? `Adiamento aprovado (+${days} dias).`
+      : 'Pedido de adiamento rejeitado.',
   }
 }

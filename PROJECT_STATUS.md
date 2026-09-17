@@ -1,5 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
+## UX de tarefas (data/hora, conclusão ADMIN e adiamento flexível)
+
+### O que foi implementado
+- **Data/hora pré-selecionada ao criar tarefa:** o campo `datetime-local` do form inicia com o agora (`nowDateTimeLocalValue` em `src/components/tasks/tasks-admin.tsx`); input segue não-controlado na leitura (FormData), com `suppressHydrationWarning`.
+- **Botões de ajuste rápido de prazo:** "Amanhã" (+1 dia), "+2h", "Limpar" (reseta para agora) via `modifyDateTimeLocal` — o campo virou controlado (`dueDate`). Form ganhou `md:items-start` para evitar que o grid estique as células (o input de "Pontos" não desalinha mais).
+- **Bug corrigido — prazo vazio no card ADMIN:** `datetime-local` rejeitava o ISO completo do banco; `toDateTimeLocalValue` converte para `YYYY-MM-DDTHH:mm`.
+- **ADMIN conclui e aprova a tarefa de uma vez:** nova action `adminCompleteTask` (`src/actions/tasks.ts`) — `PENDING/IN_PROGRESS → APPROVED` com guard `.in('status', [...])`, registra `completed_by/completed_at` do ADMIN e **credita pontos**; falha na creditação reverte ao estado anterior. Botão verde "Concluir e creditar pontos" no card pendente do ADMIN, mesmo com prazo ainda válido.
+- **Adiamento flexível:** `resolveTaskExtension(taskId, approve, days=3)` agora aceita dias configuráveis; banner do ADMIN ganhou os botões **Aprovar (+1 dia)** e **Aprovar (+3 dias)** além do **Rejeitar**.
+- **Auto-aceite de adiamento via edição do prazo:** no `updateTask`, se `extension_requested` estiver pendente e o ADMIN alterar `due_date` para um valor diferente do atual (comparação por instante via `dueDateChanged`), as flags são limpas automaticamente e a nova data prevalece — sem passar pelos botões do banner.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- `dueDateChanged` compara instantes (`getTime`); em fuso diferente do usuário, um blur sem mudança real ainda pode ser considerado "alteração" — aceitável para uso familiar (mesmo fuso).
+
+---
+
 ## Edição completa ADMIN, imagens, SLA, sugestões e extensões (concluída)
 
 ### O que foi implementado
