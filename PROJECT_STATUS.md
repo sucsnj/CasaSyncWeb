@@ -1,6 +1,6 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado. **Exceção:** a tabela `notifications` (feature mais recente) ainda precisa ser criada — SQL na seção de notificações.
+> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
 
 ## Notificações entre ADMIN e dependente (sino no cabeçalho) — concluída
 
@@ -15,7 +15,7 @@
 - **Realtime:** a tabela entra na publication `supabase_realtime`; o browser assina `recipient_id=eq.<userId>` e o RLS de SELECT (`recipient_id = auth.uid()`) garante que só as próprias notificações cheguem.
 - **Dados iniciais:** carregados no servidor por `getMyNotifications(user.id)` nos layouts admin/dependent e nas páginas `/tasks` e `/rewards`, passados ao `DashboardNav` (`userId` + `notifications`).
 
-### SQL a aplicar no Supabase (nova tabela — necessária em runtime)
+### SQL aplicado no Supabase (registro)
 ```sql
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
@@ -48,6 +48,10 @@ alter publication supabase_realtime add table public.notifications;
 **Causa raiz (confirmada empiricamente):** quando a sessão é **restaurada do storage/cookies** (caso do browser, via `@supabase/ssr`), o `auth.getSession()` é assíncrono e o socket Realtime conectava **como `anon`** antes do token estar disponível. Como o RLS da tabela usa `auth.uid()`, o evento era descartado em silêncio — sem erro, sem `CHANNEL_ERROR`. Diagnóstico: um probe com `signInWithPassword` (token já em memória) recebia os eventos; o mesmo probe com a sessão vinda do storage **não** recebia. Um segundo probe provou que `await getSession()` + `await realtime.setAuth(token)` **antes** de assinar resolve (`events:1`).
 
 **Fix (`src/hooks/use-postgres-changes.ts`):** o efeito virou assíncrono — antes de criar/assinar o canal, faz `getSession()` e `realtime.setAuth(session.access_token)`. Como todos os listeners usam esse hook, a correção vale para **tarefas, recompensas, resgates, sugestões e notificações** (o Realtime do app estava sujeito ao mesmo problema). Cleanup continua cancelando o subscribe pendente (`cancelled`) e removendo o canal quando já criado.
+
+### Ajustes de UI do painel (modal)
+- **`Modal` (`src/components/ui/modal.tsx`)** passou a renderizar via **portal para o `body`** (`z-[100]`): antes ficava dentro do header azul (stacking context `z-50` + `text-white`), então herdava a cor branca (botões "invisíveis") e deixava a bottom nav clicável por trás. Agora também **trava o scroll do documento** (`body.overflow = hidden`), **prende o foco (Tab/Shift+Tab) dentro da janela** (o foco não vaza mais para header/bottom nav; restaura o foco anterior ao fechar; foca o painel ao abrir) e fecha no **Esc**. Vale para os 4 usos (sino, casas, recompensas, tarefas).
+- **Sino (`notifications-bell.tsx`):** botões "Marcar todas" (azul) e "Apagar todas" (vermelho) com cores explícitas (não dependem mais de `currentColor`); botão individual de **marcar como lida** (ícone `Check`) adicionado ao lado do de apagar; itens com hover/borda e título com `truncate`.
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo) · probes de Realtime: sessão do storage `BROKEN` (0 eventos) × com `setAuth` `WORKS` (1 evento).

@@ -26,7 +26,7 @@ Decisões confirmadas com o usuário antes de implementar:
 - Sem `pg_cron`: a limpeza só roda quando o usuário abre o app — notificações lidas antigas podem ficar no banco se ele nunca voltar (custo irrelevante para uso familiar).
 - A notificação guarda `title`/`body` já formatados (snapshot): se um nome/título mudar depois, o texto antigo permanece — desejável para histórico.
 - O deep link é simples (`/tasks`/`/rewards`), sem âncora no item específico.
-- Migration SQL (aplicar manualmente no dashboard do Supabase — ver `PROJECT_STATUS.md`):
+- Migration SQL (já aplicada no Supabase — registro):
   ```sql
   create table if not exists public.notifications (
     id uuid primary key default gen_random_uuid(),

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Bell,
+  Check,
   CheckCheck,
   CircleCheck,
   CircleCheckBig,
@@ -166,19 +167,19 @@ export function NotificationsBell({
 
       <Modal open={open} onClose={() => setOpen(false)} title="Notificações">
         {items.length > 0 ? (
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-500">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-slate-500">
               {unread > 0
                 ? `${unread} não lida(s)`
                 : 'Tudo lido por aqui'}
             </p>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               {unread > 0 ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="min-h-9 gap-1 px-2 text-xs"
+                  className="min-h-9 gap-1.5 rounded-lg border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 hover:text-blue-800"
                   onClick={markAllRead}
                 >
                   <CheckCheck className="size-4" />
@@ -187,9 +188,9 @@ export function NotificationsBell({
               ) : null}
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="min-h-9 gap-1 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                className="min-h-9 gap-1.5 rounded-lg border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-600 hover:bg-red-100 hover:text-red-700"
                 onClick={removeAll}
               >
                 <Trash2 className="size-4" />
@@ -217,8 +218,10 @@ export function NotificationsBell({
                 <li
                   key={item.id}
                   className={cn(
-                    'flex items-start gap-3 rounded-xl border border-transparent p-3 transition-colors',
-                    item.read_at ? 'bg-white' : 'border-blue-100 bg-blue-50/70'
+                    'flex items-start gap-3 rounded-xl border p-3 transition-colors',
+                    item.read_at
+                      ? 'border-slate-100 bg-white hover:bg-slate-50'
+                      : 'border-blue-200 bg-blue-50/70 hover:bg-blue-50'
                   )}
                 >
                   <span
@@ -232,10 +235,10 @@ export function NotificationsBell({
                   <button
                     type="button"
                     onClick={() => openItem(item)}
-                    className="flex flex-1 flex-col gap-0.5 text-left"
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
                   >
                     <span className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-800">
+                      <span className="truncate text-sm font-semibold text-slate-800">
                         {item.title}
                       </span>
                       {!item.read_at ? (
@@ -247,14 +250,28 @@ export function NotificationsBell({
                       {timeAgo(item.created_at)}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => removeItem(item.id)}
-                    aria-label="Apagar notificação"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!item.read_at ? (
+                      <button
+                        type="button"
+                        onClick={() => markRead(item.id)}
+                        aria-label="Marcar como lida"
+                        title="Marcar como lida"
+                        className="flex size-8 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700 active:scale-95"
+                      >
+                        <Check className="size-4" />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      aria-label="Apagar notificação"
+                      title="Apagar notificação"
+                      className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
                 </li>
               )
             })}
