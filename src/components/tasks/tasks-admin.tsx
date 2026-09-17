@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  adminCompleteTask,
   approveTask,
   createTask,
   resolveTaskExtension,
@@ -158,6 +159,23 @@ export function TasksAdmin({
   function handleApprove(task: Task) {
     startTransition(async () => {
       const result = await approveTask(task.id)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+
+      // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
+      setTasks((prev) =>
+        upsertTask(prev, { ...task, status: 'APPROVED' })
+      )
+      router.refresh()
+    })
+  }
+
+  function handleAdminComplete(task: Task) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await adminCompleteTask(task.id)
       if (!result.ok) {
         setFormError(result.error)
         return
@@ -479,26 +497,35 @@ export function TasksAdmin({
                   </div>
                 ) : null}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1">
-                    <span className="text-xs text-slate-500">Pontos</span>
-                    <DebouncedField
-                      value={String(task.points)}
-                      onSave={savePoints(task.id)}
-                      type="number"
-                    />
+<div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1">
+                      <span className="text-xs text-slate-500">Pontos</span>
+                      <DebouncedField
+                        value={String(task.points)}
+                        onSave={savePoints(task.id)}
+                        type="number"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <span className="text-xs text-slate-500">
+                        Data limite
+                      </span>
+                      <DebouncedField
+                        value={toDateTimeLocalValue(task.due_date)}
+                        onSave={saveDueDate(task.id)}
+                        type="datetime-local"
+                      />
+                    </div>
                   </div>
-                  <div className="grid gap-1">
-                    <span className="text-xs text-slate-500">
-                      Data limite
-                    </span>
-                    <DebouncedField
-                      value={toDateTimeLocalValue(task.due_date)}
-                      onSave={saveDueDate(task.id)}
-                      type="datetime-local"
-                    />
-                  </div>
-                </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => handleAdminComplete(task)}
+                    disabled={pending}
+                    className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
+                  >
+                    {pending ? 'Concluindo...' : 'Concluir e creditar pontos'}
+                  </Button>
               </CardContent>
             </Card>
             )

@@ -305,6 +305,97 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 }
 
 /**
+ * ADMIN conclui e aprova a tarefa em um único passo, creditando os pontos
+ * mesmo que o prazo ainda não tenha vencido. Transição guardada
+ * (PENDING/IN_PROGRESS -> APPROVED) impede crédito duplicado em cliques
+ * concorrentes; falha na creditação reverte a tarefa ao estado anterior.
+ */
+export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status, points, assigned_to')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+    return { ok: false, error: 'Somente tarefas abertas podem ser concluídas.' }
+  }
+  if (!task.assigned_to) {
+    return { ok: false, error: 'Tarefa sem dependente atribuído.' }
+  }
+
+  const { data: awarded, error: taskError } = await admin
+    .from('tasks')
+    .update({
+      status: 'APPROVED',
+      completed_by: auth.adminId,
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS']) // guard: impede crédito duplicado
+    .select('id')
+
+  if (taskError || !awarded || awarded.length === 0) {
+    return { ok: false, error: 'A tarefa já foi finalizada.' }
+  }
+
+  const { data: dependent } = await admin
+    .from('profiles')
+    .select('points')
+    .eq('id', task.assigned_to)
+    .maybeSingle()
+
+  if (!dependent) {
+    await admin
+      .from('tasks')
+      .update({
+        status: task.status,
+        completed_by: null,
+        completed_at: null,
+      })
+      .eq('id', taskId)
+    return { ok: false, error: 'Dependente não encontrado. Crédito revertido.' }
+  }
+
+  const { error: pointsError } = await admin
+    .from('profiles')
+    .update({ points: dependent.points + task.points })
+    .eq('id', task.assigned_to)
+
+  if (pointsError) {
+    // Rollback: devolve a tarefa ao estado anterior.
+    await admin
+      .from('tasks')
+      .update({
+        status: task.status,
+        completed_by: null,
+        completed_at: null,
+      })
+      .eq('id', taskId)
+    return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
+  }
+
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+  revalidatePath('/dashboard/dependent')
+
+  return {
+    ok: true,
+    message: `Tarefa concluída: ${task.points} ponto(s) creditado(s).`,
+  }
+}
+
+/**
  * DEPENDENTE pede mais tempo para uma tarefa aberta.
  * Marca `extension_requested = true` + `extension_reason` para o ADMIN resolver.
  */
