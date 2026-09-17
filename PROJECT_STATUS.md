@@ -41,8 +41,16 @@ create policy "notifications_select_own" on public.notifications
 alter publication supabase_realtime add table public.notifications;
 ```
 
+### Bug corrigido — Realtime não chegava sem F5 (`usePostgresChanges`)
+
+**Sintoma:** o sino/notificações só apareciam após recarregar a página. O canal retornava `SUBSCRIBED`, mas nenhum evento chegava.
+
+**Causa raiz (confirmada empiricamente):** quando a sessão é **restaurada do storage/cookies** (caso do browser, via `@supabase/ssr`), o `auth.getSession()` é assíncrono e o socket Realtime conectava **como `anon`** antes do token estar disponível. Como o RLS da tabela usa `auth.uid()`, o evento era descartado em silêncio — sem erro, sem `CHANNEL_ERROR`. Diagnóstico: um probe com `signInWithPassword` (token já em memória) recebia os eventos; o mesmo probe com a sessão vinda do storage **não** recebia. Um segundo probe provou que `await getSession()` + `await realtime.setAuth(token)` **antes** de assinar resolve (`events:1`).
+
+**Fix (`src/hooks/use-postgres-changes.ts`):** o efeito virou assíncrono — antes de criar/assinar o canal, faz `getSession()` e `realtime.setAuth(session.access_token)`. Como todos os listeners usam esse hook, a correção vale para **tarefas, recompensas, resgates, sugestões e notificações** (o Realtime do app estava sujeito ao mesmo problema). Cleanup continua cancelando o subscribe pendente (`cancelled`) e removendo o canal quando já criado.
+
 ### Verificação
-`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo) · probes de Realtime: sessão do storage `BROKEN` (0 eventos) × com `setAuth` `WORKS` (1 evento).
 
 ### Decisões
 - Notificações são **efeito secundário**: registro best-effort, sem rollback da ação principal em caso de falha.

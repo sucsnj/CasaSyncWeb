@@ -52,30 +52,45 @@ export function usePostgresChanges<T extends { id: string }>({
 
   useEffect(() => {
     const supabase = createClient()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
 
-    const channel = supabase.channel(`pg-changes:${table}:${filter ?? 'all'}`)
+    async function subscribe() {
+      // ENSINO (teach): antes de assinar, propaga o JWT da sessão para o
+      // Realtime. Quando a sessão é restaurada do storage/cookies (caso do
+      // browser), o socket pode conectar como `anon` — o canal devolve
+      // SUBSCRIBED normalmente, mas o RLS descarta TODOS os eventos em
+      // silêncio. `setAuth` com o access token garante `auth.uid()` no RLS.
+      const { data } = await supabase.auth.getSession()
+      await supabase.realtime.setAuth(data.session?.access_token ?? null)
+      if (cancelled) return
 
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event,
-          schema: 'public',
-          table,
-          ...(filter ? { filter } : {}),
-        },
-        (payload) => {
-          if (payload.eventType === 'DELETE') {
-            handlers.current.onDelete?.(payload.old?.id as string)
-            return
+      channel = supabase
+        .channel(`pg-changes:${table}:${filter ?? 'all'}`)
+        .on(
+          'postgres_changes',
+          {
+            event,
+            schema: 'public',
+            table,
+            ...(filter ? { filter } : {}),
+          },
+          (payload) => {
+            if (payload.eventType === 'DELETE') {
+              handlers.current.onDelete?.(payload.old?.id as string)
+              return
+            }
+            handlers.current.onUpsert?.(payload.new as T)
           }
-          handlers.current.onUpsert?.(payload.new as T)
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    }
+
+    void subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      if (channel) void supabase.removeChannel(channel)
     }
   }, [table, filter, event])
 }

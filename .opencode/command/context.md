@@ -28,7 +28,7 @@ Foco opcional: $ARGUMENTS
 1. **Proxy (substitui middleware, Next 16):** `src/proxy.ts` chama `updateSession` em `src/utils/supabase/middleware.ts`. Anônimo → `/login`; autenticado → dashboard da role; `/tasks` e `/rewards` são role-aware; `/` redireciona para `/login`.
 2. **Pages server components** buscam dados via `src/utils/house.ts` (sessão/casa ativa) + `createClient` (RSC) e passam props tipadas aos client components.
 3. **Escritas = Server Actions** (`src/actions/*.ts`, todos `'use server'`) retornando `ActionResult` (`{ ok, error?, data? }`). Formulários de credencial usam inputs **uncontrolled** (só `name`), lidos via `FormData(event.currentTarget)` no submit — NUNCA em `useState`.
-4. **Realtime** sincroniza Admin ↔ Dependente via `src/hooks/use-postgres-changes.ts` (canal + `postgres_changes` + filter de `house_id`) e `src/hooks/use-profile-points.ts` (saldo ao vivo).
+4. **Realtime** sincroniza Admin ↔ Dependente via `src/hooks/use-postgres-changes.ts` (canal + `postgres_changes` + filter de `house_id`) e `src/hooks/use-profile-points.ts` (saldo ao vivo). O hook faz `await getSession()` + `await realtime.setAuth(access_token)` **antes** de assinar: sessão restaurada de cookies conecta como `anon` e o RLS descarta os eventos em silêncio (`SUBSCRIBED` sem entregas) — não remover.
 
 ## 3. Supabase
 
