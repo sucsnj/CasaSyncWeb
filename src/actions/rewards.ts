@@ -35,13 +35,15 @@ async function assertAdminCanManage(
     return { ok: false, error: 'Apenas administradores podem executar esta ação.' }
   }
 
-  const { data: house } = await admin
-    .from('houses')
-    .select('owner_id')
-    .eq('id', houseId)
+  const { data: membership } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', houseId)
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
     .maybeSingle()
 
-  if (!house || house.owner_id !== user.id) {
+  if (!membership) {
     return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
   }
 

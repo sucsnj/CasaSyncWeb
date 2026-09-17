@@ -47,37 +47,60 @@ export async function getSessionProfile(): Promise<{
 }
 
 /**
+ * Casas que o ADMIN controla: as que criou (owner) E as que entrou via PIN
+ * (membro `house_members.role = 'ADMIN'`).
+ *
+ * Lida com o cliente service-role (mesmo precedente de `getHouseTutor`) para
+ * a listagem das casas não depender de policies RLS específicas para
+ * co-gerentes — o que importa é o controle medido pela membresia. O `userId`
+ * sempre vem da sessão autenticada, nunca de input público.
+ */
+export async function getAdminHouses(userId: string): Promise<
+  { id: string; name: string; image_url: string | null; code: string }[]
+> {
+  const admin = createAdminClient()
+
+  const { data: memberships } = await admin
+    .from('house_members')
+    .select('house_id, houses ( id, name, image_url, code )')
+    .eq('profile_id', userId)
+    .eq('role', 'ADMIN')
+    .order('created_at', { ascending: true })
+
+  const rows = (memberships ?? []).flatMap((member) => member.houses ?? [])
+  return Array.from(new Map(rows.map((house) => [house.id, house])).values())
+}
+
+/**
  * Casa ativa do ADMIN: prioriza o cookie, senão cai para a primeira casa
- * criada por ele. Só o dono (`owner_id`) enxerga as casas via RLS.
+ * controlada por ele (criada ou co-gerida via PIN).
  */
 export async function getActiveAdminHouse(): Promise<ActiveHouse | null> {
   const { user } = await getSessionProfile()
   if (!user) return null
 
-  const supabase = await createClient()
-
-  const { data: houses } = await supabase
-    .from('houses')
-    .select('id, name, image_url')
-    .eq('owner_id', user.id)
-    .order('created_at', { ascending: true })
-
-  if (!houses || houses.length === 0) return null
+  const houses = await getAdminHouses(user.id)
+  if (houses.length === 0) return null
 
   const cookieStore = await cookies()
   const cookieHouseId = cookieStore.get(ACTIVE_HOUSE_COOKIE)?.value
 
-  return houses.find((house) => house.id === cookieHouseId) ?? houses[0]
+  const active = houses.find((house) => house.id === cookieHouseId) ?? houses[0]
+
+  return { id: active.id, name: active.name, image_url: active.image_url }
 }
 
 /**
  * Casa do DEPENDENTE: primeira associação em `house_members`.
  * (Um dependente não escolhe casa; ela é definida pelo ADMIN na criação.)
+ *
+ * Service-role pelo mesmo motivo de `getAdminHouses`: a associação medida é a
+ * do próprio usuário da sessão, sem depender de policies RLS.
  */
 export async function getDependentHouse(userId: string): Promise<ActiveHouse | null> {
-  const supabase = await createClient()
+  const admin = createAdminClient()
 
-  const { data: membership } = await supabase
+  const { data: membership } = await admin
     .from('house_members')
     .select('house_id, houses ( id, name, image_url )')
     .eq('profile_id', userId)
@@ -91,13 +114,15 @@ export async function getDependentHouse(userId: string): Promise<ActiveHouse | n
 
 /**
  * Lista os dependentes de uma casa: id + full_name (para vincular tarefas).
+ * Acessa via service role: o ADMIN só precisa CONTROLAR a casa (criada ou
+ * co-gerida via PIN) para listar os dependentes, sem depender de policies RLS.
  */
 export async function getHouseAssignees(houseId: string): Promise<
   { id: string; full_name: string }[]
 > {
-  const supabase = await createClient()
+  const admin = createAdminClient()
 
-  const { data: members } = await supabase
+  const { data: members } = await admin
     .from('house_members')
     .select('profile_id')
     .eq('house_id', houseId)
@@ -106,7 +131,7 @@ export async function getHouseAssignees(houseId: string): Promise<
   const profileIds = members?.map((member) => member.profile_id) ?? []
   if (profileIds.length === 0) return []
 
-  const { data: profiles } = await supabase
+  const { data: profiles } = await admin
     .from('profiles')
     .select('id, full_name')
     .in('id', profileIds)

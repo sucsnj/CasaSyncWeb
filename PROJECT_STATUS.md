@@ -1,5 +1,47 @@
 # CasaSync Web — PROJECT STATUS
 
+## Co-controle de casa por PIN (concluída)
+
+### O que foi implementado
+- **PIN de casa = `houses.code`:** criado junto com a casa (já existente, único); agora exibido nos cards em `/dashboard/admin/houses` com botão de copiar.
+- **`joinHouseByPin(pin)`** (`src/actions/houses.ts`): outro ADMIN informa o PIN durante a criação de casa (aba "Entrar com PIN" no card "Nova casa") → valida o PIN, insere `house_members.role='ADMIN'` (se ainda não for membro; bloqueia se for DEPENDENT), define a casa como ativa e passa a controlá-la junto com o dono. `getActiveAdminHouse`/`selectHouse`/`createDependent`/`updateHouse`/`updateDependentProfile` e os `assertAdminCanManage` de tarefas/recompensas passam a validar **controle por membresia ADMIN** em vez de `houses.owner_id`.
+- **`getAdminHouses(userId)`** (`src/utils/house.ts`): casas controladas via `house_members` (role ADMIN) — criadas e co-geridas. Used nas páginas admin. **Lida com o cliente service-role** (precedente de `getHouseTutor`) porque a listagem de casas/membros/atribuições (`getHouseAssignees`) não deve depender de policies RLS específicas para co-gerentes; o `userId` sempre vem da sessão.
+- UI: toggle "Criar casa" / "Entrar com PIN" no card Nova casa; PIN visível/copiável em cada card de casa.
+
+### SQL necessário no Supabase (manual, como sempre)
+O banco já tem `houses.code` e `house_members.role='ADMIN'`. A listagem de casas, membros e atribuições lê via service role — **não depende das policies abaixo**. Elas continuam recomendadas para o **Realtime** (os canals aplicam RLS a cada subscriber) e para futuras leituras via cliente autenticado:
+```sql
+create policy "houses_select_for_admin_members" on public.houses
+  for select to authenticated
+  using (exists (
+    select 1 from public.house_members hm
+    where hm.house_id = houses.id
+      and hm.profile_id = auth.uid()
+      and hm.role = 'ADMIN'
+  ));
+
+create policy "house_members_select_for_admin_members" on public.house_members
+  for select to authenticated
+  using (exists (
+    select 1 from public.house_members me
+    where me.house_id = house_members.house_id
+      and me.profile_id = auth.uid()
+      and me.role = 'ADMIN'
+  ));
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- PIN reutiliza `houses.code` (6 caracteres, já único e gerado na criação) em vez de nova coluna — evita migração de schema; semântica de "convite/controle" já era a do campo.
+- Autorização de ADMIN passou de "dono" para "membro ADMIN": a membresia é a fonte da verdade do co-controle; `owner_id` continua identificando o tutor/criador (card "Seu tutor").
+- Listagens de casas/membros/atribuições usam service role: RLS de `houses`/`house_members`/`profiles` não tinha (nem precisa ter) policy de leitura cross-role para co-gerentes; isolar por here, sem as policies as casas somem da UI mesmo com a query "OK" no SQL editor (que roda como superuser e ignora RLS).
+- **Leituras de tarefas/recompensas também via service-role** (`/tasks` e `/rewards`): a RLS de `tasks`/`rewards`/`reward_redemptions`/`reward_suggestions` é centrada no `owner_id` da casa, então o co-gerente (e o dependente nas tarefas do co-gerente) não enxergava nada. O escopo é explícito e derivado da sessão: ADMIN → `.eq('house_id', activeHouse.id)`; DEPENDENT → `.eq('house_id', house.id).eq('assigned_to', user.id)` (ou `.eq('profile_id', user.id)` em resgates/sugestões). `getDependentHouse` também passou a usar service-role.
+- **Limite conhecido — Realtime:** as subscriptions dos client components (`use-postgres-changes`) continuam sujeitas à RLS (não há como usar service role no browser). Sem policies de `SELECT` por membro, eventos ao vivo podem não chegar ao co-gerente/dependente; o `router.refresh()` pós-ação garante a atualização de quem age, e as policies de `SELECT` por membro (bloco acima) são a forma de habilitar o Realtime cross-role.
+
+---
+
 ## UX de tarefas (data/hora, conclusão ADMIN e adiamento flexível)
 
 ### O que foi implementado

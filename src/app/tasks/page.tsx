@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -70,7 +70,10 @@ export default async function TasksPage() {
     redirect('/login')
   }
 
-  const supabase = await createClient()
+  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
+  // (sessão), não por policies RLS — o co-gerente precisa ver as tarefas da
+  // casa mesmo não sendo o `owner_id`.
+  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   let content: React.ReactNode
@@ -80,7 +83,7 @@ export default async function TasksPage() {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const { data: tasks } = await supabase
+      const { data: tasks } = await admin
         .from('tasks')
         .select('*')
         .eq('house_id', activeHouse.id)
@@ -102,7 +105,7 @@ export default async function TasksPage() {
     if (!house) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const { data: tasks } = await supabase
+      const { data: tasks } = await admin
         .from('tasks')
         .select('*')
         .eq('house_id', house.id)

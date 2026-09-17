@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -39,7 +39,10 @@ export default async function RewardsPage() {
     redirect('/login')
   }
 
-  const supabase = await createClient()
+  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
+  // (sessão), não por policies RLS — o co-gerente precisa ver a loja/resgates
+  // da casa mesmo não sendo o `owner_id`.
+  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   let content: React.ReactNode
@@ -59,22 +62,22 @@ export default async function RewardsPage() {
     } else {
       const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
         await Promise.all([
-          supabase
+          admin
             .from('rewards')
             .select('*')
             .eq('house_id', activeHouse.id)
             .order('created_at', { ascending: true }),
-          supabase
+          admin
             .from('reward_redemptions')
             .select('*')
             .eq('house_id', activeHouse.id)
             .order('created_at', { ascending: true }),
-          supabase
+          admin
             .from('house_members')
             .select('profile_id')
             .eq('house_id', activeHouse.id)
             .eq('role', 'DEPENDENT'),
-          supabase
+          admin
             .from('reward_suggestions')
             .select('*')
             .eq('house_id', activeHouse.id)
@@ -84,7 +87,7 @@ export default async function RewardsPage() {
       const profileIds = members?.map((member) => member.profile_id) ?? []
       const nameById = new Map<string, string>()
       if (profileIds.length > 0) {
-        const { data: profiles } = await supabase
+        const { data: profiles } = await admin
           .from('profiles')
           .select('id, full_name')
           .in('id', profileIds)
@@ -144,18 +147,18 @@ export default async function RewardsPage() {
     } else {
       const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
         await Promise.all([
-          supabase
+          admin
             .from('rewards')
             .select('*')
             .eq('house_id', house.id)
             .order('created_at', { ascending: true }),
-          supabase
+          admin
             .from('reward_redemptions')
             .select('*')
             .eq('house_id', house.id)
             .eq('profile_id', user.id)
             .order('created_at', { ascending: true }),
-          supabase
+          admin
             .from('reward_suggestions')
             .select('*')
             .eq('house_id', house.id)

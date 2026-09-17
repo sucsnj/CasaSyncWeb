@@ -109,14 +109,16 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
 
   const admin = createAdminClient()
 
-  const { data: house } = await admin
-    .from('houses')
+  // Controla a casa como ADMIN (criador ou co-gerente via PIN).
+  const { data: membership } = await admin
+    .from('house_members')
     .select('id')
-    .eq('id', houseId)
-    .eq('owner_id', user.id)
+    .eq('house_id', houseId)
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
     .maybeSingle()
 
-  if (!house) {
+  if (!membership) {
     return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
   }
 
@@ -133,6 +135,80 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
   revalidatePath('/rewards')
 
   return { ok: true }
+}
+
+/**
+ * ADMIN entra como co-gerente de uma casa usando o PIN único (houses.code).
+ * Valida o PIN, cria a membresia ADMIN (se ainda não for membro) e define
+ * a casa como ativa. O criador da casa continua dono (`owner_id`) — o PIN
+ * apenas concede controle simultâneo.
+ */
+export async function joinHouseByPin(pin: string): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem controlar casas.' }
+  }
+
+  const normalizedPin = pin.trim().toUpperCase()
+  if (!normalizedPin) {
+    return { ok: false, error: 'Informe o PIN da casa.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const { data: house } = await admin
+    .from('houses')
+    .select('id, name')
+    .eq('code', normalizedPin)
+    .maybeSingle()
+
+  if (!house) {
+    return { ok: false, error: 'PIN inválido.' }
+  }
+
+  const { data: existing } = await admin
+    .from('house_members')
+    .select('role')
+    .eq('house_id', house.id)
+    .eq('profile_id', user.id)
+    .maybeSingle()
+
+  if (existing && existing.role === 'DEPENDENT') {
+    return {
+      ok: false,
+      error: 'Você pertence a esta casa como dependente, não como admin.',
+    }
+  }
+
+  if (!existing) {
+    const { error: membershipError } = await admin
+      .from('house_members')
+      .insert({ house_id: house.id, profile_id: user.id, role: 'ADMIN' })
+
+    if (membershipError) {
+      return { ok: false, error: 'Falha ao vincular à casa.' }
+    }
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.set(ACTIVE_HOUSE_COOKIE, house.id, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return { ok: true, message: `Você agora controla a casa "${house.name}".` }
 }
 
 export async function createDependent(
@@ -198,17 +274,18 @@ export async function createDependent(
   let targetHouseId: string
 
   if (houseId) {
-    // ENSINO (teach): validar a posse da casa no servidor (via service role)
-    // impede que um ADMIN crie dependentes em casas que não lhe pertencem,
-    // mesmo que o formulário/cliente seja adulterado.
-    const { data: owned } = await admin
-      .from('houses')
+    // ENSINO (teach): validar o controle da casa no servidor (via service
+    // role) impede que um ADMIN crie dependentes em casas que não controla
+    // (dono ou co-gerente via PIN), mesmo que o formulário/cliente seja adulterado.
+    const { data: membership } = await admin
+      .from('house_members')
       .select('id')
-      .eq('id', houseId)
-      .eq('owner_id', user.id)
+      .eq('house_id', houseId)
+      .eq('profile_id', user.id)
+      .eq('role', 'ADMIN')
       .maybeSingle()
 
-    if (!owned) {
+    if (!membership) {
       return {
         ok: false,
         error: 'Você não pode adicionar dependentes a essa casa.',
@@ -311,10 +388,22 @@ export async function updateHouse(
     .from('houses')
     .select('id')
     .eq('id', houseId)
-    .eq('owner_id', user.id)
     .maybeSingle()
 
   if (!house) {
+    return { ok: false, error: 'Casa não encontrada.' }
+  }
+
+  // Controla a casa como ADMIN (criador ou co-gerente via PIN).
+  const { data: membership } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', houseId)
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
+    .maybeSingle()
+
+  if (!membership) {
     return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
   }
 
@@ -373,14 +462,15 @@ export async function updateDependentProfile(
     return { ok: false, error: 'Dependente não encontrado.' }
   }
 
-  const { data: owned } = await admin
-    .from('houses')
+  const { data: isAdmin } = await admin
+    .from('house_members')
     .select('id')
-    .eq('id', member.house_id)
-    .eq('owner_id', user.id)
+    .eq('house_id', member.house_id)
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
     .maybeSingle()
 
-  if (!owned) {
+  if (!isAdmin) {
     return { ok: false, error: 'Dependente não pertence a uma casa sua.' }
   }
 

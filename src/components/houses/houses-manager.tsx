@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   createDependent,
   createHouse,
+  joinHouseByPin,
   selectHouse,
   updateDependentProfile,
   updateHouse,
@@ -15,7 +16,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Pencil } from 'lucide-react'
+import { Copy, Pencil } from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -25,7 +26,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-type House = { id: string; name: string; image_url: string | null }
+type House = { id: string; name: string; image_url: string | null; code: string }
 type Member = {
   profileId: string
   fullName: string
@@ -58,6 +59,7 @@ export function HousesManager({
   const [depPending, setDepPending] = useState(false)
   const [showHouseForm, setShowHouseForm] = useState(false)
   const [showDependentForm, setShowDependentForm] = useState(false)
+  const [houseMode, setHouseMode] = useState<'create' | 'join'>('create')
 
   const [editingHouse, setEditingHouse] = useState<House | null>(null)
   const [houseImageUrl, setHouseImageUrl] = useState<string | null>(null)
@@ -81,6 +83,28 @@ export function HousesManager({
       setShowHouseForm(false)
       router.refresh()
     })
+  }
+
+  function handleJoin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    setError(null)
+
+    startTransition(async () => {
+      const result = await joinHouseByPin(
+        String(new FormData(form).get('pin') ?? '')
+      )
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setShowHouseForm(false)
+      router.refresh()
+    })
+  }
+
+  function copyPin(code: string) {
+    void navigator.clipboard?.writeText(code)
   }
 
   async function handleCreateDependent(event: React.FormEvent<HTMLFormElement>) {
@@ -179,7 +203,8 @@ export function HousesManager({
           <div>
             <CardTitle>Nova casa</CardTitle>
             <CardDescription>
-              A casa criada passa a ser a casa ativa e você vira o administrador dela.
+              Crie uma casa própria (gera um PIN de acesso) ou entre numa casa
+              existente usando o PIN de outro administrador.
             </CardDescription>
           </div>
           <CardAction>
@@ -187,7 +212,10 @@ export function HousesManager({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setShowHouseForm((value) => !value)}
+              onClick={() => {
+                setError(null)
+                setShowHouseForm((value) => !value)
+              }}
             >
               {showHouseForm ? 'Fechar' : 'Nova casa'}
             </Button>
@@ -195,30 +223,101 @@ export function HousesManager({
         </CardHeader>
         {showHouseForm ? (
           <CardContent>
-            <form onSubmit={handleCreate} className="flex flex-col gap-3">
-              <div className="grid gap-2">
-                <Label htmlFor="house-name">Nome da casa</Label>
-                <Input
-                  id="house-name"
-                  name="houseName"
-                  type="text"
-                  placeholder="Ex.: Família Silva"
-                  value={houseName}
-                  onChange={(event) => setHouseName(event.target.value)}
-                  required
-                />
-              </div>
+            <div className="mb-3 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null)
+                  setHouseMode('create')
+                }}
+                className={cn(
+                  'min-h-9 rounded-xl px-3 text-sm font-medium outline-none transition-colors',
+                  houseMode === 'create'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                )}
+              >
+                Criar casa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null)
+                  setHouseMode('join')
+                }}
+                className={cn(
+                  'min-h-9 rounded-xl px-3 text-sm font-medium outline-none transition-colors',
+                  houseMode === 'join'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                )}
+              >
+                Entrar com PIN
+              </button>
+            </div>
 
-              {error ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {error}
-                </p>
-              ) : null}
+            {houseMode === 'create' ? (
+              <form
+                key="create"
+                onSubmit={handleCreate}
+                className="flex flex-col gap-3"
+              >
+                <div className="grid gap-2">
+                  <Label htmlFor="house-name">Nome da casa</Label>
+                  <Input
+                    id="house-name"
+                    name="houseName"
+                    type="text"
+                    placeholder="Ex.: Família Silva"
+                    value={houseName}
+                    onChange={(event) => setHouseName(event.target.value)}
+                    required
+                  />
+                </div>
 
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Criando...' : 'Criar casa'}
-              </Button>
-            </form>
+                {error ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+
+                <Button type="submit" disabled={pending}>
+                  {pending ? 'Criando...' : 'Criar casa'}
+                </Button>
+              </form>
+            ) : (
+              <form
+                key="join"
+                onSubmit={handleJoin}
+                className="flex flex-col gap-3"
+              >
+                <div className="grid gap-2">
+                  <Label htmlFor="house-pin">PIN da casa</Label>
+                  <Input
+                    id="house-pin"
+                    name="pin"
+                    type="text"
+                    placeholder="Ex.: ABC123"
+                    autoComplete="off"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Você passa a controlar essa casa junto com o administrador
+                    que a criou.
+                  </p>
+                </div>
+
+                {error ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+
+                <Button type="submit" disabled={pending}>
+                  {pending ? 'Entrando...' : 'Entrar na casa'}
+                </Button>
+              </form>
+            )}
           </CardContent>
         ) : null}
       </Card>
@@ -269,10 +368,22 @@ export function HousesManager({
                           {house.name}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {active ? 'Casa ativa' : 'Alternar'}
+                          {active ? 'Casa ativa' : 'Alternar'} · PIN{' '}
+                          {house.code}
                         </span>
                       </span>
                     </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-9 shrink-0 px-2 text-xs text-slate-500"
+                      onClick={() => copyPin(house.code)}
+                      title="Copiar PIN"
+                    >
+                      <Copy className="size-3.5" />
+                      PIN
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
+  getAdminHouses,
   getSessionProfile,
 } from '@/utils/house'
 import { HousesManager } from '@/components/houses/houses-manager'
@@ -20,14 +21,13 @@ export default async function AdminHousesPage() {
     redirect('/login')
   }
 
-  const supabase = await createClient()
+  // Service-role: ver membros de qualquer casa que o ADMIN controla
+  // (dono ou co-gerente) sem depender de políticas RLS específicas.
+  const admin = createAdminClient()
   const activeHouse = await getActiveAdminHouse()
 
-  const { data: houses } = await supabase
-    .from('houses')
-    .select('id, name, image_url')
-    .eq('owner_id', user.id)
-    .order('created_at', { ascending: true })
+  // Casas controladas: criadas E co-geridas via PIN (membro role ADMIN).
+  const houses = await getAdminHouses(user.id)
 
   let members: {
     profileId: string
@@ -38,7 +38,7 @@ export default async function AdminHousesPage() {
   }[] = []
 
   if (activeHouse) {
-    const { data: houseMembers } = await supabase
+    const { data: houseMembers } = await admin
       .from('house_members')
       .select('profile_id, role')
       .eq('house_id', activeHouse.id)
@@ -47,7 +47,7 @@ export default async function AdminHousesPage() {
 
     let infoById = new Map<string, { full_name: string | null; username: string | null; avatar_url: string | null }>()
     if (profileIds.length > 0) {
-      const { data: profiles } = await supabase
+      const { data: profiles } = await admin
         .from('profiles')
         .select('id, full_name, username, avatar_url')
         .in('id', profileIds)
@@ -70,7 +70,7 @@ export default async function AdminHousesPage() {
 
   return (
     <HousesManager
-      houses={houses ?? []}
+      houses={houses}
       activeHouseId={activeHouse?.id ?? null}
       activeHouseName={activeHouse?.name ?? null}
       activeHouseImageUrl={activeHouse?.image_url ?? null}
