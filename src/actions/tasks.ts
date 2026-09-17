@@ -7,6 +7,7 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
+import { notifyHouse, notifyUser } from '@/utils/notifications'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -122,6 +123,16 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
   })
 
   if (error) return { ok: false, error: 'Falha ao criar a tarefa.' }
+
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: input.assignedTo,
+    actorId: auth.adminId,
+    type: 'TASK_CREATED',
+    title: 'Nova tarefa',
+    body: `Você recebeu a tarefa "${title}" (${input.points} pts).`,
+    link: '/tasks',
+  })
 
   revalidatePath('/tasks')
   return { ok: true, message: `Tarefa "${title}" criada.` }
@@ -282,7 +293,7 @@ export async function updateTask(
  * Guards: a tarefa deve estar PENDING/IN_PROGRESS e atribuída ao usuário.
  */
 export async function completeTask(taskId: string): Promise<ActionResult> {
-  const { user } = await getSessionProfile()
+  const { user, profile } = await getSessionProfile()
   if (!user) return { ok: false, error: 'Autenticação necessária.' }
 
   const house = await getDependentHouse(user.id)
@@ -292,7 +303,7 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, assigned_to, status')
+    .select('house_id, assigned_to, status, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -323,6 +334,17 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
 
   if (error) return { ok: false, error: 'Falha ao concluir a tarefa.' }
 
+  await notifyHouse(admin, {
+    houseId: house.id,
+    actorId: user.id,
+    side: 'ADMINS',
+    excludeUserId: user.id,
+    type: 'TASK_COMPLETED',
+    title: 'Tarefa concluída',
+    body: `${profile?.full_name ?? 'O dependente'} concluiu "${task.title}". Aguardando aprovação.`,
+    link: '/tasks',
+  })
+
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -349,7 +371,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to')
+    .select('house_id, status, points, assigned_to, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -396,6 +418,16 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
   }
 
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: task.assigned_to,
+    actorId: auth.adminId,
+    type: 'TASK_APPROVED',
+    title: 'Tarefa aprovada',
+    body: `"${task.title}" foi aprovada. +${task.points} pts.`,
+    link: '/tasks',
+  })
+
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -422,7 +454,7 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status')
+    .select('house_id, status, title, assigned_to')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -442,6 +474,18 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
 
   if (error || !reopened || reopened.length === 0) {
     return { ok: false, error: 'A tarefa já foi aprovada por outra pessoa.' }
+  }
+
+  if (task.assigned_to) {
+    await notifyUser(admin, {
+      houseId: activeHouse.id,
+      recipientId: task.assigned_to,
+      actorId: auth.adminId,
+      type: 'TASK_REJECTED',
+      title: 'Tarefa devolvida',
+      body: `"${task.title}" foi devolvida para você refazer.`,
+      link: '/tasks',
+    })
   }
 
   revalidatePath('/tasks')
@@ -466,7 +510,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, due_date')
+    .select('house_id, status, points, assigned_to, due_date, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -504,6 +548,16 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
   }
 
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: task.assigned_to,
+    actorId: auth.adminId,
+    type: 'TASK_NOT_DELIVERED',
+    title: 'Tarefa não entregue',
+    body: `"${task.title}" foi marcada como não entregue (−${task.points} pts). Peça mais tempo para reabrir.`,
+    link: '/tasks',
+  })
+
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -529,7 +583,7 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status')
+    .select('house_id, status, title, assigned_to')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -560,6 +614,18 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'A tarefa já foi restaurada por outra pessoa.' }
   }
 
+  if (task.assigned_to) {
+    await notifyUser(admin, {
+      houseId: activeHouse.id,
+      recipientId: task.assigned_to,
+      actorId: auth.adminId,
+      type: 'TASK_RESTORED',
+      title: 'Tarefa reaberta',
+      body: `"${task.title}" foi restaurada com novo prazo.`,
+      link: '/tasks',
+    })
+  }
+
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -582,7 +648,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to')
+    .select('house_id, status, points, assigned_to, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -647,6 +713,16 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
   }
 
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: task.assigned_to,
+    actorId: auth.adminId,
+    type: 'TASK_APPROVED',
+    title: 'Tarefa concluída',
+    body: `"${task.title}" foi concluída pelo administrador. +${task.points} pts.`,
+    link: '/tasks',
+  })
+
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -685,7 +761,7 @@ export async function requestTaskExtension(
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, assigned_to, status, extension_requested')
+    .select('house_id, assigned_to, status, extension_requested, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -712,6 +788,17 @@ export async function requestTaskExtension(
     .eq('id', taskId)
 
   if (error) return { ok: false, error: 'Falha ao registrar o pedido.' }
+
+  await notifyHouse(admin, {
+    houseId: house.id,
+    actorId: user.id,
+    side: 'ADMINS',
+    excludeUserId: user.id,
+    type: 'EXTENSION_REQUESTED',
+    title: 'Pedido de adiamento',
+    body: `${profile?.full_name ?? 'O dependente'} pediu mais tempo para "${task.title}".`,
+    link: '/tasks',
+  })
 
   revalidatePath('/tasks')
   return { ok: true, message: 'Pedido de adiamento enviado.' }
@@ -740,7 +827,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -804,6 +891,20 @@ export async function resolveTaskExtension(
 
     revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
+  }
+
+  if (task.assigned_to) {
+    await notifyUser(admin, {
+      houseId: activeHouse.id,
+      recipientId: task.assigned_to,
+      actorId: auth.adminId,
+      type: approve ? 'EXTENSION_APPROVED' : 'EXTENSION_REJECTED',
+      title: approve ? 'Adiamento aprovado' : 'Adiamento recusado',
+      body: approve
+        ? `"${task.title}" ganhou +${days} dias.${isNotDelivered ? ' Pontos devolvidos.' : ''}`
+        : `Seu pedido de adiamento para "${task.title}" foi recusado.`,
+      link: '/tasks',
+    })
   }
 
   revalidatePath('/tasks')

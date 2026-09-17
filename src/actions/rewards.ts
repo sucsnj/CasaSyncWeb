@@ -7,6 +7,7 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
+import { notifyHouse, notifyUser } from '@/utils/notifications'
 import type { ActionResult } from './types'
 
 type CreateRewardInput = {
@@ -76,6 +77,16 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
 
   if (error) return { ok: false, error: 'Falha ao criar a recompensa.' }
 
+  await notifyHouse(admin, {
+    houseId: activeHouse.id,
+    actorId: auth.adminId,
+    side: 'DEPENDENTS',
+    type: 'REWARD_CREATED',
+    title: 'Nova recompensa',
+    body: `"${title}" entrou na loja por ${input.pointsCost} pts.`,
+    link: '/rewards',
+  })
+
   revalidatePath('/rewards')
   return { ok: true, message: `Recompensa "${title}" criada.` }
 }
@@ -125,6 +136,17 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
   })
 
   if (error) return { ok: false, error: 'Falha ao solicitar o resgate.' }
+
+  await notifyHouse(admin, {
+    houseId: house.id,
+    actorId: user.id,
+    side: 'ADMINS',
+    excludeUserId: user.id,
+    type: 'REDEMPTION_REQUESTED',
+    title: 'Novo resgate',
+    body: `${profile?.full_name ?? 'O dependente'} resgatou "${reward.title}" (${reward.points_cost} pts).`,
+    link: '/rewards',
+  })
 
   revalidatePath('/rewards')
   return { ok: true, message: `Resgate de "${reward.title}" solicitado.` }
@@ -196,6 +218,16 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     return { ok: false, error: 'Falha ao debitar pontos. Resgate revertido.' }
   }
 
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: redemption.profile_id,
+    actorId: auth.adminId,
+    type: 'REDEMPTION_APPROVED',
+    title: 'Resgate aprovado',
+    body: `Seu resgate foi aprovado. −${redemption.points_cost} pts.`,
+    link: '/rewards',
+  })
+
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
   revalidatePath('/tasks')
@@ -213,7 +245,7 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
 
   const { data: redemption } = await admin
     .from('reward_redemptions')
-    .select('house_id, status')
+    .select('house_id, status, profile_id')
     .eq('id', redemptionId)
     .maybeSingle()
 
@@ -235,6 +267,16 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
     .eq('status', 'PENDING')
 
   if (error) return { ok: false, error: 'Falha ao rejeitar o resgate.' }
+
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: redemption.profile_id,
+    actorId: auth.adminId,
+    type: 'REDEMPTION_REJECTED',
+    title: 'Resgate recusado',
+    body: 'Seu resgate foi recusado.',
+    link: '/rewards',
+  })
 
   revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }
@@ -337,6 +379,17 @@ export async function createRewardSuggestion(
 
   if (error) return { ok: false, error: 'Falha ao enviar a sugestão.' }
 
+  await notifyHouse(admin, {
+    houseId: house.id,
+    actorId: user.id,
+    side: 'ADMINS',
+    excludeUserId: user.id,
+    type: 'SUGGESTION_CREATED',
+    title: 'Nova sugestão',
+    body: `${profile?.full_name ?? 'O dependente'} sugeriu a recompensa "${title}".`,
+    link: '/rewards',
+  })
+
   revalidatePath('/rewards')
   return { ok: true, message: 'Sugestão enviada para aprovação.' }
 }
@@ -399,6 +452,16 @@ export async function resolveRewardSuggestion(
       return { ok: false, error: 'Falha ao criar a recompensa. Sugestão revertida.' }
     }
   }
+
+  await notifyUser(admin, {
+    houseId: activeHouse.id,
+    recipientId: suggestion.profile_id,
+    actorId: auth.adminId,
+    type: approve ? 'SUGGESTION_APPROVED' : 'SUGGESTION_REJECTED',
+    title: approve ? 'Sugestão aprovada' : 'Sugestão rejeitada',
+    body: `Sua sugestão "${suggestion.title}" foi ${approve ? 'aprovada' : 'rejeitada'}.`,
+    link: '/rewards',
+  })
 
   revalidatePath('/rewards')
   return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }

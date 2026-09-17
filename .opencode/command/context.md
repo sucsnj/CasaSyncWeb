@@ -79,7 +79,9 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **reward_suggestions** — `id`, `house_id`, `profile_id`, `title`, `description`, `points_cost` (nullable; `?? 5` ao aprovar), `image_url`, `status` (`PENDING` | `APPROVED` | `REJECTED`), `created_at`, `updated_at`.
 
-**Fora do types (não verificável no código):** bucket público `casasync-media` (pastas avatars/houses/rewards/tasks/suggestions) + policies; RLS multi-tenant por `house_id`/owner (as **leituras cross-role** vão por service role com escopo de sessão — ADR-0006; a RLS é exigida sobretudo pelo Realtime, que roda no browser); publication `supabase_realtime` com houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions.
+**notifications** — `id`, `house_id`, `recipient_id` (FK → profiles, quem recebe), `actor_id` (FK → profiles, nullable, quem agiu), `type` (`NotificationType` em `src/types/notifications.ts`), `title`, `body`, `link` (nullable), `read_at` (nullable; `null` = não lida), `created_at`. Uma linha por destinatário.
+
+**Fora do types (não verificável no código):** bucket público `casasync-media` (pastas avatars/houses/rewards/tasks/suggestions) + policies; RLS multi-tenant por `house_id`/owner (as **leituras cross-role** vão por service role com escopo de sessão — ADR-0006; a RLS é exigida sobretudo pelo Realtime, que roda no browser; `notifications` tem policy SELECT para `recipient_id = auth.uid()`); publication `supabase_realtime` com houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions, notifications.
 
 ## 6. Regras de negócio
 
@@ -92,6 +94,7 @@ Enums (valores em **caixa alta**, regra de negócio):
 - **SLA de prazo** (`src/utils/task-sla.ts`): `overdue` (agora > prazo; card `border-red-500/red-50/red-700`) e `dueSoon` (restante ≤ 20% do total; `border-amber-400/amber-50/amber-800`). Estilos em `src/components/tasks/task-styles.ts` (inclui chip/borda de `NOT_DELIVERED`).
 - **Pedido de adiamento:** dependente define `extension_requested=true` + `extension_reason` (obrigatório, ≤ 500); ADMIN **aprova** (botões +1 dia/+3 dias sobre a data atual ou futura; em `NOT_DELIVERED` devolve os pontos) ou **rejeita** (`resolveTaskExtension`); flags limpas nos dois casos.
 - **Sugestões de recompensa:** dependente envia; ADMIN aprova → **cria a recompensa real** (transição guardada `PENDING→APPROVED` com rollback) ou rejeita.
+- **Notificações:** cada ação relevante grava notificações para "o outro lado" (dependente para ações do ADMIN; todos os ADMINs membros para ações do dependente; quem agiu é excluído). Registro **best-effort** (`src/utils/notifications.ts`: `notifyUser`/`notifyHouse`) — falha não derruba a ação. Gerenciadas pelo destinatário (marcar lida/todas, apagar uma/todas) e **lidas apagadas após 5 dias** (limpeza lazy em `getMyNotifications`, sem `pg_cron`). Ver ADR-0009.
 - **Casa ativa do ADMIN** via cookie `casasync_active_house` (const `ACTIVE_HOUSE_COOKIE` em `src/utils/house.ts`).
 
 ## 7. Superfície de API
@@ -106,7 +109,11 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **actions/rewards.ts** — `createReward({ title, description, pointsCost, emoji?, imageUrl? })`, `requestRedemption(rewardId)`, `approveRedemption(redemptionId)`, `rejectRedemption(redemptionId)`, `updateReward(rewardId, patch: RewardPatch)` (title/description/points_cost/emoji/image_url), `createRewardSuggestion({ title, description, pointsCost?, imageUrl? })`, `resolveRewardSuggestion(suggestionId, approve: boolean)`.
 
+**actions/notifications.ts** — `markNotificationRead(id)`, `markAllNotificationsRead()`, `deleteNotification(id)`, `deleteAllNotifications()`, `purgeReadNotifications()` (escopo sempre `recipient_id = user.id`).
+
 **utils/house.ts** — `getSessionProfile()` → `{ user, profile }` (`profile.avatar_url` incluso), `getAdminHouses(userId)` (casas controladas = criadas + co-geridas), `getActiveAdminHouse()` (via cookie), `getDependentHouse(userId)`, `getHouseAssignees(houseId)` (dependentes), `getHouseTutors(houseId)` (todos os ADMIN membros), `getProfileNames(ids)` (mapa `id → nome`, p/ criador de tarefa), `withAdminClient<T>(fn)`, `ACTIVE_HOUSE_COOKIE`.
+
+**utils/notifications.ts** — `READ_RETENTION_DAYS` (5), `notifyUser(admin, {...})`, `notifyHouse(admin, { side: 'ADMINS'|'DEPENDENTS', excludeUserId, ... })`, `cleanupReadNotifications(admin, recipientId)`, `getMyNotifications(userId)` (limpeza lazy + lista). Best-effort (service-role).
 
 **utils/media.ts** — `MEDIA_BUCKET = 'casasync-media'`, `uploadMedia(folder: MediaFolder, file)` — `MediaFolder = 'avatars' | 'houses' | 'rewards' | 'tasks' | 'suggestions'`.
 
@@ -116,7 +123,7 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **components/ui** — `Button`, `Card` (+ `CardAction`/`CardContent`/`CardDescription`/`CardHeader`/`CardTitle`), `Input`, `Label`, `Separator`, `Tabs`, `Modal`, `EmptyState` (empty states padronizados), `ImageUpload` (prévia/remover/envio). Tokens globais em `src/app/globals.css`; primitivas mobile-first (min-h-12, rounded-xl, `active:scale-95`).
 
-**components por domínio** — `dashboard/dashboard-nav.tsx` (`DashboardNav({ items, userName, points })`), `dashboard/profile-editor.tsx`, `houses/houses-manager.tsx` (cards com PIN copiável + abas Criar/Entrar com PIN), `tasks/tasks-admin.tsx` (`({ houseId, initialTasks, assignees })`; cards **colapsáveis** recolhidos por padrão, ações Aprovar/Desaprovar/Concluir e creditar/Não entregue/Restaurar/adiamento), `tasks/tasks-dependent.tsx` (`({ houseId, initialTasks, creatorNames })`; sem "Concluir" em `NOT_DELIVERED`, mostra "Criada por {nome}"), `rewards/rewards-admin.tsx` (`({ houseId, initialRewards, initialRedemptions, initialSuggestions, dependents })`), `rewards/rewards-dependent.tsx`, `auth/*` (login-form, register-form, sign-out-button), `tasks/debounced-field.tsx` (debounce 900ms + flush no blur), `tasks/task-styles.ts` (accent/chip/sla por status).
+**components por domínio** — `dashboard/dashboard-nav.tsx` (`DashboardNav({ items, userName, points })`), `dashboard/profile-editor.tsx`, `houses/houses-manager.tsx` (cards com PIN copiável + abas Criar/Entrar com PIN), `tasks/tasks-admin.tsx` (`({ houseId, initialTasks, assignees })`; cards **colapsáveis** recolhidos por padrão, ações Aprovar/Desaprovar/Concluir e creditar/Não entregue/Restaurar/adiamento), `tasks/tasks-dependent.tsx` (`({ houseId, initialTasks, creatorNames })`; sem "Concluir" em `NOT_DELIVERED`, mostra "Criada por {nome}"), `rewards/rewards-admin.tsx` (`({ houseId, initialRewards, initialRedemptions, initialSuggestions, dependents })`), `rewards/rewards-dependent.tsx`, `auth/*` (login-form, register-form, sign-out-button), `tasks/debounced-field.tsx` (debounce 900ms + flush no blur), `tasks/task-styles.ts` (accent/chip/sla por status), `notifications/notifications-bell.tsx` (`NotificationsBell({ userId, initialNotifications })` — sino no cabeçalho via `DashboardNav`).
 
 ## 8. Convenções críticas de código
 

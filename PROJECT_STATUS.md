@@ -1,6 +1,56 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
+> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado. **Exceção:** a tabela `notifications` (feature mais recente) ainda precisa ser criada — SQL na seção de notificações.
+
+## Notificações entre ADMIN e dependente (sino no cabeçalho) — concluída
+
+### O que foi implementado
+- **Tabela `notifications`** (1 linha por destinatário): `house_id`, `recipient_id`, `actor_id` (nullable), `type`, `title`, `body`, `link` (nullable), `read_at` (nullable; `null` = não lida), `created_at`.
+- **Registro best-effort** (`src/utils/notifications.ts`): `notifyUser` (um destinatário) e `notifyHouse` (resolve todos os ADMINs ou todos os DEPENDENTEs da casa e exclui quem agiu). Falha ao gravar **nunca** derruba a ação principal (crédito/débito de pontos, aprovações etc.).
+- **Destinatário = "o outro lado" da ação:** o dependente recebe tudo que os ADMINs fazem nas tarefas/resgates/sugestões dele; **todos os ADMINs membros** recebem tudo que o dependente faz. Quem agiu não recebe a própria ação.
+- **Eventos cobertos:** criação/conclusão/aprovação/devolução/restauração de tarefa, `NOT_DELIVERED`, pedido e resolução de adiamento, criação de recompensa, pedido e resolução de resgate, criação e resolução de sugestão — integrados nas actions existentes de `src/actions/tasks.ts` e `src/actions/rewards.ts` (16 tipos em `src/types/notifications.ts`).
+- **Gerenciamento** (`src/actions/notifications.ts`): `markNotificationRead`, `markAllNotificationsRead`, `deleteNotification`, `deleteAllNotifications`, `purgeReadNotifications` — escopo sempre `recipient_id = user.id` (derivado da sessão; service-role).
+- **Retenção:** lidas apagadas após **5 dias** por limpeza lazy em `getMyNotifications` (sem `pg_cron`); `READ_RETENTION_DAYS` em `src/utils/notifications.ts`.
+- **UI:** `NotificationsBell` (`src/components/notifications/notifications-bell.tsx`) no cabeçalho (`src/components/dashboard/dashboard-nav.tsx`), ao lado do avatar/pontos: badge de não lidas, painel em `Modal`, "marcar todas", "apagar todas" e apagar individual; clique marca lida e abre o `link` (`/tasks`/`/rewards`).
+- **Realtime:** a tabela entra na publication `supabase_realtime`; o browser assina `recipient_id=eq.<userId>` e o RLS de SELECT (`recipient_id = auth.uid()`) garante que só as próprias notificações cheguem.
+- **Dados iniciais:** carregados no servidor por `getMyNotifications(user.id)` nos layouts admin/dependent e nas páginas `/tasks` e `/rewards`, passados ao `DashboardNav` (`userId` + `notifications`).
+
+### SQL a aplicar no Supabase (nova tabela — necessária em runtime)
+```sql
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  type text not null,
+  title text not null,
+  body text not null,
+  link text,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_recipient_created_idx
+  on public.notifications (recipient_id, created_at desc);
+
+alter table public.notifications enable row level security;
+
+create policy "notifications_select_own" on public.notifications
+  for select to authenticated
+  using (recipient_id = auth.uid());
+
+alter publication supabase_realtime add table public.notifications;
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Notificações são **efeito secundário**: registro best-effort, sem rollback da ação principal em caso de falha.
+- `title`/`body` são snapshot em texto (histórico preservado mesmo se nomes/títulos mudarem depois) — evita joins e simplifica o Realtime.
+- Retenção lazy (sem `pg_cron`) e leitura via service-role com escopo de sessão (ADR-0001/0006), mantendo a policy de SELECT apenas para o Realtime.
+- Detalhamento do "porquê" no **ADR-0009** (`docs/adr/0009-notificacoes-entre-admin-e-dependente.md`).
+
+---
 
 ## Tutores da casa e criador da tarefa para o dependente (concluída)
 

@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { CircleCheck, Gift, House, LayoutDashboard, ListTodo } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { NotificationsBell } from '@/components/notifications/notifications-bell'
+import type { NotificationRow } from '@/types/notifications'
 
 export type NavItem = { href: string; label: string }
 
@@ -27,10 +29,14 @@ export function DashboardNav({
   items,
   userName,
   points,
+  userId,
+  notifications,
 }: {
   items: NavItem[]
   userName?: string | null
   points?: number | null
+  userId?: string
+  notifications?: NotificationRow[]
 }) {
   const pathname = usePathname()
   const initial = userName?.trim()?.[0]?.toUpperCase() ?? 'U'
@@ -70,6 +76,12 @@ export function DashboardNav({
           </nav>
 
           <div className="flex items-center gap-2">
+            {userId ? (
+              <NotificationsBell
+                userId={userId}
+                initialNotifications={notifications ?? []}
+              />
+            ) : null}
             {typeof points === 'number' ? (
               <span className="flex items-center rounded-full bg-amber-400 px-2.5 py-1 text-sm font-bold text-slate-900 shadow-sm">
                 {points} pts

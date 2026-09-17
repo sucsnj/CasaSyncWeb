@@ -375,6 +375,67 @@ export interface Database {
             isOneToOne: false
             referencedRelation: 'profiles'
             referencedColumns: ['id']
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          id: string
+          house_id: string
+          recipient_id: string
+          actor_id: string | null
+          type: string
+          title: string
+          body: string
+          link: string | null
+          read_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          recipient_id: string
+          actor_id?: string | null
+          type: string
+          title: string
+          body: string
+          link?: string | null
+          read_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          recipient_id?: string
+          actor_id?: string | null
+          type?: string
+          title?: string
+          body?: string
+          link?: string | null
+          read_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_recipient_id_fkey'
+            columns: ['recipient_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'notifications_actor_id_fkey'
+            columns: ['actor_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           }
         ]
       }

@@ -1,5 +1,6 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { getSessionProfile } from '@/utils/house'
+import { getMyNotifications } from '@/utils/notifications'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -12,7 +13,8 @@ export default async function DependentDashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { profile } = await getSessionProfile()
+  const { user, profile } = await getSessionProfile()
+  const notifications = user ? await getMyNotifications(user.id) : []
 
   return (
     <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
@@ -20,6 +22,8 @@ export default async function DependentDashboardLayout({
         items={dependentItems}
         userName={profile?.full_name}
         points={profile?.points}
+        userId={user?.id}
+        notifications={notifications}
       />
       {children}
     </div>

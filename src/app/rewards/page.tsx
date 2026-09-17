@@ -6,6 +6,7 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
+import { getMyNotifications } from '@/utils/notifications'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
@@ -44,6 +45,7 @@ export default async function RewardsPage() {
   // da casa mesmo não sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
+  const notifications = await getMyNotifications(user.id)
 
   let content: React.ReactNode
 
@@ -207,6 +209,8 @@ export default async function RewardsPage() {
         items={isAdmin ? adminItems : dependentItems}
         userName={profile.full_name}
         points={profile.points}
+        userId={user.id}
+        notifications={notifications}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

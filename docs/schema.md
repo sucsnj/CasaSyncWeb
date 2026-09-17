@@ -94,6 +94,26 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | status | text | `PENDING` \| `APPROVED` \| `REJECTED` |
 | created_at / updated_at | timestamptz | |
 
+### notifications
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | |
+| house_id | uuid FK → houses | isolamento multi-tenant (realtime filter) |
+| recipient_id | uuid FK → profiles | quem recebe (indexado junto de `read_at`) |
+| actor_id | uuid FK → profiles | nullable; quem gerou a ação |
+| type | text | valores em `NotificationType` (`src/types/notifications.ts`), com CHECK no banco |
+| title | text | resumo curto |
+| body | text | mensagem legível |
+| link | text | nullable; deep link (`/tasks`, `/rewards`) |
+| read_at | timestamptz | nullable; `null` = não lida |
+| created_at | timestamptz | |
+
+Notificações são registradas **best-effort** pelas actions (falha não derruba o fluxo
+principal). Destinatário = "o outro lado" da ação (dependente para ações do ADMIN;
+todos os ADMINs membros para ações do dependente). O delete é do próprio usuário e
+as **lidas são apagadas após 5 dias** por limpeza lazy (`getMyNotifications`), sem
+pg_cron.
+
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
 - `member_role` = `ADMIN` \| `DEPENDENT`
@@ -106,5 +126,5 @@ aplicado** no Supabase.
 
 ## Fora do snap dos types (não verificável no código)
 - **Storage:** bucket público `casasync-media` com pastas avatars/houses/rewards/tasks/suggestions e policies de leitura pública.
-- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`).
-- **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos.
+- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `notifications` para `recipient_id = auth.uid()` (necessária ao Realtime do sino).
+- **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions, notifications) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos.
