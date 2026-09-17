@@ -1,5 +1,31 @@
 # CasaSync Web — PROJECT STATUS
 
+## Tarefa "não entregue" (NOT_DELIVERED) com penalidade (concluída)
+
+### O que foi implementado
+- **Novo status `NOT_DELIVERED`** no enum `task_status`; chip vermelho "Não entregue" e borda-accent vermelha em `task-styles.ts` (badge de SLA "Atrasada" é omitido nesse status — o chip já comunica).
+- **`markTaskNotDelivered(taskId)`** (`src/actions/tasks.ts`): ADMIN marca uma tarefa **atrasada** (`due_date < now`, status `PENDING/IN_PROGRESS`) como não entregue. Transição guardada `.in('status', ['PENDING','IN_PROGRESS'])` (impede débito duplicado) e **debita `tasks.points`** de `profiles.points` via service role — o saldo **pode ficar negativo**. Falha no débito → rollback do status. Revalida `/tasks`, `/rewards` e `/dashboard/dependent`.
+- **Reversão (adiamento) devolve os pontos e zera a tarefa:** aprovar um adiamento (`resolveTaskExtension`) numa tarefa `NOT_DELIVERED` soma `tasks.points` de volta ao dependente, **zera `tasks.points`** e redefine o status para o equivalente ao novo prazo (futuro → `PENDING`); falha na devolução → rollback para `NOT_DELIVERED` com o pedido pendente. A **edição direta do prazo** (`updateTask`) tem o mesmo efeito (auto-aceite + devolução).
+- **Guardas:** `completeTask` e `adminCompleteTask` rejeitam `NOT_DELIVERED` (não há "Concluir" nem "Concluir e creditar"); `updateTask` rejeita editar `points` de uma tarefa não entregue (os pontos só mudam pela reversão) e permite editar título/descrição/prazo/atribuição.
+- **UI ADMIN (`tasks-admin.tsx`):** tarefa `NOT_DELIVERED` permanece na seção Pendentes com chip vermelho; botão **"Marcar como não entregue"** aparece em tarefas abertas já atrasadas; no estado não entregue some o editor de pontos, o "Concluir e creditar" e o botão de marcar, restando a edição de prazo e o banner de adiamento (com aviso de que aprovar devolve os pontos). Atualizações otimistas tratam o débito/reversão.
+- **UI DEPENDENTE (`tasks-dependent.tsx`):** a tarefa continua em "Suas tarefas" com o chip "Não entregue", **sem** o botão "Concluir tarefa" e **mantendo** "Pedir mais tempo"; aviso "Marcada como não entregue. Peça mais tempo para reabrir a tarefa."
+
+### SQL necessário no Supabase (manual)
+O valor do enum precisa existir no banco — sem ele, marcar como não entregue falha em runtime:
+```sql
+alter type public.task_status add value if not exists 'NOT_DELIVERED';
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Pontos negativos são um estado válido (penalidade integral, sem clamp em 0); resgates continuam barrados pela validação de saldo.
+- `NOT_DELIVERED` é terminal até o prazo ser reaberto; reabrir (adiamento/prazo) **zera `tasks.points`**, então a tarefa reaberta não paga pontos mesmo se concluída depois.
+- Detalhamento do "porquê" no **ADR-0007** (`docs/adr/0007-tarefa-nao-entregue-penalidade-e-restauracao.md`).
+
+---
+
 ## Co-controle de casa por PIN (concluída)
 
 ### O que foi implementado
@@ -37,7 +63,7 @@ create policy "house_members_select_for_admin_members" on public.house_members
 - PIN reutiliza `houses.code` (6 caracteres, já único e gerado na criação) em vez de nova coluna — evita migração de schema; semântica de "convite/controle" já era a do campo.
 - Autorização de ADMIN passou de "dono" para "membro ADMIN": a membresia é a fonte da verdade do co-controle; `owner_id` continua identificando o tutor/criador (card "Seu tutor").
 - Listagens de casas/membros/atribuições usam service role: RLS de `houses`/`house_members`/`profiles` não tinha (nem precisa ter) policy de leitura cross-role para co-gerentes; isolar por here, sem as policies as casas somem da UI mesmo com a query "OK" no SQL editor (que roda como superuser e ignora RLS).
-- **Leituras de tarefas/recompensas também via service-role** (`/tasks` e `/rewards`): a RLS de `tasks`/`rewards`/`reward_redemptions`/`reward_suggestions` é centrada no `owner_id` da casa, então o co-gerente (e o dependente nas tarefas do co-gerente) não enxergava nada. O escopo é explícito e derivado da sessão: ADMIN → `.eq('house_id', activeHouse.id)`; DEPENDENT → `.eq('house_id', house.id).eq('assigned_to', user.id)` (ou `.eq('profile_id', user.id)` em resgates/sugestões). `getDependentHouse` também passou a usar service-role.
+- **Leituras de tarefas/recompensas também via service-role** (`/tasks` e `/rewards`): a RLS de `tasks`/`rewards`/`reward_redemptions`/`reward_suggestions` é centrada no `owner_id` da casa, então o co-gerente (e o dependente nas tarefas do co-gerente) não enxergava nada. O escopo é explícito e derivado da sessão: ADMIN → `.eq('house_id', activeHouse.id)`; DEPENDENT → `.eq('house_id', house.id).eq('assigned_to', user.id)` (ou `.eq('profile_id', user.id)` em resgates/sugestões). `getDependentHouse` também passou a usar service-role. Detalhamento do "porquê" no **ADR-0006** (`docs/adr/0006-leituras-cross-role-via-service-role.md`).
 - **Limite conhecido — Realtime:** as subscriptions dos client components (`use-postgres-changes`) continuam sujeitas à RLS (não há como usar service role no browser). Sem policies de `SELECT` por membro, eventos ao vivo podem não chegar ao co-gerente/dependente; o `router.refresh()` pós-ação garante a atualização de quem age, e as policies de `SELECT` por membro (bloco acima) são a forma de habilitar o Realtime cross-role.
 
 ---

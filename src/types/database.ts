@@ -388,7 +388,12 @@ export interface Database {
     Enums: {
       user_role: 'ADMIN' | 'DEPENDENT'
       member_role: 'ADMIN' | 'DEPENDENT'
-      task_status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'APPROVED'
+      task_status:
+        | 'PENDING'
+        | 'IN_PROGRESS'
+        | 'COMPLETED'
+        | 'APPROVED'
+        | 'NOT_DELIVERED'
       redemption_status: 'PENDING' | 'APPROVED' | 'REJECTED'
     }
     CompositeTypes: {

@@ -57,6 +57,32 @@ async function assertAdminCanManage(
   return { ok: true, adminId: user.id }
 }
 
+/**
+ * Ajusta o saldo do dependente somando `delta` (pode ser negativo — o saldo
+ * pode ficar negativo por penalidade de "não entregue"). Retorna `false` se o
+ * perfil não existir ou a escrita falhar.
+ */
+async function adjustPoints(
+  admin: ReturnType<typeof createAdminClient>,
+  profileId: string,
+  delta: number
+): Promise<boolean> {
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('points')
+    .eq('id', profileId)
+    .maybeSingle()
+
+  if (!profile) return false
+
+  const { error } = await admin
+    .from('profiles')
+    .update({ points: profile.points + delta })
+    .eq('id', profileId)
+
+  return !error
+}
+
 export async function createTask(input: CreateTaskInput): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) {
@@ -127,7 +153,9 @@ export async function updateTask(
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, due_date, extension_requested')
+    .select(
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to'
+    )
     .eq('id', taskId)
     .maybeSingle()
 
@@ -135,15 +163,20 @@ export async function updateTask(
     return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
   }
 
-  // Tarefas concluídas/aprovadas são imutáveis para o ADMIN editar.
-  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+  // Tarefas concluídas/aprovadas são imutáveis para o ADMIN editar. Uma tarefa
+  // "não entregue" continua editável — alterar o prazo equivale a aprovar um
+  // adiamento (devolve os pontos e zera a tarefa).
+  const isNotDelivered = task.status === 'NOT_DELIVERED'
+  if (!isNotDelivered && task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
     return { ok: false, error: 'Tarefa já concluída ou aprovada.' }
   }
 
   const updates: TaskPatch & {
     extension_requested?: boolean
     extension_reason?: string | null
+    status?: 'PENDING' | 'NOT_DELIVERED'
   } = {}
+  let pointsToRestore = 0
   if ('title' in patch) {
     const title = patch.title?.trim()
     if (!title) return { ok: false, error: 'O título não pode ser vazio.' }
@@ -154,6 +187,12 @@ export async function updateTask(
     updates.description = desc ? desc : null
   }
   if ('points' in patch) {
+    if (isNotDelivered) {
+      return {
+        ok: false,
+        error: 'Os pontos de uma tarefa não entregue só mudam via adiamento.',
+      }
+    }
     if (patch.points === undefined || patch.points < 0) {
       return { ok: false, error: 'Pontos inválidos.' }
     }
@@ -165,9 +204,23 @@ export async function updateTask(
 
     // Pedido de adiamento pendente + prazo alterado para um valor diferente
     // do atual => o pedido é considerado aceito automaticamente com a nova data.
-    if (task.extension_requested && dueDateChanged(task.due_date, nextDue)) {
-      updates.extension_requested = false
-      updates.extension_reason = null
+    if (dueDateChanged(task.due_date, nextDue)) {
+      if (task.extension_requested) {
+        updates.extension_requested = false
+        updates.extension_reason = null
+      }
+
+      // Tarefa não entregue: alterar o prazo tem o mesmo efeito de um adiamento
+      // aprovado — devolve os pontos debitados e zera a tarefa. O status passa a
+      // ser o equivalente ao novo prazo.
+      if (isNotDelivered) {
+        pointsToRestore = task.points
+        updates.points = 0
+        updates.status =
+          nextDue && new Date(nextDue).getTime() < Date.now()
+            ? 'NOT_DELIVERED'
+            : 'PENDING'
+      }
     }
   }
   if ('assigned_to' in patch) {
@@ -199,6 +252,27 @@ export async function updateTask(
   const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
   if (error) return { ok: false, error: 'Falha ao salvar a tarefa.' }
 
+  if (pointsToRestore > 0 && task.assigned_to) {
+    const restored = await adjustPoints(admin, task.assigned_to, pointsToRestore)
+    if (!restored) {
+      // Rollback: devolve a tarefa ao estado "não entregue".
+      await admin
+        .from('tasks')
+        .update({
+          status: 'NOT_DELIVERED',
+          points: pointsToRestore,
+          due_date: task.due_date,
+        })
+        .eq('id', taskId)
+      return { ok: false, error: 'Falha ao devolver os pontos. Prazo revertido.' }
+    }
+  }
+
+  if (pointsToRestore > 0) {
+    revalidatePath('/rewards')
+    revalidatePath('/dashboard/dependent')
+  }
+
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -227,6 +301,12 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
   }
   if (task.assigned_to !== user.id) {
     return { ok: false, error: 'Esta tarefa não está atribuída a você.' }
+  }
+  if (task.status === 'NOT_DELIVERED') {
+    return {
+      ok: false,
+      error: 'Tarefa marcada como não entregue. Peça mais tempo ao administrador.',
+    }
   }
   if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
     return { ok: false, error: 'Tarefa já finalizada.' }
@@ -371,6 +451,70 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
 }
 
 /**
+ * ADMIN marca uma tarefa atrasada como "não entregue": debita do dependente os
+ * pontos que a tarefa valeria (o saldo pode ficar negativo) e muda o status
+ * para NOT_DELIVERED. A penalidade só é revertida por um adiamento aprovado
+ * (que devolve os pontos e zera a tarefa).
+ */
+export async function markTaskNotDelivered(taskId: string): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status, points, assigned_to, due_date')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+    return { ok: false, error: 'Somente tarefas abertas podem ser marcadas como não entregues.' }
+  }
+  if (!task.due_date || new Date(task.due_date).getTime() >= Date.now()) {
+    return { ok: false, error: 'Só tarefas atrasadas podem ser marcadas como não entregues.' }
+  }
+  if (!task.assigned_to) {
+    return { ok: false, error: 'Tarefa sem dependente atribuído.' }
+  }
+
+  const previousStatus = task.status
+
+  // Guard: a transição PENDING/IN_PROGRESS -> NOT_DELIVERED acontece uma única
+  // vez; um clique concorrente não debita os pontos duas vezes.
+  const { data: marked, error: statusError } = await admin
+    .from('tasks')
+    .update({ status: 'NOT_DELIVERED' })
+    .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+    .select('id')
+
+  if (statusError || !marked || marked.length === 0) {
+    return { ok: false, error: 'A tarefa já foi finalizada por outra pessoa.' }
+  }
+
+  const debited = await adjustPoints(admin, task.assigned_to, -task.points)
+  if (!debited) {
+    await admin.from('tasks').update({ status: previousStatus }).eq('id', taskId)
+    return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
+  }
+
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+  revalidatePath('/dashboard/dependent')
+
+  return {
+    ok: true,
+    message: `Tarefa marcada como não entregue (−${task.points} pts).`,
+  }
+}
+
+/**
  * ADMIN conclui e aprova a tarefa em um único passo, creditando os pontos
  * mesmo que o prazo ainda não tenha vencido. Transição guardada
  * (PENDING/IN_PROGRESS -> APPROVED) impede crédito duplicado em cliques
@@ -499,7 +643,11 @@ export async function requestTaskExtension(
   if (task.assigned_to !== user.id) {
     return { ok: false, error: 'Esta tarefa não está atribuída a você.' }
   }
-  if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+  if (
+    task.status !== 'PENDING' &&
+    task.status !== 'IN_PROGRESS' &&
+    task.status !== 'NOT_DELIVERED'
+  ) {
     return { ok: false, error: 'Tarefa já finalizada.' }
   }
   if (task.extension_requested) {
@@ -520,6 +668,10 @@ export async function requestTaskExtension(
 /**
  * ADMIN aprova (usa o prazo atual, ou hoje, e soma `days` dias ao prazo) ou
  * rejeita o pedido de adiamento — em ambos os casos a flag é limpa.
+ *
+ * Se a tarefa estiver marcada como "não entregue", aprovar o adiamento devolve
+ * ao dependente os pontos debitados (pode ser negativo na ida) e zera a tarefa,
+ * que volta a valer 0 e é reaberta conforme o novo prazo.
  */
 export async function resolveTaskExtension(
   taskId: string,
@@ -535,7 +687,9 @@ export async function resolveTaskExtension(
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, due_date, extension_requested')
+    .select(
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to'
+    )
     .eq('id', taskId)
     .maybeSingle()
 
@@ -549,10 +703,14 @@ export async function resolveTaskExtension(
     return { ok: false, error: 'Dias de adiamento inválidos.' }
   }
 
+  const isNotDelivered = task.status === 'NOT_DELIVERED'
+
   const updates: {
     extension_requested: boolean
     extension_reason: null
     due_date?: string
+    points?: number
+    status?: 'PENDING' | 'NOT_DELIVERED'
   } = {
     extension_requested: false,
     extension_reason: null,
@@ -561,20 +719,51 @@ export async function resolveTaskExtension(
   if (approve) {
     const currentDue = task.due_date ? new Date(task.due_date) : new Date()
     const base = currentDue.getTime() > Date.now() ? currentDue : new Date()
-    updates.due_date = new Date(
-      base.getTime() + days * 24 * 60 * 60 * 1000
-    ).toISOString()
+    const nextDue = new Date(base.getTime() + days * 24 * 60 * 60 * 1000)
+    updates.due_date = nextDue.toISOString()
+
+    if (isNotDelivered) {
+      updates.points = 0
+      updates.status =
+        nextDue.getTime() < Date.now() ? 'NOT_DELIVERED' : 'PENDING'
+    }
   }
 
   const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
 
   if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
 
+  if (approve && isNotDelivered && task.assigned_to) {
+    const restored = await adjustPoints(admin, task.assigned_to, task.points)
+    if (!restored) {
+      // Rollback: devolve a tarefa ao estado "não entregue" com o pedido pendente.
+      await admin
+        .from('tasks')
+        .update({
+          status: 'NOT_DELIVERED',
+          points: task.points,
+          due_date: task.due_date,
+          extension_requested: true,
+          extension_reason: task.extension_reason,
+        })
+        .eq('id', taskId)
+      return { ok: false, error: 'Falha ao devolver os pontos. Ação revertida.' }
+    }
+
+    revalidatePath('/rewards')
+    revalidatePath('/dashboard/dependent')
+  }
+
   revalidatePath('/tasks')
+
+  if (!approve) {
+    return { ok: true, message: 'Pedido de adiamento rejeitado.' }
+  }
+
   return {
     ok: true,
-    message: approve
-      ? `Adiamento aprovado (+${days} dias).`
-      : 'Pedido de adiamento rejeitado.',
+    message: isNotDelivered
+      ? `Adiamento aprovado (+${days} dias). Pontos devolvidos e tarefa agora vale 0.`
+      : `Adiamento aprovado (+${days} dias).`,
   }
 }

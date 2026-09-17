@@ -1,6 +1,6 @@
 # CasaSync Web
 
-Sistema de organização familiar: casas, tarefas com pontos e recompensas (gamificação), com login por username. Multi-tenant (Admin → Casas → Dependentes), isolamento por `house_id` via Supabase RLS.
+Sistema de organização familiar: casas, tarefas com pontos e recompensas (gamificação), com login por username. Multi-tenant (Admin → Casas → Dependentes), isolamento por `house_id`, co-controle de casa por PIN (`houses.code`) e leituras cross-role via service role (ver ADR-0006).
 
 ## Stack
 - Next.js 16 (App Router, `src/`) + React 19 + Tailwind 4 + shadcn/ui

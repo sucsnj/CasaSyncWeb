@@ -26,8 +26,8 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 |---|---|---|
 | id | uuid PK | |
 | name | text | |
-| code | text | código único gerado (convite) |
-| owner_id | uuid FK → profiles | posse validada via service role |
+| code | text | PIN único gerado na criação (convite/co-controle; exibido/copiável nos cards) |
+| owner_id | uuid FK → profiles | tutor/criador; **não** define controle (ver `house_members.role='ADMIN'`) |
 | image_url | text | |
 | created_at / updated_at | timestamptz | |
 
@@ -37,7 +37,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | id | uuid PK | |
 | house_id | uuid FK → houses | |
 | profile_id | uuid FK → profiles | |
-| role | `member_role` | `ADMIN` \| `DEPENDENT` |
+| role | `member_role` | `ADMIN` \| `DEPENDENT`; `ADMIN` = dono **ou** co-gerente (entrou via PIN) |
 | created_at / updated_at | timestamptz | |
 
 ### tasks
@@ -47,7 +47,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | house_id | uuid FK → houses | isolamento multi-tenant (RLS + realtime filter) |
 | title / description | text | description nullable |
 | points | int | |
-| status | `task_status` | `PENDING` \| `IN_PROGRESS` \| `COMPLETED` \| `APPROVED` |
+| status | `task_status` | `PENDING` \| `IN_PROGRESS` \| `COMPLETED` \| `APPROVED` \| `NOT_DELIVERED` (penalidade de atraso) |
 | assigned_to | uuid FK → profiles | nullable; `''` normalizado para nul em `actions/tasks.ts` |
 | created_by | uuid FK → profiles | |
 | completed_by / completed_at | uuid / timestamptz | nullable |
@@ -97,12 +97,14 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
 - `member_role` = `ADMIN` \| `DEPENDENT`
-- `task_status` = `PENDING` \| `IN_PROGRESS` \| `COMPLETED` \| `APPROVED`
+- `task_status` = `PENDING` \| `IN_PROGRESS` \| `COMPLETED` \| `APPROVED` \| `NOT_DELIVERED`
 - `redemption_status` = `PENDING` \| `APPROVED` \| `REJECTED`
 
-Valores em caixa alta (regra de negócio).
+Valores em caixa alta (regra de negócio). `NOT_DELIVERED` foi adicionado ao enum
+existente — se o banco ainda não tiver o valor, rodar
+`alter type public.task_status add value 'NOT_DELIVERED';`.
 
 ## Fora do snap dos types (não verificável no código)
 - **Storage:** bucket público `casasync-media` com pastas avatars/houses/rewards/tasks/suggestions e policies de leitura pública.
-- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. Exigido pelo app em runtime — sem policies, as queries do usuário autenticado falham vazias.
+- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`).
 - **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos.

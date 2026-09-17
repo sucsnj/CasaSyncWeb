@@ -10,6 +10,7 @@ export const taskAccentByStatus = {
   IN_PROGRESS: 'border-l-sky-500',
   COMPLETED: 'border-l-amber-400',
   APPROVED: 'border-l-emerald-500',
+  NOT_DELIVERED: 'border-l-red-600',
 } as const
 
 export const taskChipByStatus = {
@@ -20,6 +21,10 @@ export const taskChipByStatus = {
     className: 'bg-amber-100 text-amber-700',
   },
   APPROVED: { label: 'Concluída', className: 'bg-emerald-50 text-emerald-700' },
+  NOT_DELIVERED: {
+    label: 'Não entregue',
+    className: 'bg-red-100 text-red-700',
+  },
 } as const
 
 export const POINTS_PILL_CLASS = 'bg-amber-100 text-amber-700'

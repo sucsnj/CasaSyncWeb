@@ -6,6 +6,7 @@ import {
   adminCompleteTask,
   approveTask,
   createTask,
+  markTaskNotDelivered,
   rejectCompletedTask,
   resolveTaskExtension,
   updateTask,
@@ -121,7 +122,10 @@ export function TasksAdmin({
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
 
   const pendingTasks = tasks.filter(
-    (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS'
+    (task) =>
+      task.status === 'PENDING' ||
+      task.status === 'IN_PROGRESS' ||
+      task.status === 'NOT_DELIVERED'
   )
   const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
@@ -215,6 +219,23 @@ export function TasksAdmin({
     })
   }
 
+  function handleMarkNotDelivered(task: Task) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await markTaskNotDelivered(task.id)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+
+      // Otimista: o card passa a exibir o estado "não entregue" na hora.
+      setTasks((prev) =>
+        upsertTask(prev, { ...task, status: 'NOT_DELIVERED' })
+      )
+      router.refresh()
+    })
+  }
+
   function handleResolveExtension(task: Task, approve: boolean, days = 3) {
     setFormError(null)
     startTransition(async () => {
@@ -224,11 +245,19 @@ export function TasksAdmin({
         return
       }
 
+      // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar também
+      // devolve os pontos: zera a tarefa e reabre conforme o novo prazo.
+      const restored =
+        approve && task.status === 'NOT_DELIVERED'
+          ? { points: 0, status: 'PENDING' as Task['status'] }
+          : {}
+
       setTasks((prev) =>
         upsertTask(prev, {
           ...task,
           extension_requested: false,
           extension_reason: null,
+          ...restored,
         })
       )
       router.refresh()
@@ -260,6 +289,8 @@ export function TasksAdmin({
     // Atualização determinística do card local: o auto-aceite do adiamento por
     // edição de prazo limpa as flags no banco; refletir aqui sem depender do
     // eco do Realtime. Só limpa se houver pedido pendente E o instante mudou.
+    // Numa tarefa "não entregue", mudar o prazo devolve os pontos: zera a
+    // tarefa e reabre conforme o novo prazo.
     setTasks((prev) =>
       prev.map((item) => {
         if (item.id !== taskId) return item
@@ -270,7 +301,16 @@ export function TasksAdmin({
           item.extension_requested && changed
             ? { extension_requested: false, extension_reason: null }
             : {}
-        return { ...item, due_date: nextDue, ...cleared }
+        const restored =
+          item.status === 'NOT_DELIVERED' && changed
+            ? {
+                points: 0,
+                status: (nextDue && new Date(nextDue).getTime() < Date.now()
+                  ? 'NOT_DELIVERED'
+                  : 'PENDING') as Task['status'],
+              }
+            : {}
+        return { ...item, due_date: nextDue, ...cleared, ...restored }
       })
     )
     router.refresh()
@@ -455,6 +495,7 @@ export function TasksAdmin({
                 ? cn('border-l-4', taskAccentByStatus[task.status])
                 : taskSlaCardClass[sla]
             const isExpanded = expandedIds.has(task.id)
+            const isNotDelivered = task.status === 'NOT_DELIVERED'
 
             return (
             <Card key={task.id} className={cardClass}>
@@ -466,7 +507,7 @@ export function TasksAdmin({
                   className="flex w-full items-center gap-2 text-left"
                 >
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {slaInfo ? (
+                    {!isNotDelivered && slaInfo ? (
                       <span
                         className={cn(
                           'rounded-full px-2.5 py-1 text-xs font-medium',
@@ -554,6 +595,12 @@ export function TasksAdmin({
                     <p className="mt-1 text-sm text-blue-700">
                       {task.extension_reason ?? 'Sem justificativa informada.'}
                     </p>
+                    {isNotDelivered ? (
+                      <p className="mt-1 text-xs text-blue-700">
+                        Aprovar devolve os pontos debitados e a tarefa passa a
+                        valer 0.
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -587,15 +634,22 @@ export function TasksAdmin({
                   </div>
                 ) : null}
 
-<div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-1">
-                      <span className="text-xs text-slate-500">Pontos</span>
-                      <DebouncedField
-                        value={String(task.points)}
-                        onSave={savePoints(task.id)}
-                        type="number"
-                      />
-                    </div>
+<div
+                    className={cn(
+                      'grid gap-3',
+                      isNotDelivered ? 'grid-cols-1' : 'grid-cols-2'
+                    )}
+                  >
+                    {!isNotDelivered ? (
+                      <div className="grid gap-1">
+                        <span className="text-xs text-slate-500">Pontos</span>
+                        <DebouncedField
+                          value={String(task.points)}
+                          onSave={savePoints(task.id)}
+                          type="number"
+                        />
+                      </div>
+                    ) : null}
                     <div className="grid gap-1">
                       <span className="text-xs text-slate-500">
                         Data limite
@@ -608,14 +662,37 @@ export function TasksAdmin({
                     </div>
                   </div>
 
-                  <Button
-                    type="button"
-                    onClick={() => handleAdminComplete(task)}
-                    disabled={pending}
-                    className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
-                  >
-                    {pending ? 'Concluindo...' : 'Concluir e creditar pontos'}
-                  </Button>
+                  {isNotDelivered ? (
+                    <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                      Tarefa marcada como não entregue — {task.points} pt(s) já
+                      debitado(s) do dependente. Aprovar um adiamento (ou
+                      alterar o prazo) devolve os pontos e zera a tarefa.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        type="button"
+                        onClick={() => handleAdminComplete(task)}
+                        disabled={pending}
+                        className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
+                      >
+                        {pending
+                          ? 'Concluindo...'
+                          : 'Concluir e creditar pontos'}
+                      </Button>
+                      {sla === 'overdue' ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleMarkNotDelivered(task)}
+                          disabled={pending}
+                          className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
+                        >
+                          Marcar como não entregue
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
                   </>
                 ) : null}
               </CardContent>

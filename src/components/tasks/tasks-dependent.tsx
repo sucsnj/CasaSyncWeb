@@ -113,7 +113,10 @@ export function TasksDependent({
   }
 
   const openTasks = tasks.filter(
-    (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS'
+    (task) =>
+      task.status === 'PENDING' ||
+      task.status === 'IN_PROGRESS' ||
+      task.status === 'NOT_DELIVERED'
   )
   const awaitingTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const doneTasks = tasks.filter((task) => task.status === 'APPROVED')
@@ -146,8 +149,11 @@ export function TasksDependent({
           openTasks.map((task) => {
             const sla = getTaskSlaStatus(task.created_at, task.due_date)
             const slaInfo = taskSlaBadge[sla]
+            // "Não entregue" tem card próprio (borda vermelha) e some o badge
+            // de SLA — o chip vermelho já comunica o estado.
+            const isNotDelivered = task.status === 'NOT_DELIVERED'
             const cardClass =
-              sla === 'normal'
+              isNotDelivered || sla === 'normal'
                 ? cn('border-l-4', taskAccentByStatus[task.status])
                 : taskSlaCardClass[sla]
 
@@ -165,7 +171,7 @@ export function TasksDependent({
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-semibold text-slate-800">{task.title}</p>
                       <span className="flex shrink-0 items-center gap-1.5">
-                        {slaInfo ? (
+                        {!isNotDelivered && slaInfo ? (
                           <span
                             className={cn(
                               'rounded-full px-2.5 py-1 text-xs font-medium',
@@ -214,13 +220,20 @@ export function TasksDependent({
                     </p>
                   </div>
                   <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
-                    <Button
-                      onClick={() => handleComplete(task)}
-                      disabled={pending}
-                      className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
-                    >
-                      {pending ? 'Enviando...' : 'Concluir tarefa'}
-                    </Button>
+                    {isNotDelivered ? (
+                      <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                        Marcada como não entregue. Peça mais tempo para reabrir
+                        a tarefa.
+                      </p>
+                    ) : (
+                      <Button
+                        onClick={() => handleComplete(task)}
+                        disabled={pending}
+                        className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
+                      >
+                        {pending ? 'Enviando...' : 'Concluir tarefa'}
+                      </Button>
+                    )}
                     {task.due_date && !task.extension_requested ? (
                       <Button
                         variant="outline"
