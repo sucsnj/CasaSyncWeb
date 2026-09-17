@@ -1,5 +1,22 @@
 # CasaSync Web — PROJECT STATUS
 
+## Restaurar tarefa aprovada (concluída)
+
+### O que foi implementado
+- **`restoreTask(taskId)`** (`src/actions/tasks.ts`): ADMIN restaura uma tarefa `APPROVED` para reaproveitá-la em vez de criar outra idêntica. Transição guardada `.eq('status','APPROVED')` (impede restaurar duas vezes). Preserva **todos os dados** (título, descrição, pontos, atribuição, imagem, `house_id`, `created_by`) e **não altera os pontos já creditados** do dependente; apenas limpa a conclusão (`completed_by`/`completed_at`), zera as flags de adiamento e reinicia o **prazo para agora + 1 dia** (`due_date`), voltando o status para `PENDING`.
+- **UI ADMIN (`tasks-admin.tsx`):** botão **"Restaurar"** sempre visível no cabeçalho do card em "Aprovadas" (fora do toggle colapsável); atualização otimista move o card de volta para Pendentes com o prazo novo.
+- **DEPENDENTE:** a tarefa reaparece em "Suas tarefas" como `PENDING` (prazo futuro), pronta para ser concluída de novo — sem duplicar linhas em `tasks`.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Restaurar **não** devolve nem debita pontos (diferente de `rejectCompletedTask` e do adiamento de `NOT_DELIVERED`): o crédito anterior é histórico e o dependente ganha novamente se concluir de novo.
+- Novo prazo = agora + 1 dia (reinicia o SLA sem nascer "Atrasada"); o ADMIN pode ajustar o prazo depois via `updateTask`.
+- Detalhamento do "porquê" no **ADR-0008** (`docs/adr/0008-restaurar-tarefa-aprovada.md`).
+
+---
+
 ## Tarefa "não entregue" (NOT_DELIVERED) com penalidade (concluída)
 
 ### O que foi implementado

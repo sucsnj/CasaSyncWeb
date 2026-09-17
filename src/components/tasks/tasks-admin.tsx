@@ -9,6 +9,7 @@ import {
   markTaskNotDelivered,
   rejectCompletedTask,
   resolveTaskExtension,
+  restoreTask,
   updateTask,
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
@@ -231,6 +232,33 @@ export function TasksAdmin({
       // Otimista: o card passa a exibir o estado "não entregue" na hora.
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'NOT_DELIVERED' })
+      )
+      router.refresh()
+    })
+  }
+
+  function handleRestore(task: Task) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await restoreTask(task.id)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+
+      // Otimista: volta para Pendentes com o prazo reiniciado (+1 dia). Os
+      // pontos já creditados são mantidos e a tarefa reaparece para o dependente.
+      const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      setTasks((prev) =>
+        upsertTask(prev, {
+          ...task,
+          status: 'PENDING',
+          due_date: nextDue,
+          completed_by: null,
+          completed_at: null,
+          extension_requested: false,
+          extension_reason: null,
+        })
       )
       router.refresh()
     })
@@ -810,25 +838,35 @@ export function TasksAdmin({
               className="border-l-4 border-l-emerald-500"
             >
               <CardContent className="flex flex-col gap-1 py-3">
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(task.id)}
-                  aria-expanded={isExpanded}
-                  className="flex w-full items-center gap-2 text-left"
-                >
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                    {taskChipByStatus.APPROVED.label}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                    {task.title}
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                      isExpanded && 'rotate-180'
-                    )}
-                  />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(task.id)}
+                    aria-expanded={isExpanded}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                      {taskChipByStatus.APPROVED.label}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                      {task.title}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
+                  </button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleRestore(task)}
+                    disabled={pending}
+                    className="min-h-9 shrink-0 text-slate-600"
+                  >
+                    Restaurar
+                  </Button>
+                </div>
                 {isExpanded ? (
                   <p className="mt-1 text-sm text-slate-500">
                     {assigneeName(task.assigned_to)} ·{' '}

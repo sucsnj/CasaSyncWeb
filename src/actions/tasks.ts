@@ -515,6 +515,58 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 }
 
 /**
+ * ADMIN restaura uma tarefa aprovada para reaproveitá-la sem criar uma nova:
+ * os pontos já creditados NÃO são alterados, os demais dados são mantidos e o
+ * prazo reinicia (agora + 1 dia). A tarefa volta para PENDING.
+ */
+export async function restoreTask(taskId: string): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+  if (task.status !== 'APPROVED') {
+    return { ok: false, error: 'Somente tarefas aprovadas podem ser restauradas.' }
+  }
+
+  const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: restored, error } = await admin
+    .from('tasks')
+    .update({
+      status: 'PENDING',
+      due_date: nextDue,
+      completed_by: null,
+      completed_at: null,
+      extension_requested: false,
+      extension_reason: null,
+    })
+    .eq('id', taskId)
+    .eq('status', 'APPROVED') // guard: impede restaurar duas vezes
+    .select('id')
+
+  if (error || !restored || restored.length === 0) {
+    return { ok: false, error: 'A tarefa já foi restaurada por outra pessoa.' }
+  }
+
+  revalidatePath('/tasks')
+  revalidatePath('/dashboard/dependent')
+
+  return { ok: true, message: 'Tarefa restaurada: prazo reiniciado para +1 dia.' }
+}
+
+/**
  * ADMIN conclui e aprova a tarefa em um único passo, creditando os pontos
  * mesmo que o prazo ainda não tenha vencido. Transição guardada
  * (PENDING/IN_PROGRESS -> APPROVED) impede crédito duplicado em cliques
