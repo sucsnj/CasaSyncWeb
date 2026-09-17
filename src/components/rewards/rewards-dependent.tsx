@@ -340,7 +340,7 @@ export function RewardsDependent({
                         size="sm"
                         onClick={() => handleRedeem(reward)}
                         disabled={disabled}
-                        className="w-full sm:w-auto"
+                        className="shrink-0"
                       >
                         {pendingId === reward.id ? 'Resgatando...' : 'Resgatar'}
                       </Button>
