@@ -2,6 +2,18 @@
 
 > **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
 
+## Responsivo dos cards de tarefas (concluída)
+
+### O que foi implementado
+- **Nome da tarefa na linha superior, chips/botões abaixo (mobile):** nos cards de tarefas (ADMIN e DEPENDENTE) os `chips` (SLA/status), `pill` de pontos, chevron e botões de ação espremiam o título em telas estreitas. Agora o **título ocupa a linha de cima** e os elementos ficam numa **linha abaixo**, voltando ao layout lado a lado em `sm:`.
+- **`tasks-admin.tsx`:** pendentes — o cabeçalho colapsável virou `flex-wrap` com o título `basis-full sm:basis-0 sm:flex-1` (chips + pontos + chevron caem para a linha seguinte no mobile); concluídas/aprovadas — o container virou `flex-col sm:flex-row`, com o título/chevron no topo e o grupo `chip + botões` (Desaprovar/Aprovar, Restaurar) abaixo.
+- **`tasks-dependent.tsx`:** título e descrição vêm antes dos chips; SLA/status/pontos/prazo/adiamento foram reunidos numa única linha `flex-wrap` abaixo do texto.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓.
+
+---
+
 ## Notificações entre ADMIN e dependente (sino no cabeçalho) — concluída
 
 ### O que foi implementado
@@ -47,7 +59,7 @@ alter publication supabase_realtime add table public.notifications;
 
 **Causa raiz (confirmada empiricamente):** quando a sessão é **restaurada do storage/cookies** (caso do browser, via `@supabase/ssr`), o `auth.getSession()` é assíncrono e o socket Realtime conectava **como `anon`** antes do token estar disponível. Como o RLS da tabela usa `auth.uid()`, o evento era descartado em silêncio — sem erro, sem `CHANNEL_ERROR`. Diagnóstico: um probe com `signInWithPassword` (token já em memória) recebia os eventos; o mesmo probe com a sessão vinda do storage **não** recebia. Um segundo probe provou que `await getSession()` + `await realtime.setAuth(token)` **antes** de assinar resolve (`events:1`).
 
-**Fix (`src/hooks/use-postgres-changes.ts`):** o efeito virou assíncrono — antes de criar/assinar o canal, faz `getSession()` e `realtime.setAuth(session.access_token)`. Como todos os listeners usam esse hook, a correção vale para **tarefas, recompensas, resgates, sugestões e notificações** (o Realtime do app estava sujeito ao mesmo problema). Cleanup continua cancelando o subscribe pendente (`cancelled`) e removendo o canal quando já criado.
+**Fix (`src/hooks/use-postgres-changes.ts`):** o efeito virou assíncrono — antes de criar/assinar o canal, faz `getSession()` e `realtime.setAuth(session.access_token)`. Como todos os listeners usam esse hook, a correção vale para **tarefas, recompensas, resgates, sugestões e notificações** (o Realtime do app estava sujeito ao mesmo problema). Cleanup continua cancelando o subscribe pendente (`cancelled`) e removendo o canal quando já criado. Ver **ADR-0010** (o "porquê" do `setAuth` — não remover).
 
 ### Ajustes de UI do painel (modal)
 - **`Modal` (`src/components/ui/modal.tsx`)** passou a renderizar via **portal para o `body`** (`z-[100]`): antes ficava dentro do header azul (stacking context `z-50` + `text-white`), então herdava a cor branca (botões "invisíveis") e deixava a bottom nav clicável por trás. Agora também **trava o scroll do documento** (`body.overflow = hidden`), **prende o foco (Tab/Shift+Tab) dentro da janela** (o foco não vaza mais para header/bottom nav; restaura o foco anterior ao fechar; foca o painel ao abrir) e fecha no **Esc**. Vale para os 4 usos (sino, casas, recompensas, tarefas).
@@ -60,7 +72,7 @@ alter publication supabase_realtime add table public.notifications;
 - Notificações são **efeito secundário**: registro best-effort, sem rollback da ação principal em caso de falha.
 - `title`/`body` são snapshot em texto (histórico preservado mesmo se nomes/títulos mudarem depois) — evita joins e simplifica o Realtime.
 - Retenção lazy (sem `pg_cron`) e leitura via service-role com escopo de sessão (ADR-0001/0006), mantendo a policy de SELECT apenas para o Realtime.
-- Detalhamento do "porquê" no **ADR-0009** (`docs/adr/0009-notificacoes-entre-admin-e-dependente.md`).
+- Detalhamento do "porquê" no **ADR-0009** (`docs/adr/0009-notificacoes-entre-admin-e-dependente.md`) e, para o Realtime, no **ADR-0010** (`docs/adr/0010-realtime-exige-setAuth-da-sessao.md`).
 
 ---
 

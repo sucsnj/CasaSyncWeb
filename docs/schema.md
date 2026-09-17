@@ -6,7 +6,7 @@ Fonte de verdade do código: `src/types/database.ts` (espelho manual). Para rege
 npx supabase gen types typescript --project-id <project-ref> > src/types/database.generated.ts
 ```
 
-As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3.
+As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication) já foram aplicados no projeto atual.**
 
 ## Tabelas
 

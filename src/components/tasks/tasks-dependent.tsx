@@ -170,47 +170,42 @@ export function TasksDependent({
                         className="mb-3 h-32 w-full rounded-xl border border-slate-200 object-cover"
                       />
                     ) : null}
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-semibold text-slate-800">{task.title}</p>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        {!isNotDelivered && slaInfo ? (
-                          <span
-                            className={cn(
-                              'rounded-full px-2.5 py-1 text-xs font-medium',
-                              slaInfo.className
-                            )}
-                          >
-                            {slaInfo.label}
-                          </span>
-                        ) : null}
-                        <span
-                          className={cn(
-                            'rounded-full px-2.5 py-1 text-xs font-medium',
-                            taskChipByStatus[task.status].className
-                          )}
-                        >
-                          {taskChipByStatus[task.status].label}
-                        </span>
-                      </span>
-                    </div>
+                    <p className="font-semibold text-slate-800">{task.title}</p>
                     {task.description ? (
                       <p className="mt-1 text-sm text-slate-500">
                         {task.description}
                       </p>
                     ) : null}
-                    <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      {!isNotDelivered && slaInfo ? (
+                        <span
+                          className={cn(
+                            'rounded-full px-2.5 py-1 text-xs font-medium',
+                            slaInfo.className
+                          )}
+                        >
+                          {slaInfo.label}
+                        </span>
+                      ) : null}
                       <span
                         className={cn(
-                          'rounded-full px-2 py-0.5 font-semibold',
+                          'rounded-full px-2.5 py-1 text-xs font-medium',
+                          taskChipByStatus[task.status].className
+                        )}
+                      >
+                        {taskChipByStatus[task.status].label}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-sm font-semibold',
                           POINTS_PILL_CLASS
                         )}
                       >
                         {task.points} pts
                       </span>
                       {task.due_date ? (
-                        <span>
-                          até{' '}
-                          {new Date(task.due_date).toLocaleString('pt-BR')}
+                        <span className="text-sm text-slate-500">
+                          até {new Date(task.due_date).toLocaleString('pt-BR')}
                         </span>
                       ) : null}
                       {task.extension_requested ? (
@@ -219,7 +214,7 @@ export function TasksDependent({
                           Aguardando adiamento
                         </span>
                       ) : null}
-                    </p>
+                    </div>
                     {creatorNames[task.created_by] ? (
                       <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-400">
                         <UserRound className="size-3.5" />

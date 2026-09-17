@@ -532,9 +532,12 @@ export function TasksAdmin({
                   type="button"
                   onClick={() => toggleExpanded(task.id)}
                   aria-expanded={isExpanded}
-                  className="flex w-full items-center gap-2 text-left"
+                  className="flex w-full flex-wrap items-center gap-2 text-left"
                 >
-                  <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
+                    {task.title}
+                  </span>
+                  <span className="flex shrink-0 flex-wrap items-center gap-1.5">
                     {!isNotDelivered && slaInfo ? (
                       <span
                         className={cn(
@@ -553,9 +556,6 @@ export function TasksAdmin({
                     >
                       {taskChipByStatus[task.status].label}
                     </span>
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
-                    {task.title}
                   </span>
                   <span
                     className={cn(
@@ -752,16 +752,13 @@ export function TasksAdmin({
               className="border-l-4 border-l-amber-400"
             >
               <CardContent className="flex flex-col gap-2 py-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <button
                     type="button"
                     onClick={() => toggleExpanded(task.id)}
                     aria-expanded={isExpanded}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      {taskChipByStatus.COMPLETED.label}
-                    </span>
                     <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
                       {task.title}
                     </span>
@@ -772,7 +769,10 @@ export function TasksAdmin({
                       )}
                     />
                   </button>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                      {taskChipByStatus.COMPLETED.label}
+                    </span>
                     <Button
                       variant="outline"
                       onClick={() => handleRejectComplete(task)}
@@ -838,16 +838,13 @@ export function TasksAdmin({
               className="border-l-4 border-l-emerald-500"
             >
               <CardContent className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <button
                     type="button"
                     onClick={() => toggleExpanded(task.id)}
                     aria-expanded={isExpanded}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                      {taskChipByStatus.APPROVED.label}
-                    </span>
                     <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
                       {task.title}
                     </span>
@@ -858,14 +855,19 @@ export function TasksAdmin({
                       )}
                     />
                   </button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleRestore(task)}
-                    disabled={pending}
-                    className="min-h-9 shrink-0 text-slate-600"
-                  >
-                    Restaurar
-                  </Button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                      {taskChipByStatus.APPROVED.label}
+                    </span>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleRestore(task)}
+                      disabled={pending}
+                      className="min-h-9 shrink-0 text-slate-600"
+                    >
+                      Restaurar
+                    </Button>
+                  </div>
                 </div>
                 {isExpanded ? (
                   <p className="mt-1 text-sm text-slate-500">
