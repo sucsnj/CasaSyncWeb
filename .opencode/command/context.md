@@ -6,9 +6,13 @@ description: Carrega arquitetura e modelo de dados completos do CasaSync para ta
 
 Você recebeu o contexto integral do projeto abaixo (arquitetura, modelo de dados, regras, superfície de API). Use-o como base **sem reler toda a base de código**; consulte apenas o arquivo-fonte envolvido quando precisar de exatidão de uma linha específica.
 
-$ARGUMENTS
-- Se `$ARGUMENTS` citar uma área (ex: "tarefas", "auth", "recompensas"), aprofunde a resposta nessa área.
-- Se `$ARGUMENTS` citar uma tabela/coluna, valide contra o modelo de dados abaixo.
+Foco opcional: $ARGUMENTS
+
+**Contrato de uso — não repita este documento; aplique-o silenciosamente:**
+1. Responda à solicitação do usuário (feita depois/como desdobramento do `/context`) usando o contexto abaixo como fonte.
+2. Se `$ARGUMENTS` veio vazio, responda em 1–2 linhas confirmando que está contextualizado e aguarde a tarefa.
+3. Se `$ARGUMENTS` citar uma área (ex: "tarefas", "auth", "recompensas"), aprofunde nela; se citar tabela/coluna, valide contra o modelo de dados.
+4. Ao referenciar código, aponte o arquivo real (ex: `src/actions/tasks.ts:240`).
 
 ---
 
