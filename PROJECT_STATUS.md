@@ -1,5 +1,22 @@
 # CasaSync Web — PROJECT STATUS
 
+## Tutores da casa e criador da tarefa para o dependente (concluída)
+
+### O que foi implementado
+- **`getHouseTutors(houseId)`** (`src/utils/house.ts`, substitui o antigo `getHouseTutor` baseado em `owner_id`): lista **todos os ADMIN membros** da casa (`house_members.role='ADMIN'`) — dono e co-gerentes via PIN. Service role (o dependente não tem RLS de leitura de `profiles` de terceiros).
+- **Dashboard do DEPENDENTE (`dashboard/dependent/page.tsx`):** o card "Seu tutor" virou **"Seu tutor"/"Seus tutores"** (título pluraliza conforme a quantidade) e lista cada ADMIN membro com avatar (ou inicial) + nome.
+- **`getProfileNames(ids)`** (`src/utils/house.ts`): mapa `profile_id → full_name` (service role) para resolver o criador de tarefas.
+- **Cards de tarefa do DEPENDENTE (`tasks-dependent.tsx`):** exibem **"Criada por {nome}"** (`tasks.created_by`) nos cards abertos, aguardando aprovação e concluídos; `src/app/tasks/page.tsx` monta o mapa a partir das tarefas carregadas e passa `creatorNames` ao componente (fallback "Administrador" para quem não estiver no mapa, ex.: tarefa nova via Realtime).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Tutores = **todos os ADMIN membros** (não apenas o `owner_id`), coerente com o co-controle por PIN (ADR-0006).
+- O criador é resolvido por mapa de nomes no servidor (service role) em vez de join na query de tarefas, evitando a ambiguidade das FKs de `tasks` para `profiles` (`created_by` × `completed_by`) e funcionando igual para ADMIN/dependente.
+
+---
+
 ## Restaurar tarefa aprovada (concluída)
 
 ### O que foi implementado

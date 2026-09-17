@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CircleCheck, Clock3, ListTodo, Sparkles } from 'lucide-react'
+import { CircleCheck, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -33,9 +33,11 @@ function upsertTask(list: Task[], task: Task): Task[] {
 export function TasksDependent({
   houseId,
   initialTasks,
+  creatorNames,
 }: {
   houseId: string
   initialTasks: Task[]
+  creatorNames: Record<string, string>
 }) {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -218,6 +220,12 @@ export function TasksDependent({
                         </span>
                       ) : null}
                     </p>
+                    {creatorNames[task.created_by] ? (
+                      <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-400">
+                        <UserRound className="size-3.5" />
+                        Criada por {creatorNames[task.created_by]}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
                     {isNotDelivered ? (
@@ -281,6 +289,12 @@ export function TasksDependent({
                 <p className="mt-1 text-sm text-slate-500">
                   {task.points} pts · o administrador precisa aprovar
                 </p>
+                {creatorNames[task.created_by] ? (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                    <UserRound className="size-3.5" />
+                    Criada por {creatorNames[task.created_by]}
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           ))}
@@ -313,6 +327,12 @@ export function TasksDependent({
                   <CircleCheck className="size-4 shrink-0 text-emerald-500" />
                   {task.points} pts · pontos creditados
                 </p>
+                {creatorNames[task.created_by] ? (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                    <UserRound className="size-3.5" />
+                    Criada por {creatorNames[task.created_by]}
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           ))}

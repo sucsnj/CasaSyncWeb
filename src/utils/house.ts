@@ -50,7 +50,7 @@ export async function getSessionProfile(): Promise<{
  * Casas que o ADMIN controla: as que criou (owner) E as que entrou via PIN
  * (membro `house_members.role = 'ADMIN'`).
  *
- * Lida com o cliente service-role (mesmo precedente de `getHouseTutor`) para
+ * Lida com o cliente service-role (mesmo precedente de `getHouseTutors`) para
  * a listagem das casas não depender de policies RLS específicas para
  * co-gerentes — o que importa é o controle medido pela membresia. O `userId`
  * sempre vem da sessão autenticada, nunca de input público.
@@ -151,27 +151,52 @@ export type Tutor = {
 }
 
 /**
- * Perfil do ADMIN que criou a casa (tutor). Busca via service role porque o
+ * Tutores da casa: todos os ADMIN membros (`house_members.role='ADMIN'`) — o
+ * dono e os co-gerentes que entraram via PIN. Busca via service role porque o
  * dependente não tem RLS de select em `profiles` de terceiros.
  */
-export async function getHouseTutor(houseId: string): Promise<Tutor | null> {
+export async function getHouseTutors(houseId: string): Promise<Tutor[]> {
   const admin = createAdminClient()
 
-  const { data: house } = await admin
-    .from('houses')
-    .select('owner_id')
-    .eq('id', houseId)
-    .maybeSingle()
+  const { data: members } = await admin
+    .from('house_members')
+    .select('profile_id')
+    .eq('house_id', houseId)
+    .eq('role', 'ADMIN')
 
-  if (!house) return null
+  const profileIds = members?.map((member) => member.profile_id) ?? []
+  if (profileIds.length === 0) return []
 
-  const { data: profile } = await admin
+  const { data: profiles } = await admin
     .from('profiles')
     .select('id, full_name, avatar_url')
-    .eq('id', house.owner_id)
-    .maybeSingle()
+    .in('id', profileIds)
 
-  return profile ?? null
+  return profiles ?? []
+}
+
+/**
+ * Mapa `profile_id → full_name` (para exibir o criador de tarefas/recompensas).
+ * Service role: o dependente não enxerga `profiles` de terceiros via RLS.
+ */
+export async function getProfileNames(
+  ids: string[]
+): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)))
+  if (unique.length === 0) return {}
+
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', unique)
+
+  return Object.fromEntries(
+    (data ?? []).map((profile) => [
+      profile.id,
+      profile.full_name ?? 'Administrador',
+    ])
+  )
 }
 
 /**

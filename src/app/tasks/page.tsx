@@ -6,6 +6,7 @@ import {
   getActiveAdminHouse,
   getDependentHouse,
   getHouseAssignees,
+  getProfileNames,
   getSessionProfile,
 } from '@/utils/house'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -112,7 +113,19 @@ export default async function TasksPage() {
         .eq('assigned_to', user.id)
         .order('created_at', { ascending: false })
 
-      content = <TasksDependent key={house.id} houseId={house.id} initialTasks={tasks ?? []} />
+      const taskList = tasks ?? []
+      const creatorNames = await getProfileNames(
+        taskList.map((task) => task.created_by)
+      )
+
+      content = (
+        <TasksDependent
+          key={house.id}
+          houseId={house.id}
+          initialTasks={taskList}
+          creatorNames={creatorNames}
+        />
+      )
     }
   }
 

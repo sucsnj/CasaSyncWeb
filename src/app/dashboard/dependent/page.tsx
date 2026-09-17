@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Gift, GraduationCap, ListTodo } from 'lucide-react'
 import {
   getDependentHouse,
-  getHouseTutor,
+  getHouseTutors,
   getSessionProfile,
 } from '@/utils/house'
 import {
@@ -41,7 +41,7 @@ export default async function DependentDashboardPage() {
   const { user, profile } = await getSessionProfile()
   const house = user ? await getDependentHouse(user.id) : null
   const firstName = profile?.full_name?.split(' ')[0] ?? ''
-  const tutor = house ? await getHouseTutor(house.id) : null
+  const tutors = house ? await getHouseTutors(house.id) : []
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,34 +71,36 @@ export default async function DependentDashboardPage() {
         </CardContent>
       </Card>
 
-      {tutor ? (
+      {tutors.length > 0 ? (
         <Card>
           <CardHeader className="gap-3">
             <CardTitle className="flex items-center gap-2">
               <GraduationCap className="size-5 text-blue-600" />
-              Seu tutor
+              {tutors.length > 1 ? 'Seus tutores' : 'Seu tutor'}
             </CardTitle>
+            <CardDescription>
+              Responsáveis da sua casa — aprovam suas tarefas e resgates.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex items-center gap-3">
-            {tutor.avatar_url ? (
-              <img
-                src={tutor.avatar_url}
-                alt=""
-                className="size-14 shrink-0 rounded-full border-2 border-blue-200 object-cover"
-              />
-            ) : (
-              <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
-                {(tutor.full_name ?? '?').charAt(0).toUpperCase()}
-              </span>
-            )}
-            <div>
-              <p className="font-semibold text-slate-800">
-                {tutor.full_name ?? 'Administrador'}
-              </p>
-              <p className="text-sm text-slate-500">
-                Responsável da sua casa — aprova suas tarefas e resgates.
-              </p>
-            </div>
+          <CardContent className="flex flex-col gap-3">
+            {tutors.map((tutor) => (
+              <div key={tutor.id} className="flex items-center gap-3">
+                {tutor.avatar_url ? (
+                  <img
+                    src={tutor.avatar_url}
+                    alt=""
+                    className="size-14 shrink-0 rounded-full border-2 border-blue-200 object-cover"
+                  />
+                ) : (
+                  <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
+                    {(tutor.full_name ?? '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <p className="font-semibold text-slate-800">
+                  {tutor.full_name ?? 'Administrador'}
+                </p>
+              </div>
+            ))}
           </CardContent>
         </Card>
       ) : null}
