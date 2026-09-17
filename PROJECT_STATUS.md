@@ -1,5 +1,7 @@
 # CasaSync Web — PROJECT STATUS
 
+> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
+
 ## Tutores da casa e criador da tarefa para o dependente (concluída)
 
 ### O que foi implementado
@@ -44,8 +46,8 @@
 - **UI ADMIN (`tasks-admin.tsx`):** tarefa `NOT_DELIVERED` permanece na seção Pendentes com chip vermelho; botão **"Marcar como não entregue"** aparece em tarefas abertas já atrasadas; no estado não entregue some o editor de pontos, o "Concluir e creditar" e o botão de marcar, restando a edição de prazo e o banner de adiamento (com aviso de que aprovar devolve os pontos). Atualizações otimistas tratam o débito/reversão.
 - **UI DEPENDENTE (`tasks-dependent.tsx`):** a tarefa continua em "Suas tarefas" com o chip "Não entregue", **sem** o botão "Concluir tarefa" e **mantendo** "Pedir mais tempo"; aviso "Marcada como não entregue. Peça mais tempo para reabrir a tarefa."
 
-### SQL necessário no Supabase (manual)
-O valor do enum precisa existir no banco — sem ele, marcar como não entregue falha em runtime:
+### SQL aplicado no Supabase (registro)
+O valor do enum já existe no banco:
 ```sql
 alter type public.task_status add value if not exists 'NOT_DELIVERED';
 ```
@@ -65,11 +67,11 @@ alter type public.task_status add value if not exists 'NOT_DELIVERED';
 ### O que foi implementado
 - **PIN de casa = `houses.code`:** criado junto com a casa (já existente, único); agora exibido nos cards em `/dashboard/admin/houses` com botão de copiar.
 - **`joinHouseByPin(pin)`** (`src/actions/houses.ts`): outro ADMIN informa o PIN durante a criação de casa (aba "Entrar com PIN" no card "Nova casa") → valida o PIN, insere `house_members.role='ADMIN'` (se ainda não for membro; bloqueia se for DEPENDENT), define a casa como ativa e passa a controlá-la junto com o dono. `getActiveAdminHouse`/`selectHouse`/`createDependent`/`updateHouse`/`updateDependentProfile` e os `assertAdminCanManage` de tarefas/recompensas passam a validar **controle por membresia ADMIN** em vez de `houses.owner_id`.
-- **`getAdminHouses(userId)`** (`src/utils/house.ts`): casas controladas via `house_members` (role ADMIN) — criadas e co-geridas. Used nas páginas admin. **Lida com o cliente service-role** (precedente de `getHouseTutor`) porque a listagem de casas/membros/atribuições (`getHouseAssignees`) não deve depender de policies RLS específicas para co-gerentes; o `userId` sempre vem da sessão.
+- **`getAdminHouses(userId)`** (`src/utils/house.ts`): casas controladas via `house_members` (role ADMIN) — criadas e co-geridas. Used nas páginas admin. **Lida com o cliente service-role** (precedente de `getHouseTutors`) porque a listagem de casas/membros/atribuições (`getHouseAssignees`) não deve depender de policies RLS específicas para co-gerentes; o `userId` sempre vem da sessão.
 - UI: toggle "Criar casa" / "Entrar com PIN" no card Nova casa; PIN visível/copiável em cada card de casa.
 
-### SQL necessário no Supabase (manual, como sempre)
-O banco já tem `houses.code` e `house_members.role='ADMIN'`. A listagem de casas, membros e atribuições lê via service role — **não depende das policies abaixo**. Elas continuam recomendadas para o **Realtime** (os canals aplicam RLS a cada subscriber) e para futuras leituras via cliente autenticado:
+### SQL aplicado no Supabase (registro)
+O banco tem `houses.code` e `house_members.role='ADMIN'`. A listagem de casas, membros e atribuições lê via service role — **não depende das policies abaixo**. Elas foram aplicadas para o **Realtime** (os canais aplicam RLS a cada subscriber) e para futuras leituras via cliente autenticado:
 ```sql
 create policy "houses_select_for_admin_members" on public.houses
   for select to authenticated
@@ -95,7 +97,7 @@ create policy "house_members_select_for_admin_members" on public.house_members
 
 ### Decisões
 - PIN reutiliza `houses.code` (6 caracteres, já único e gerado na criação) em vez de nova coluna — evita migração de schema; semântica de "convite/controle" já era a do campo.
-- Autorização de ADMIN passou de "dono" para "membro ADMIN": a membresia é a fonte da verdade do co-controle; `owner_id` continua identificando o tutor/criador (card "Seu tutor").
+- Autorização de ADMIN passou de "dono" para "membro ADMIN": a membresia é a fonte da verdade do co-controle; `owner_id` continua identificando o tutor/criador (hoje o card lista todos os tutores via `getHouseTutors`).
 - Listagens de casas/membros/atribuições usam service role: RLS de `houses`/`house_members`/`profiles` não tinha (nem precisa ter) policy de leitura cross-role para co-gerentes; isolar por here, sem as policies as casas somem da UI mesmo com a query "OK" no SQL editor (que roda como superuser e ignora RLS).
 - **Leituras de tarefas/recompensas também via service-role** (`/tasks` e `/rewards`): a RLS de `tasks`/`rewards`/`reward_redemptions`/`reward_suggestions` é centrada no `owner_id` da casa, então o co-gerente (e o dependente nas tarefas do co-gerente) não enxergava nada. O escopo é explícito e derivado da sessão: ADMIN → `.eq('house_id', activeHouse.id)`; DEPENDENT → `.eq('house_id', house.id).eq('assigned_to', user.id)` (ou `.eq('profile_id', user.id)` em resgates/sugestões). `getDependentHouse` também passou a usar service-role. Detalhamento do "porquê" no **ADR-0006** (`docs/adr/0006-leituras-cross-role-via-service-role.md`).
 - **Limite conhecido — Realtime:** as subscriptions dos client components (`use-postgres-changes`) continuam sujeitas à RLS (não há como usar service role no browser). Sem policies de `SELECT` por membro, eventos ao vivo podem não chegar ao co-gerente/dependente; o `router.refresh()` pós-ação garante a atualização de quem age, e as policies de `SELECT` por membro (bloco acima) são a forma de habilitar o Realtime cross-role.
@@ -130,11 +132,11 @@ create policy "house_members_select_for_admin_members" on public.house_members
 - **SLA de prazos:** `src/utils/task-sla.ts` → `getTaskSlaStatus(createdAt, dueDate)`: **Atrasada** (agora > prazo; card `border-red-500 bg-red-50 text-red-700`) e **Prazo próximo** (restante ≤ 20% do total; `border-amber-400 bg-amber-50 text-amber-800`). Aplicado nos cards abertos de ADMIN e DEPENDENT via `task-styles.ts`.
 - **Sugestões de recompensa (`reward_suggestions`):** dependente envia (título/descrição/custo/foto) pela loja; o ADMIN aprova (**cria a recompensa real** — transição guardada `PENDING→APPROVED` com rollback) ou rejeita. Realtime e seção "Suas sugestões" no lado do dependente.
 - **Pedido de adiamento:** dependente clica "Pedir mais tempo" (justificativa obrigatória) → `tasks.extension_requested=true` + `extension_reason`. ADMIN vê banner no card pendente e **Aprova (+3 dias sobre o prazo atual ou hoje)** ou **Rejeita** (`resolveTaskExtension`). Flags limpas nos dois casos.
-- **Identificação do tutor:** card "Seu tutor" no dashboard do dependente (avatar+nome do ADMIN via `getHouseTutor`, service role). `getSessionProfile` agora expõe `avatar_url`.
+- **Identificação do tutor:** card "Seu tutor" no dashboard do dependente (avatar+nome do ADMIN, service role; depois generalizado para **todos os tutores** em `getHouseTutors`). `getSessionProfile` agora expõe `avatar_url`.
 - **Types:** `src/types/database.ts` espelha o schema real (`image_url` nas 3 tabelas, `extension_*`, tabela `reward_suggestions` com relationships).
 
-### SQL necessário no Supabase
-O script `supabase/migration_features.sql` cria as colunas, a tabela de sugestões (RLS select para membros da casa; escritas via service role), o bucket público `casasync-media` com policies e inclui `reward_suggestions` na publication `supabase_realtime`. **Sem rodá-lo, as features de imagem/sugestão/extensão falham em runtime.**
+### SQL aplicado no Supabase (registro)
+O script `supabase/migration_features.sql` criou as colunas, a tabela de sugestões (RLS select para membros da casa; escritas via service role), o bucket público `casasync-media` com policies e incluiu `reward_suggestions` na publication `supabase_realtime`. **Já aplicado** — as features de imagem/sugestão/extensão estão operacionais.
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` — `<img>` deliberado para URLs do Storage) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo) · smoke dev: `/login` 200, `/register` 200, `/tasks`/`/rewards`/dashboards 307 (proxy).

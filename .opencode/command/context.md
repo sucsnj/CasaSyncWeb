@@ -38,10 +38,11 @@ Foco opcional: $ARGUMENTS
   - `admin.ts` `createAdminClient()` — **service role, server-only, nunca importar de client component**.
 - **Env vars** (só `.env.local`, `.env*` gitignored): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (é *publishable*, não `ANON_KEY`), `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (valida cadastro ADMIN).
 - **Auth:** sem e-mails reais — e-mails sintéticos `${username}@admin.casasync` (ADMIN) ou `${username}@dependente.casasync` (DEPENDENT), criados com `email_confirm: true` via service role. Login resolve username → e-mail sintético → `signInWithPassword` pelo servidor. DEPENDENT **nunca se cadastra sozinho**.
-- **Padrão de autorização:** sempre derivada da sessão (cliente autenticado + RLS). O cliente service-role é usado **apenas** para escritas que o RLS não cobre (criação de usuários, crédito/débito de pontos, validação de posse `houses.owner_id`).
-- **Transições de status com guard:** `update().eq('status', esperado)` impede crédito/débito duplicado (ex: `COMPLETED → APPROVED`); falha → rollback ao estado anterior.
+- **Padrão de autorização:** SEMPRE derivada da sessão — nunca do input/cliente. O cliente service-role (`createAdminClient`, server-only) é usado para (a) **escritas que o RLS não cobre** (criação de usuários, crédito/débito de pontos) e (b) **leituras cross-role que o RLS não atende** (casas/membros/atribuições e tarefas/recompensas). Nestas, o escopo é sempre explícito e derivado da sessão (`getSessionProfile().user.id`, casa ativa via `getActiveAdminHouse`, `houseId`), nunca de parâmetro público. Ver ADR-0006.
+- **Controle de casa = membresia, não `owner_id`:** o ADMIN controla as casas onde tem `house_members.role='ADMIN'` (criadas E co-geridas via PIN em `joinHouseByPin`). `houses.owner_id` identifica apenas o tutor/criador.
+- **Transições de status com guard** (`update().eq`/`.in('status', ...)`): impedem crédito/débito/desaprovação duplicados e revertem ao estado anterior em falha. Ex.: `COMPLETED → APPROVED` (credita), `PENDING/IN_PROGRESS → APPROVED` (`adminCompleteTask`, credita), `COMPLETED → PENDING` (`rejectCompletedTask`, sem crédito), `APPROVED → PENDING` (`restoreTask`, sem mexer nos pontos) e `PENDING/IN_PROGRESS → NOT_DELIVERED` (`markTaskNotDelivered`, debita).
 - **Realtime:** tabelas devem estar na publication `supabase_realtime`.
-- **Migrações SQL não versionadas:** pasta `supabase/` não existe (`supabase/*.sql` gitignored) — mudanças de schema são aplicadas manualmente no dashboard Supabase.
+- **Migrações SQL não versionadas:** pasta `supabase/` não existe (`supabase/*.sql` gitignored) — mudanças de schema são aplicadas manualmente no dashboard Supabase. As mudanças recentes (imagens, `reward_suggestions`, `extension_*`, enum `task_status` com `NOT_DELIVERED`) **já foram aplicadas** no banco.
 
 ## 4. Rotas
 
@@ -50,7 +51,7 @@ Foco opcional: $ARGUMENTS
 | `/login`, `/register` | grupo `(auth)`; `/login` tem abas Entrar (username+senha) e Criar Conta Admin (com MASTER_PIN) |
 | `/dashboard/admin` (+ layout) | visão geral ADMIN |
 | `/dashboard/admin/houses` | gestão de casas/dependentes |
-| `/dashboard/dependent` (+ layout) | visão geral DEPENDENT (inclui card "Seu tutor") |
+| `/dashboard/dependent` (+ layout) | visão geral DEPENDENT (inclui card "Seu tutor"/"Seus tutores") |
 | `/tasks` | role-aware (ADMIN aprova/gerencia; DEPENDENT vê as próprias) |
 | `/rewards` | role-aware (ADMIN aprova resgates/sugestões; DEPENDENT catálogo + saldo) |
 | `/auth/callback` | **sem uso** (Google OAuth removido) |
@@ -61,7 +62,7 @@ Nav (header fixo azul + bottom nav mobile) em `src/components/dashboard/dashboar
 
 Enums (valores em **caixa alta**, regra de negócio):
 - `user_role` / `member_role` = `ADMIN` | `DEPENDENT`
-- `task_status` = `PENDING` | `IN_PROGRESS` | `COMPLETED` | `APPROVED`
+- `task_status` = `PENDING` | `IN_PROGRESS` | `COMPLETED` | `APPROVED` | `NOT_DELIVERED`
 - `redemption_status` = `PENDING` | `APPROVED` | `REJECTED`
 
 **profiles** — `id` (uuid PK → auth.users), `username` (única lowercase), `full_name`, `avatar_url`, `user_role`, `points` (int, saldo), `created_at`, `updated_at`.
@@ -70,7 +71,7 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **house_members** — `id`, `house_id` (FK → houses), `profile_id` (FK → profiles), `role` (`member_role`), `created_at`, `updated_at`.
 
-**tasks** — `id`, `house_id` (FK; isolamento multi-tenant), `title`, `description`, `points`, `status` (`task_status`), `assigned_to` (FK → profiles, nullable), `created_by`, `completed_by`, `completed_at`, `due_date`, `image_url`, `extension_requested` (bool), `extension_reason`, `created_at`, `updated_at`. *(Edições só em PENDING/IN_PROGRESS; `''` normalizado para nul em `assigned_to`.)*
+**tasks** — `id`, `house_id` (FK; isolamento multi-tenant), `title`, `description`, `points`, `status` (`task_status`), `assigned_to` (FK → profiles, nullable), `created_by`, `completed_by`, `completed_at`, `due_date`, `image_url`, `extension_requested` (bool), `extension_reason`, `created_at`, `updated_at`. *(Edições em PENDING/IN_PROGRESS e em NOT_DELIVERED (prazo/título/descrição/atribuição; pontos não); `''` normalizado para null em `assigned_to`.)*
 
 **rewards** — `id`, `house_id`, `title`, `description`, `points_cost`, `emoji`, `image_url`, `created_by`, `created_at`, `updated_at`.
 
@@ -78,15 +79,18 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **reward_suggestions** — `id`, `house_id`, `profile_id`, `title`, `description`, `points_cost` (nullable; `?? 5` ao aprovar), `image_url`, `status` (`PENDING` | `APPROVED` | `REJECTED`), `created_at`, `updated_at`.
 
-**Fora do types (não verificável no código):** bucket público `casasync-media` (pastas avatars/houses/rewards/tasks/suggestions) + policies; RLS multi-tenant por `house_id`/owner; publication `supabase_realtime` com houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions.
+**Fora do types (não verificável no código):** bucket público `casasync-media` (pastas avatars/houses/rewards/tasks/suggestions) + policies; RLS multi-tenant por `house_id`/owner (as **leituras cross-role** vão por service role com escopo de sessão — ADR-0006; a RLS é exigida sobretudo pelo Realtime, que roda no browser); publication `supabase_realtime` com houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions.
 
 ## 6. Regras de negócio
 
 - Hierarquia: Admin → Casa(s) → Dependente(s) → Tarefas/Recompensas, isoladas por `house_id` (RLS) — multi-tenant. `ADMIN` cria/aprova tarefas, recompensas, resgates e dá crédito/débito de pontos.
+- **Ciclo da tarefa:** DEPENDENT conclui (`COMPLETED`); ADMIN **aprova** (credita), **desaprova** (`COMPLETED → PENDING`, sem crédito) ou **conclui+credita** de uma vez (`adminCompleteTask`, `PENDING/IN_PROGRESS → APPROVED`) mesmo sem atraso.
 - `approveTask`: `COMPLETED → APPROVED` **soma** `tasks.points` em `profiles.points`; depois de COMPLETED a tarefa é imutável para edição.
 - `approveRedemption`: `PENDING → APPROVED` **debita** `points_cost` do saldo; `rejectRedemption`: `PENDING → REJECTED`.
-- **SLA de prazo** (`src/utils/task-sla.ts`): `overdue` (agora > prazo; card `border-red-500/red-50/red-700`) e `dueSoon` (restante ≤ 20% do total; `border-amber-400/amber-50/amber-800`). Estilos em `src/components/tasks/task-styles.ts`.
-- **Pedido de adiamento:** dependente define `extension_requested=true` + `extension_reason` (obrigatório, ≤ 500); ADMIN **aprova** (soma +3 dias sobre a data atual ou futura) ou **rejeita** (`resolveTaskExtension`); flags limpas nos dois casos.
+- **Tarefa "não entregue" (`NOT_DELIVERED`):** ADMIN marca uma tarefa **atrasada** (`markTaskNotDelivered`, `PENDING/IN_PROGRESS → NOT_DELIVERED`, guard) e **debita** `tasks.points` do dependente — o saldo **pode ficar negativo**. O dependente perde o "Concluir" mas mantém o pedido de adiamento. Aprovar o adiamento (`resolveTaskExtension`) ou alterar o prazo (`updateTask`) **devolve os pontos** e **zera** `tasks.points`, voltando o status ao equivalente ao novo prazo (futuro → `PENDING`). Não há "Concluir e creditar" para `NOT_DELIVERED`. Ver ADR-0007.
+- **Restaurar tarefa aprovada:** ADMIN reaproveita uma `APPROVED` via `restoreTask` (`APPROVED → PENDING`, guard) em vez de criar outra idêntica. Preserva os dados e **não altera os pontos já creditados**; limpa `completed_*`/flags de adiamento e reinicia o prazo para **agora + 1 dia**. Ver ADR-0008.
+- **SLA de prazo** (`src/utils/task-sla.ts`): `overdue` (agora > prazo; card `border-red-500/red-50/red-700`) e `dueSoon` (restante ≤ 20% do total; `border-amber-400/amber-50/amber-800`). Estilos em `src/components/tasks/task-styles.ts` (inclui chip/borda de `NOT_DELIVERED`).
+- **Pedido de adiamento:** dependente define `extension_requested=true` + `extension_reason` (obrigatório, ≤ 500); ADMIN **aprova** (botões +1 dia/+3 dias sobre a data atual ou futura; em `NOT_DELIVERED` devolve os pontos) ou **rejeita** (`resolveTaskExtension`); flags limpas nos dois casos.
 - **Sugestões de recompensa:** dependente envia; ADMIN aprova → **cria a recompensa real** (transição guardada `PENDING→APPROVED` com rollback) ou rejeita.
 - **Casa ativa do ADMIN** via cookie `casasync_active_house` (const `ACTIVE_HOUSE_COOKIE` em `src/utils/house.ts`).
 
@@ -98,11 +102,11 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **actions/houses.ts** — `createHouse(name)`, `selectHouse(houseId)`, `createDependent(fullName, username, password, houseId?)`, `updateHouse({ name?, imageUrl? })`, `updateDependentProfile(dependentId, { fullName?, username?, avatarUrl? })`.
 
-**actions/tasks.ts** — `createTask({ title, description, dueDate, points, assignedTo, imageUrl })`, `updateTask(taskId, patch: TaskPatch)` (`TaskPatch`: title/description/due_date/points/assigned_to/image_url), `completeTask(taskId)`, `approveTask(taskId)`, `requestTaskExtension(taskId, reason)`, `resolveTaskExtension(taskId, approve: boolean)`.
+**actions/tasks.ts** — `createTask({ title, description, dueDate, points, assignedTo, imageUrl })`, `updateTask(taskId, patch: TaskPatch)` (`TaskPatch`: title/description/due_date/points/assigned_to/image_url), `completeTask(taskId)`, `approveTask(taskId)`, `rejectCompletedTask(taskId)`, `adminCompleteTask(taskId)`, `markTaskNotDelivered(taskId)`, `restoreTask(taskId)`, `requestTaskExtension(taskId, reason)`, `resolveTaskExtension(taskId, approve: boolean, days = 3)`.
 
 **actions/rewards.ts** — `createReward({ title, description, pointsCost, emoji?, imageUrl? })`, `requestRedemption(rewardId)`, `approveRedemption(redemptionId)`, `rejectRedemption(redemptionId)`, `updateReward(rewardId, patch: RewardPatch)` (title/description/points_cost/emoji/image_url), `createRewardSuggestion({ title, description, pointsCost?, imageUrl? })`, `resolveRewardSuggestion(suggestionId, approve: boolean)`.
 
-**utils/house.ts** — `getSessionProfile()` → `{ user, profile, houseName? }`, `getActiveAdminHouse()` (via cookie), `getDependentHouse(userId)`, `getHouseAssignees(houseId)`, `getHouseTutor(houseId)`, `withAdminClient<T>(fn)`, `ACTIVE_HOUSE_COOKIE`.
+**utils/house.ts** — `getSessionProfile()` → `{ user, profile }` (`profile.avatar_url` incluso), `getAdminHouses(userId)` (casas controladas = criadas + co-geridas), `getActiveAdminHouse()` (via cookie), `getDependentHouse(userId)`, `getHouseAssignees(houseId)` (dependentes), `getHouseTutors(houseId)` (todos os ADMIN membros), `getProfileNames(ids)` (mapa `id → nome`, p/ criador de tarefa), `withAdminClient<T>(fn)`, `ACTIVE_HOUSE_COOKIE`.
 
 **utils/media.ts** — `MEDIA_BUCKET = 'casasync-media'`, `uploadMedia(folder: MediaFolder, file)` — `MediaFolder = 'avatars' | 'houses' | 'rewards' | 'tasks' | 'suggestions'`.
 
@@ -112,7 +116,7 @@ Enums (valores em **caixa alta**, regra de negócio):
 
 **components/ui** — `Button`, `Card` (+ `CardAction`/`CardContent`/`CardDescription`/`CardHeader`/`CardTitle`), `Input`, `Label`, `Separator`, `Tabs`, `Modal`, `EmptyState` (empty states padronizados), `ImageUpload` (prévia/remover/envio). Tokens globais em `src/app/globals.css`; primitivas mobile-first (min-h-12, rounded-xl, `active:scale-95`).
 
-**components por domínio** — `dashboard/dashboard-nav.tsx` (`DashboardNav({ items, userName, points })`), `dashboard/profile-editor.tsx`, `houses/houses-manager.tsx`, `tasks/tasks-admin.tsx` (`({ houseId, initialTasks, assignees })`), `tasks/tasks-dependent.tsx`, `rewards/rewards-admin.tsx` (`({ houseId, initialRewards, initialRedemptions, initialSuggestions, dependents })`), `rewards/rewards-dependent.tsx`, `auth/*` (login-form, register-form, sign-out-button), `tasks/debounced-field.tsx` (debounce 900ms + flush no blur), `tasks/task-styles.ts` (accent/chip/sla por status).
+**components por domínio** — `dashboard/dashboard-nav.tsx` (`DashboardNav({ items, userName, points })`), `dashboard/profile-editor.tsx`, `houses/houses-manager.tsx` (cards com PIN copiável + abas Criar/Entrar com PIN), `tasks/tasks-admin.tsx` (`({ houseId, initialTasks, assignees })`; cards **colapsáveis** recolhidos por padrão, ações Aprovar/Desaprovar/Concluir e creditar/Não entregue/Restaurar/adiamento), `tasks/tasks-dependent.tsx` (`({ houseId, initialTasks, creatorNames })`; sem "Concluir" em `NOT_DELIVERED`, mostra "Criada por {nome}"), `rewards/rewards-admin.tsx` (`({ houseId, initialRewards, initialRedemptions, initialSuggestions, dependents })`), `rewards/rewards-dependent.tsx`, `auth/*` (login-form, register-form, sign-out-button), `tasks/debounced-field.tsx` (debounce 900ms + flush no blur), `tasks/task-styles.ts` (accent/chip/sla por status).
 
 ## 8. Convenções críticas de código
 

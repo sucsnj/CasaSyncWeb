@@ -101,8 +101,8 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 - `redemption_status` = `PENDING` \| `APPROVED` \| `REJECTED`
 
 Valores em caixa alta (regra de negócio). `NOT_DELIVERED` foi adicionado ao enum
-existente — se o banco ainda não tiver o valor, rodar
-`alter type public.task_status add value 'NOT_DELIVERED';`.
+existente (`alter type public.task_status add value 'NOT_DELIVERED';`) — **já
+aplicado** no Supabase.
 
 ## Fora do snap dos types (não verificável no código)
 - **Storage:** bucket público `casasync-media` com pastas avatars/houses/rewards/tasks/suggestions e policies de leitura pública.
