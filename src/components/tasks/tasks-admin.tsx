@@ -44,6 +44,17 @@ import {
 type Task = Tables<'tasks'>
 type Assignee = { id: string; full_name: string }
 
+/** ISO do banco (timestamptz) → valor aceito por <input type="datetime-local">. */
+function toDateTimeLocalValue(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 function upsertTask(list: Task[], task: Task): Task[] {
   const exists = list.some((item) => item.id === task.id)
   const next = exists
@@ -426,7 +437,7 @@ export function TasksAdmin({
                       Data limite
                     </span>
                     <DebouncedField
-                      value={task.due_date ?? ''}
+                      value={toDateTimeLocalValue(task.due_date)}
                       onSave={saveDueDate(task.id)}
                       type="datetime-local"
                     />
