@@ -2,6 +2,17 @@
 
 > **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
 
+## "Sair" acessível em qualquer tela (concluída)
+
+### O que foi implementado
+- **Avatar do cabeçalho virou botão de conta:** em `dashboard-nav.tsx` o avatar (inicial) passou a ser um `<button>` que abre um `Modal` **"Sua conta"** (avatar + nome + pontos + `SignOutButton` em largura total). Antes, o "Sair" do cabeçalho era `hidden md:block` e o slot extra da bottom nav só existia com `items.length < 4` — logo, o **ADMIN no mobile (4 itens)** não tinha como sair.
+- **Sem regressão:** o "Sair" do desktop (cabeçalho, `md:block`) e o slot extra da bottom nav (dependentes, 3 itens) continuam; a conta no avatar apenas garante a ação em **qualquer largura**.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+---
+
 ## Reset de senha de membros pelo ADMIN (concluída)
 
 ### O que foi implementado
