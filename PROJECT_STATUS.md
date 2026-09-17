@@ -259,3 +259,18 @@ Sem saber se o CLD é invocável por modelo (`disable-model-invocation: true`), 
 2. Configurar no Supabase: provedor Google OAuth habilitado, `Site URL`/`Redirect URLs` apontando para o app (ex: `http://localhost:3000/auth/callback`).
 3. Etapa 3 — Gestão de Casa: criação de casa pelo ADMIN e área de criação de dependentes no `/dashboard/admin` (formulário chamando `createDependent`).
 4. Etapa 4 — Tarefas e Recompensas (painéis ADMIN/DEPENDENT, aprovação de resgates).
+
+---
+
+## Infraestrutura de contexto para agentes (concluída)
+
+- `docs/schema.md` — snapshot manual do schema Supabase (espelho de `src/types/database.ts`; marcadas as partes não verificáveis no código: Storage, RLS, publication Realtime). Instrução de regeneração via `supabase gen types` quando o CLI estiver linkado.
+- `docs/adr/` — decisões arquiteturais extraídas do `PROJECT_STATUS.md`: `0001` (escritas service-role + transições guardadas), `0002` (username + e-mails sintéticos), `0003` (credenciais fora do estado React), `0004` (proxy Next 16), `0005` (imagens em Storage com `<img>`).
+- `README.md` — substituído o boilerplate do create-next-app por guia do projeto (stack, comandos, setup, apontadores).
+- `opencode.json` — corrigido caminho das skills `.skills/` → `.agents/skills/`.
+- `package.json` — script `npm run typecheck` (tsc --noEmit) padronizado.
+- `AGENTS.md` — §1 usa `npm run typecheck`; nova §6 Git (commits em português, curtos).
+- `.github/copilot-instructions.md` — importa `@AGENTS.md` (mesmo padrão do `CLAUDE.md`).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓.

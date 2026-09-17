@@ -11,8 +11,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 # CasaSync Web — Diretrizes do Projeto
 
 ## 1. Comandos de verificação (não há testes configurados)
-- `npm run dev` (prod do dev) · `npm run lint` (eslint) · `npm run build` · typecheck: `npx tsc --noEmit`.
-- Ordem antes de entregar: **lint → tsc → build**. Todos devem passar.
+- `npm run dev` · `npm run lint` (eslint) · `npm run typecheck` (`tsc --noEmit`) · `npm run build`.
+- Ordem antes de entregar: **lint → typecheck → build**. Todos devem passar.
+- `npm run lint` emite warnings `no-img-element` **esperados** (uso deliberado de `<img>` para URLs públicas do Storage) — não "consertar" trocando por `next/image`.
 - `tsc` depende do gerado `.next/types` (ex: `LayoutProps<"/">` em `src/app/layout.tsx`). Se `.next/` for apagado, rode `npm run build` (ou `next dev`) antes do `tsc` puro.
 - Rodar `npm run build` antes de `npm run dev` para evitar geração conflitante de `.next`.
 
@@ -21,10 +22,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Next.js 16 trocou middleware por proxy:** a proteção de rotas fica em `src/proxy.ts` (export `proxy` + `config.matcher`, ao lado de `src/app`); a lógica de sessão/role vive em `src/utils/supabase/middleware.ts`.
 - `next.config.ts` usa `module.exports` E `export default` (legado com `allowedDevOrigins`). Não "consertar" isso.
 - `PROJECT_STATUS.md` é o estado do projeto (requerido ler ANTES de trabalhar e ATUALIZAR ao terminar — funcionalidades, arquivos, decisões, próximo passo).
+- Docs complementares (commitados): `docs/schema.md` (snapshot do schema Supabase) e `docs/adr/` (decisões arquiteturais — o "porquê" de padrões como service role/credenciais/proxy).
 
 ## 3. Supabase
 - Três clientes em `src/utils/supabase/`: `server.ts` (`createClient`, regras Servers/RSC), `client.ts` (`createClient` browser), `admin.ts` (`createAdminClient` com service role, **server-only** — nunca importar de client component).
-- Env vars em `.env.local` (nomes exatos): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (é *publishable*, não `ANON_KEY`), `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (valida o cadastro de ADMIN em `actions/auth.ts`).
+- Env vars só em `.env.local` (nomes exatos, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — é *publishable*, não `ANON_KEY` — `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` que valida o cadastro de ADMIN em `actions/auth.ts`); `.env*` está no `.gitignore`, nada disso vive no repo.
+- **Migrações SQL não estão no repo:** a pasta `supabase/` não existe e `supabase/*.sql` é gitignore. Mudanças de schema (ex: o script `supabase/migration_features.sql` citado em `PROJECT_STATUS.md`) são aplicadas manualmente no dashboard do Supabase — sem aplicá-las, features novas (imagens/sugestões/extensões) falham em runtime.
 - AUTH: sem e-mails reais — contas usam e-mails sintéticos `${username}@admin.casasync` (ADMIN) ou `${username}@dependente.casasync` (DEPENDENT), criadas já `email_confirm: true` via service role; login resolve o username → e-mail sintético e chama `signInWithPassword` pelo cliente do servidor (Server Actions em `src/actions/*.ts`, cada arquivo com `'use server'`).
 - Padrão de autorização: SEMPRE derivada da sessão (cliente autenticado + RLS). O cliente service-role é usado apenas para escritas que o RLS do usuário não cobre (crédito/débito de pontos, criação de usuários) e validação de posse (`houses.owner_id`). Transições de status (ex: `COMPLETED → APPROVED`) usam guard `.eq('status', ...)` para impedir crédito duplicado; falha → rollback.
 - Realtime: tabelas precisam estar na publication `supabase_realtime`; listeners em `src/hooks/use-postgres-changes.ts` (canal + filter de `house_id` + RLS = isolamento multi-tenant).
@@ -37,4 +40,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Credenciais fora do estado React:** senha/`masterPin` NUNCA em `useState`/inputs controlados. Inputs ficam **uncontrolled** (só `name`), lidos via `FormData(event.currentTarget)` no submit e descartados; forms de sucesso chamam `reset()`. Server Actions de credencial não podem lançar exceção não tratada (o Next sobreporia overlay de dev com os argumentos) — use try/catch e retorne `ActionResult` (`ok:false` + mensagem genérica).
 
 ## 5. Skills ativas
-- As skills vivem em `.agents/skills/` (NÃO em `.skills/`, apesar de `opencode.json` ainda citar o caminho antigo): **`grill-with-docs`** (questionar arquitetura/regras de negócio/DB antes de implementar) e **`teach`** (explicar padrões novos de Next.js/Supabase). Ative via ferramenta de skill quando aplicável.
+- As skills vivem em `.agents/skills/`: **`grill-with-docs`** (questionar arquitetura/regras de negócio/DB antes de implementar) e **`teach`** (explicar padrões novos de Next.js/Supabase). Ative via ferramenta de skill quando aplicável.
+
+## 6. Git
+- Mensagens de commit em português, curtas (estilo do log: `remoção`, `edições e sugestões`). Commitar apenas quando solicitado.

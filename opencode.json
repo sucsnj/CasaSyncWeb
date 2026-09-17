@@ -5,7 +5,7 @@
     "PROJECT_STATUS.md"
   ],
   "skills": [
-    ".skills/teach",
-    ".skills/grill-with-docs"
+    ".agents/skills/teach",
+    ".agents/skills/grill-with-docs"
   ]
 }
