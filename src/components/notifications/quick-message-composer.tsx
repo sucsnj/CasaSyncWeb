@@ -52,9 +52,24 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
 
     let cancelled = false
 
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
+    // `navigator.mediaDevices` só existe em contexto seguro (HTTPS/localhost).
+    // Em HTTP puro (ex.: acesso por IP na LAN) ele é `undefined` e o acesso a
+    // `getUserMedia` lançaria SÍNCRONO antes do `.catch` — por isso tratamos a
+    // ausência como uma promessa rejeitada, caindo no mesmo fallback de erro.
+    const hasGetUserMedia = !!navigator.mediaDevices?.getUserMedia
+    const acquireCamera = hasGetUserMedia
+      ? navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+      : Promise.reject(new Error('getUserMedia indisponível'))
+
+    acquireCamera
+      .catch(() =>
+        hasGetUserMedia
+          ? navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          : Promise.reject(new Error('getUserMedia indisponível'))
+      )
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop())
