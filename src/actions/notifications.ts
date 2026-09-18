@@ -141,7 +141,7 @@ export async function purgeReadNotifications(): Promise<ActionResult> {
 
 /**
  * Envia uma "mensagem rápida" (DEPENDENT → ADMINs da casa): texto curto
- * (até 50 caracteres, opcional se houver imagem) + no máx. 1 imagem (já
+ * (até 100 caracteres, opcional se houver imagem) + no máx. 1 imagem (já
  * enviada pelo cliente ao bucket `messages`). Cada ADMIN da casa recebe uma
  * cópia com o mesmo `message_id`; ao marcar a cópia como lida, a retenção
  * (2 lidas → apaga a mais antiga) vale para a mensagem como um todo.

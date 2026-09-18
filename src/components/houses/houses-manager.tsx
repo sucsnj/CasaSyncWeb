@@ -870,12 +870,12 @@ export function HousesManager({
                 name="pinPts"
                 type="password"
                 autoComplete="off"
-                placeholder="Informe o PIN_PTS para confirmar"
+                placeholder="Informe o PIN de pontos"
                 suppressHydrationWarning
                 required
               />
               <p className="text-xs text-muted-foreground">
-                Senha de administração (env PIN_PTS) exigida para confirmar a
+                Senha de administração exigida para confirmar a
                 alteração.
               </p>
             </div>

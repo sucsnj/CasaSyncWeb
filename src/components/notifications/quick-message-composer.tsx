@@ -25,7 +25,7 @@ function validateImageFile(file: File): string | null {
 }
 
 /**
- * Compositor de "mensagem rápida" do DEPENDENT: texto curto (≤50 caracteres)
+ * Compositor de "mensagem rápida" do DEPENDENT: texto curto (≤100 caracteres)
  * opcional + até 1 imagem (galeria do dispositivo ou câmera ao vivo). A
  * imagem é enviada ao bucket em `messages/<userId>/...` e a Server Action
  * entrega cópias da notificação para todos os ADMINs da casa.
@@ -181,7 +181,7 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
               </span>
               <span className="text-xs text-slate-500">
                 {open
-                  ? 'Clique para recolher o compositor.'
+                  ? 'Clique para recolher.'
                   : `Lembrete curto para seus tutores (máx. ${QUICK_MESSAGE_MAX_CHARS} caracteres).`}
               </span>
             </span>
