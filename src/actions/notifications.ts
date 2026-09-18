@@ -220,19 +220,46 @@ export async function sendQuickMessage(
 
   const messageId = crypto.randomUUID()
   const senderName = profile.full_name ?? 'Dependente'
+  const now = new Date().toISOString()
 
-  const { error } = await admin.from('notifications').insert(
-    recipientIds.map((recipient_id) => ({
-      house_id: house.id,
-      recipient_id,
-      actor_id: user.id,
-      type: 'QUICK_MESSAGE',
-      title: `Mensagem de ${senderName}`,
-      body,
-      image_url: imageUrl ?? null,
-      message_id: messageId,
-    }))
-  )
+  // 1 cópia por ADMIN da casa + 1 cópia para o próprio dependente (comprovante
+  // do envio, já marcada como lida — chega como notificação simples, sem
+  // possibilidade de edição; a retenção não conta a cópia do remetente).
+  const copies: Array<{
+    house_id: string
+    recipient_id: string
+    actor_id: string
+    type: 'QUICK_MESSAGE'
+    title: string
+    body: string
+    image_url: string | null
+    message_id: string
+    read_at: string | null
+  }> = recipientIds.map((recipient_id) => ({
+    house_id: house.id,
+    recipient_id,
+    actor_id: user.id,
+    type: 'QUICK_MESSAGE',
+    title: `Mensagem de ${senderName}`,
+    body,
+    image_url: imageUrl ?? null,
+    message_id: messageId,
+    read_at: null,
+  }))
+
+  copies.push({
+    house_id: house.id,
+    recipient_id: user.id,
+    actor_id: user.id,
+    type: 'QUICK_MESSAGE',
+    title: 'Mensagem enviada',
+    body,
+    image_url: imageUrl ?? null,
+    message_id: messageId,
+    read_at: now,
+  })
+
+  const { error } = await admin.from('notifications').insert(copies)
 
   if (error) return { ok: false, error: 'Falha ao enviar a mensagem.' }
 

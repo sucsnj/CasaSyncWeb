@@ -184,7 +184,7 @@ export async function cleanupQuickMessages(
 ): Promise<void> {
   const { data } = await admin
     .from('notifications')
-    .select('message_id, created_at, image_url, read_at')
+    .select('recipient_id, message_id, created_at, image_url, read_at')
     .eq('house_id', houseId)
     .eq('actor_id', actorId)
     .eq('type', 'QUICK_MESSAGE')
@@ -202,12 +202,15 @@ export async function cleanupQuickMessages(
     if (!messageId) continue
     const current = byMessage.get(messageId)
     const created = new Date(row.created_at).getTime()
+    // A cópia do próprio remetente é apenas comprovante — só o destinatário
+    // (outro membro, ex.: ADMIN) que abriu conta como "lida" na retenção.
+    const isSenderCopy = row.recipient_id === actorId
     byMessage.set(messageId, {
       created: current ? Math.min(current.created, created) : created,
       image_url: current ? current.image_url : row.image_url,
       read: current
-        ? current.read || row.read_at !== null
-        : row.read_at !== null,
+        ? current.read || (!isSenderCopy && row.read_at !== null)
+        : !isSenderCopy && row.read_at !== null,
     })
   }
 

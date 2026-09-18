@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, ImagePlus, Loader2, Send, X } from 'lucide-react'
+import { Camera, ChevronDown, ImagePlus, Loader2, MessageSquare, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { cn } from '@/lib/utils'
 import { uploadMedia } from '@/utils/media'
 import { sendQuickMessage } from '@/actions/notifications'
 import {
@@ -31,6 +32,7 @@ function validateImageFile(file: File): string | null {
  */
 export function QuickMessageComposer({ userId }: { userId: string }) {
   const router = useRouter()
+  const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -157,115 +159,140 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
 
   return (
     <>
-      <div className="mb-3 rounded-2xl border border-dashed border-slate-300 bg-white p-3">
-        <div className="mb-2">
-          <p className="text-sm font-semibold text-slate-700">Mensagem rápida</p>
-          <p className="text-xs text-slate-500">
-            Lembrete curto para seus tutores (máx.{' '}
-            {QUICK_MESSAGE_MAX_CHARS} caracteres).
-          </p>
-        </div>
-
-        <textarea
-          value={text}
-          onChange={(event) =>
-            setText(event.target.value.slice(0, QUICK_MESSAGE_MAX_CHARS))
-          }
-          rows={2}
-          maxLength={QUICK_MESSAGE_MAX_CHARS}
-          placeholder={
-            imageUrl
-              ? 'Opicional — escreva um comentário curto…'
-              : 'Ex.: já terminei a lição, pode conferir?'
-          }
-          className="min-h-20 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-shadow focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-        />
-        <p className="mt-1 text-right text-xs text-slate-400">
-          {text.length}/{QUICK_MESSAGE_MAX_CHARS}
-        </p>
-
-        {imageUrl ? (
-          <div className="mt-2 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
-            <img
-              src={imageUrl}
-              alt="Prévia da imagem da mensagem"
-              className="size-14 rounded-lg border border-slate-200 object-cover"
-            />
-            <span className="flex-1 text-xs text-slate-500">
-              Imagem anexada à mensagem.
+      <div className="mb-3 rounded-2xl border border-dashed border-slate-300 bg-white">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="flex w-full items-center justify-between gap-2 p-3 text-left transition-colors hover:bg-slate-50 active:scale-[0.99]"
+        >
+          <span className="flex items-center gap-2">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+              <MessageSquare className="size-4" />
             </span>
-            <button
-              type="button"
-              onClick={() => setImageUrl(null)}
-              aria-label="Remover imagem"
-              title="Remover imagem"
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
-              onClick={() => galleryRef.current?.click()}
-              disabled={busy}
-            >
-              <ImagePlus className="size-4" />
-              Galeria
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
-              onClick={openCamera}
-              disabled={busy}
-            >
-              <Camera className="size-4" />
-              Câmera
-            </Button>
-            <input
-              ref={galleryRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(event) => {
-                void handleFile(event.target.files?.[0])
-                event.target.value = ''
-              }}
-            />
-            <span className="text-xs text-slate-400">
-              {IMAGE_TYPES} · até {QUICK_MESSAGE_MAX_IMAGE_MB} MB
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-semibold text-slate-700">
+                Mensagem rápida
+              </span>
+              <span className="text-xs text-slate-500">
+                {open
+                  ? 'Clique para recolher o compositor.'
+                  : `Lembrete curto para seus tutores (máx. ${QUICK_MESSAGE_MAX_CHARS} caracteres).`}
+              </span>
             </span>
-          </div>
-        )}
-
-        {error ? (
-          <p role="alert" className="mt-2 text-sm text-red-600">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mt-3 flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
-            onClick={() => void handleSend()}
-            disabled={!canSend}
-          >
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-5 shrink-0 text-slate-400 transition-transform',
+              open && 'rotate-180'
             )}
-            {busy ? 'Enviando…' : 'Enviar'}
-          </Button>
-        </div>
+          />
+        </button>
+
+        {open ? (
+          <div className="flex flex-col gap-2 border-t border-dashed border-slate-200 p-3">
+            <textarea
+              value={text}
+              onChange={(event) =>
+                setText(event.target.value.slice(0, QUICK_MESSAGE_MAX_CHARS))
+              }
+              rows={2}
+              maxLength={QUICK_MESSAGE_MAX_CHARS}
+              placeholder={
+                imageUrl
+                  ? 'Opicional — escreva um comentário curto…'
+                  : 'Ex.: já terminei a lição, pode conferir?'
+              }
+              className="min-h-20 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-shadow focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+            />
+            <p className="mt-1 text-right text-xs text-slate-400">
+              {text.length}/{QUICK_MESSAGE_MAX_CHARS}
+            </p>
+
+            {imageUrl ? (
+              <div className="mt-2 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                <img
+                  src={imageUrl}
+                  alt="Prévia da imagem da mensagem"
+                  className="size-14 rounded-lg border border-slate-200 object-cover"
+                />
+                <span className="flex-1 text-xs text-slate-500">
+                  Imagem anexada à mensagem.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setImageUrl(null)}
+                  aria-label="Remover imagem"
+                  title="Remover imagem"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
+                  onClick={() => galleryRef.current?.click()}
+                  disabled={busy}
+                >
+                  <ImagePlus className="size-4" />
+                  Galeria
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
+                  onClick={openCamera}
+                  disabled={busy}
+                >
+                  <Camera className="size-4" />
+                  Câmera
+                </Button>
+                <input
+                  ref={galleryRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    void handleFile(event.target.files?.[0])
+                    event.target.value = ''
+                  }}
+                />
+                <span className="text-xs text-slate-400">
+                  {IMAGE_TYPES} · até {QUICK_MESSAGE_MAX_IMAGE_MB} MB
+                </span>
+              </div>
+            )}
+
+            {error ? (
+              <p role="alert" className="mt-2 text-sm text-red-600">
+                {error}
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                className="min-h-10 gap-1.5 rounded-lg text-xs font-semibold"
+                onClick={() => void handleSend()}
+                disabled={!canSend}
+              >
+                {busy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                {busy ? 'Enviando…' : 'Enviar'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <Modal
