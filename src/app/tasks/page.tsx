@@ -139,6 +139,7 @@ export default async function TasksPage() {
         points={isAdmin ? undefined : profile.points}
         userId={user.id}
         notifications={notifications}
+        role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

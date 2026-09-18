@@ -24,6 +24,7 @@ export default async function DependentDashboardLayout({
         points={profile?.points}
         userId={user?.id}
         notifications={notifications}
+        role="DEPENDENT"
       />
       {children}
     </div>

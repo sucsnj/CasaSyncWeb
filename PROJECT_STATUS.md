@@ -1,6 +1,35 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco). **Exceção única:** a coluna `rewards.active` da seção "Desativação de recompensa" abaixo ainda precisa ser aplicada manualmente no dashboard.
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco). **Exceções a aplicar manualmente no dashboard:** a coluna `rewards.active` (seção "Desativação de recompensa") e as colunas de mensagem rápida (`notifications.image_url`/`message_id`, seção "Mensagem rápida" — **apenas quando for ativar a feature**; sem elas o envio/visualização de mensagens rápidas falha em runtime).
+
+## Mensagem rápida DEPENDENT → ADMIN (implementada — SQL a aplicar)
+
+### O que foi implementado
+- **Compositor no sino do DEPENDENT** (`src/components/notifications/quick-message-composer.tsx`, renderizado em `notifications-bell.tsx` quando `canSend`): texto **opcional** de até **50 caracteres** (contador) + **1 imagem** por mensagem (até **5 MB**, só `image/*`), escolhida da **Galeria** (input `accept="image/*"`) ou da **Câmera** — câmera **ao vivo real** em qualquer dispositivo via `getUserMedia` (`facingMode: 'environment'`, fallback para a webcam e para o seletor de arquivos quando a câmera está indisponível); preview com remover; upload via `uploadMedia('messages', user.id)` (nova pasta `messages` em `casasync-media`).
+- **Server Action `sendQuickMessage(text, imageUrl?)`** (`src/actions/notifications.ts`): só **DEPENDENT** (papel derivado da sessão); valida `≤ 50` caracteres, exige texto OU imagem, e que a imagem seja URL pública do bucket (defesa server-side); checa **capacidade** — o dependente envia apenas se não tiver **mais de 2 mensagens próprias acumuladas** (lidas ou não); insere **1 cópia por ADMIN da casa** (mesmo `message_id`, título "Mensagem de {nome}", body = texto, `image_url`). Realtime entrega aos sinos dos ADMINs.
+- **Visualização com leitura automática:** clicar numa `QUICK_MESSAGE` abre um **visualizador** (texto completo + imagem em tamanho real) e **marca como lida imediatamente** (não há link de navegação); na lista o item mostra thumbnail da imagem quando há.
+- **Retenção ("2 lidas → apaga a mais antiga"):** `cleanupQuickMessages` em `src/utils/notifications.ts`, disparado em `markNotificationRead` e `markAllNotificationsRead`. A mensagem é considerada **lida** quando **qualquer** cópia (qualquer ADMIN) foi aberta; ao atingir **2 lidas**, apaga o grupo mais antigo (todas as cópias pelo `message_id` + remoção da imagem no storage, best-effort). Conta **MENSAGENS distintas**, não cópias por destinatário (casa com 2 ADMINS = 1 mensagem).
+- **Notificações comuns** (`tasks`/`rewards`/`sugestões`) ganharam passthrough de `image_url`/`message_id` em `notifyUser`/`notifyHouse` (sem uso atual) — o campo existe no banco e fica disponível para eventos futuros com imagem.
+
+### SQL a aplicar no Supabase
+```sql
+alter table public.notifications add column if not exists image_url text;
+alter table public.notifications add column if not exists message_id uuid;
+create index if not exists notifications_message_idx on public.notifications (message_id);
+-- SE existir CHECK constraint no `notifications.type`, incluir 'QUICK_MESSAGE'
+-- no conjunto de valores permitidos (ou recriar a constraint com o valor novo).
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Mensagem rápida é **notificação** (destinatário = ADMINs, o "outro lado"), então reutiliza `notifications` com `type='QUICK_MESSAGE'` + `message_id` para agrupar as cópias de um mesmo envio — sem tabela nova, sem policy/Realtime novos (já na publication).
+- Texto é opcional se houver imagem; `body` pode ficar vazio (o título identifica o remetente e o visualizador mostra a imagem).
+- Armazenamento fiel à escolha do usuário: limite **conta mensagens** e a limpeza acontece **no ato de marcar lida** (regra "2 lidas → apaga a mais antiga"), removendo também a imagem do storage para não inflar o bucket.
+- Câmera **ao vivo** (getUserMedia) no desktop e celular com fallback para seletor — atende "origem da imagem direto do dispositivo e pela câmera", independente de plataforma.
+
+---
 
 ## Upload de imagem em TAREFAS desabilitado (concluída — sem mudança de schema)
 

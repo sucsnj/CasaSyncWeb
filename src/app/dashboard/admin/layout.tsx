@@ -24,6 +24,7 @@ export default async function AdminDashboardLayout({
         userName={profile?.full_name}
         userId={user?.id}
         notifications={notifications}
+        role="ADMIN"
       />
       {children}
     </div>

@@ -25,3 +25,4 @@ export type NotificationType =
   | 'SUGGESTION_CREATED'
   | 'SUGGESTION_APPROVED'
   | 'SUGGESTION_REJECTED'
+  | 'QUICK_MESSAGE'

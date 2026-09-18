@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/utils/supabase/admin'
+import { MEDIA_BUCKET } from '@/utils/media'
+import { QUICK_MESSAGE_CAPACITY } from '@/utils/quick-message'
 import type { NotificationRow, NotificationType } from '@/types/notifications'
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -15,6 +17,8 @@ type NotifyInput = {
   title: string
   body: string
   link?: string | null
+  imageUrl?: string | null
+  messageId?: string | null
 }
 
 type NotifyHouseInput = NotifyInput & {
@@ -58,6 +62,8 @@ export async function notifyUser(
       title: input.title,
       body: input.body,
       link: input.link ?? null,
+      image_url: input.imageUrl ?? null,
+      message_id: input.messageId ?? null,
     })
   } catch {
     // Ignorado de propósito (best-effort).
@@ -92,6 +98,8 @@ export async function notifyHouse(
         title: input.title,
         body: input.body,
         link: input.link ?? null,
+        image_url: input.imageUrl ?? null,
+        message_id: input.messageId ?? null,
       }))
     )
   } catch {
@@ -142,4 +150,90 @@ export async function getMyNotifications(
     .limit(limit)
 
   return data ?? []
+}
+
+/**
+ * Extrai o caminho de um arquivo dentro do bucket a partir da URL pública.
+ * Retorna `null` se a URL não parece ser do bucket ou for inválida.
+ */
+function storagePathFromPublicUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const prefix = `/storage/v1/object/public/${MEDIA_BUCKET}/`
+    const start = parsed.pathname.indexOf(prefix)
+    if (start < 0) return null
+    const path = parsed.pathname.slice(start + prefix.length)
+    return path || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Regra de retenção da "mensagem rápida": quando o dependente atinge 2
+ * mensagens próprias JÁ lidas, apaga a mais antiga (todas as cópias que os
+ * ADMINs receberam + o arquivo de imagem no storage — best-effort).
+ *
+ * Conta MENSAGENS (`message_id`), não cópias por destinatário. Disparado ao
+ * marcar uma QUICK_MESSAGE como lida.
+ */
+export async function cleanupQuickMessages(
+  admin: AdminClient,
+  houseId: string,
+  actorId: string
+): Promise<void> {
+  const { data } = await admin
+    .from('notifications')
+    .select('message_id, created_at, image_url, read_at')
+    .eq('house_id', houseId)
+    .eq('actor_id', actorId)
+    .eq('type', 'QUICK_MESSAGE')
+    .not('message_id', 'is', null)
+
+  if (!data || data.length === 0) return
+
+  const byMessage = new Map<
+    string,
+    { created: number; image_url: string | null; read: boolean }
+  >()
+
+  for (const row of data) {
+    const messageId = row.message_id
+    if (!messageId) continue
+    const current = byMessage.get(messageId)
+    const created = new Date(row.created_at).getTime()
+    byMessage.set(messageId, {
+      created: current ? Math.min(current.created, created) : created,
+      image_url: current ? current.image_url : row.image_url,
+      read: current
+        ? current.read || row.read_at !== null
+        : row.read_at !== null,
+    })
+  }
+
+  const readMessages = [...byMessage.entries()].filter(
+    ([, message]) => message.read
+  )
+  if (readMessages.length < QUICK_MESSAGE_CAPACITY) return
+
+  readMessages.sort((a, b) => a[1].created - b[1].created)
+  const [oldestId, oldest] = readMessages[0]
+
+  await admin
+    .from('notifications')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('actor_id', actorId)
+    .eq('message_id', oldestId)
+
+  if (oldest.image_url) {
+    const path = storagePathFromPublicUrl(oldest.image_url)
+    if (path) {
+      try {
+        await admin.storage.from(MEDIA_BUCKET).remove([path])
+      } catch {
+        // Best-effort: sobra de imagem no storage não derruba a limpeza.
+      }
+    }
+  }
 }

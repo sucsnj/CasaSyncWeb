@@ -12,6 +12,7 @@ import {
   Gift,
   Lightbulb,
   ListTodo,
+  MessageSquare,
   RotateCcw,
   ShoppingBag,
   Trash2,
@@ -20,6 +21,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { QuickMessageComposer } from '@/components/notifications/quick-message-composer'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import {
   deleteAllNotifications,
@@ -58,6 +60,7 @@ const TYPE_META: Record<
     chip: 'bg-emerald-100 text-emerald-700',
   },
   SUGGESTION_REJECTED: { icon: Lightbulb, chip: 'bg-red-100 text-red-700' },
+  QUICK_MESSAGE: { icon: MessageSquare, chip: 'bg-violet-100 text-violet-700' },
 }
 
 function metaFor(type: string) {
@@ -82,13 +85,16 @@ function timeAgo(iso: string): string {
 export function NotificationsBell({
   userId,
   initialNotifications,
+  canSend = false,
 }: {
   userId: string
   initialNotifications: NotificationRow[]
+  canSend?: boolean
 }) {
   const router = useRouter()
   const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
   const [open, setOpen] = useState(false)
+  const [viewing, setViewing] = useState<NotificationRow | null>(null)
 
   const unread = items.filter((item) => !item.read_at).length
 
@@ -124,6 +130,13 @@ export function NotificationsBell({
   }
 
   function openItem(item: NotificationRow) {
+    // Mensagem rápida: abre o visualizador (texto completo + imagem) e marca
+    // como lida automaticamente — não há link para navegar.
+    if (item.type === 'QUICK_MESSAGE') {
+      if (!item.read_at) markRead(item.id)
+      setViewing(item)
+      return
+    }
     if (!item.read_at) markRead(item.id)
     if (item.link) router.push(item.link)
     setOpen(false)
@@ -166,6 +179,8 @@ export function NotificationsBell({
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Notificações">
+        {canSend ? <QuickMessageComposer userId={userId} /> : null}
+
         {items.length > 0 ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-medium text-slate-500">
@@ -207,7 +222,9 @@ export function NotificationsBell({
             </span>
             <p className="font-medium text-slate-700">Nenhuma notificação</p>
             <p className="text-sm text-slate-500">
-              Avisos de tarefas, resgates e sugestões aparecem aqui.
+              {canSend
+                ? 'Avisos de tarefas, resgates e sugestões aparecem aqui — e você também pode enviar uma mensagem rápida para seus tutores.'
+                : 'Avisos de tarefas, resgates e sugestões aparecem aqui.'}
             </p>
           </div>
         ) : (
@@ -249,6 +266,13 @@ export function NotificationsBell({
                     <span className="text-xs text-slate-400">
                       {timeAgo(item.created_at)}
                     </span>
+                    {item.type === 'QUICK_MESSAGE' && item.image_url ? (
+                      <img
+                        src={item.image_url}
+                        alt=""
+                        className="mt-1 size-14 rounded-lg border border-slate-200 object-cover"
+                      />
+                    ) : null}
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
                     {!item.read_at ? (
@@ -277,6 +301,41 @@ export function NotificationsBell({
             })}
           </ul>
         )}
+      </Modal>
+
+      {/* Visualizador da mensagem rápida: abrir marca como lida e mostra o
+          texto completo + a imagem em tamanho real. */}
+      <Modal
+        open={viewing !== null}
+        onClose={() => setViewing(null)}
+        title={viewing?.title ?? 'Mensagem'}
+      >
+        {viewing ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-slate-400">{timeAgo(viewing.created_at)}</p>
+            {viewing.body ? (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+                {viewing.body}
+              </p>
+            ) : null}
+            {viewing.image_url ? (
+              <img
+                src={viewing.image_url}
+                alt="Imagem da mensagem"
+                className="h-auto w-full rounded-xl border border-slate-200"
+              />
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setViewing(null)}
+                className="w-full rounded-xl sm:w-auto"
+              >
+                Fechar
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </>
   )

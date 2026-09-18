@@ -33,12 +33,14 @@ export function DashboardNav({
   points,
   userId,
   notifications,
+  role,
 }: {
   items: NavItem[]
   userName?: string | null
   points?: number | null
   userId?: string
   notifications?: NotificationRow[]
+  role?: 'ADMIN' | 'DEPENDENT'
 }) {
   const pathname = usePathname()
   const [showAccount, setShowAccount] = useState(false)
@@ -83,6 +85,7 @@ export function DashboardNav({
               <NotificationsBell
                 userId={userId}
                 initialNotifications={notifications ?? []}
+                canSend={role === 'DEPENDENT'}
               />
             ) : null}
             {typeof points === 'number' ? (

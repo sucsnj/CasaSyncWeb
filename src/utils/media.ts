@@ -2,7 +2,13 @@ import { createClient } from '@/utils/supabase/client'
 
 export const MEDIA_BUCKET = 'casasync-media'
 
-export type MediaFolder = 'avatars' | 'houses' | 'rewards' | 'tasks' | 'suggestions'
+export type MediaFolder =
+  | 'avatars'
+  | 'houses'
+  | 'rewards'
+  | 'tasks'
+  | 'suggestions'
+  | 'messages'
 
 /**
  * Upload de imagem para o bucket público `casasync-media`, dentro da pasta do

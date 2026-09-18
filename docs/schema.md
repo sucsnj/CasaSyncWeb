@@ -70,7 +70,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | created_by | uuid FK → profiles | |
 | created_at / updated_at | timestamptz | |
 
-> **A aplicar:** coluna `rewards.active` — `alter table public.rewards add column if not exists active boolean not null default true;` (registro em `PROJECT_STATUS.md`).
+> **A aplicar:** coluna `rewards.active` — `alter table public.rewards add column if not exists active boolean not null default true;` (registro em `PROJECT_STATUS.md`). **Também a aplicar ao ativar a mensagem rápida:** colunas `notifications.image_url`/`message_id` (registro na seção "Mensagem rápida" do `PROJECT_STATUS.md`).
 
 ### reward_redemptions
 | coluna | tipo | notas |
@@ -108,8 +108,12 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | title | text | resumo curto |
 | body | text | mensagem legível |
 | link | text | nullable; deep link (`/tasks`, `/rewards`) |
+| image_url | text | nullable; imagem opcional (usada na mensagem rápida `QUICK_MESSAGE`) |
+| message_id | uuid | nullable; agrupa as cópias de um mesmo envio de mensagem rápida (indexado) |
 | read_at | timestamptz | nullable; `null` = não lida |
 | created_at | timestamptz | |
+
+> **A aplicar (mensagem rápida):** `alter table public.notifications add column if not exists image_url text;` · `alter table public.notifications add column if not exists message_id uuid;` · `create index if not exists notifications_message_idx on public.notifications (message_id);` — e, se houver CHECK em `notifications.type`, incluir `'QUICK_MESSAGE'`.
 
 Notificações são registradas **best-effort** pelas actions (falha não derruba o fluxo
 principal). Destinatário = "o outro lado" da ação (dependente para ações do ADMIN;

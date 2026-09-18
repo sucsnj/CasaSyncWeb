@@ -391,6 +391,8 @@ export interface Database {
           title: string
           body: string
           link: string | null
+          image_url: string | null
+          message_id: string | null
           read_at: string | null
           created_at: string
         }
@@ -403,6 +405,8 @@ export interface Database {
           title: string
           body: string
           link?: string | null
+          image_url?: string | null
+          message_id?: string | null
           read_at?: string | null
           created_at?: string
         }
@@ -415,6 +419,8 @@ export interface Database {
           title?: string
           body?: string
           link?: string | null
+          image_url?: string | null
+          message_id?: string | null
           read_at?: string | null
           created_at?: string
         }
