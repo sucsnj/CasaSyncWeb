@@ -104,13 +104,18 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
     }
     setError(null)
     setBusy(true)
-    const url = await uploadMedia('messages', file, userId)
-    setBusy(false)
-    if (!url) {
-      setError('Falha ao enviar a imagem. Tente novamente.')
-      return
+    try {
+      const url = await uploadMedia('messages', file, userId)
+      setImageUrl(url)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Falha ao enviar a imagem. Tente novamente.'
+      )
+    } finally {
+      setBusy(false)
     }
-    setImageUrl(url)
   }
 
   function openCamera() {

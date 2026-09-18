@@ -26,6 +26,8 @@ export function ImageUpload({
     try {
       const url = await uploadMedia(folder, file, ownerId)
       if (url) onChange(url)
+    } catch {
+      // upload falhou: mantém a URL atual (o form continua válido)
     } finally {
       setUploading(false)
     }

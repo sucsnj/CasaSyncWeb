@@ -13,6 +13,30 @@
 
 ### SQL a aplicar no Supabase
 ```sql
+-- O bucket publico `casasync-media` NAO existia (upload falhava com "Bucket not
+-- found" em todas as pastas). Criar + liberar select publico e insert de upload
+-- para autenticados:
+insert into storage.buckets (id, name, public)
+values ('casasync-media', 'casasync-media', true)
+on conflict (id) do update set public = true;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'casasync_media_select_public') then
+    create policy "casasync_media_select_public" on storage.objects
+      for select to public using (bucket_id = 'casasync-media');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'casasync_media_insert_authenticated') then
+    create policy "casasync_media_insert_authenticated" on storage.objects
+      for insert to authenticated with check (bucket_id = 'casasync-media');
+  end if;
+end $$;
+
+-- Colunas de mensagem rapida:
 alter table public.notifications add column if not exists image_url text;
 alter table public.notifications add column if not exists message_id uuid;
 create index if not exists notifications_message_idx on public.notifications (message_id);
