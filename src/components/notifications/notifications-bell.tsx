@@ -6,6 +6,7 @@ import {
   Bell,
   Check,
   CheckCheck,
+  ChevronDown,
   CircleCheck,
   CircleCheckBig,
   Clock,
@@ -94,7 +95,10 @@ export function NotificationsBell({
   const router = useRouter()
   const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
   const [open, setOpen] = useState(false)
-  const [viewing, setViewing] = useState<NotificationRow | null>(null)
+  // Cards de mensagem rápida colapsáveis — todos recolhidos por padrão.
+  const [expandedQuickIds, setExpandedQuickIds] = useState<Set<string>>(
+    () => new Set()
+  )
 
   const unread = items.filter((item) => !item.read_at).length
 
@@ -130,16 +134,21 @@ export function NotificationsBell({
   }
 
   function openItem(item: NotificationRow) {
-    // Mensagem rápida: abre o visualizador (texto completo + imagem) e marca
-    // como lida automaticamente — não há link para navegar.
-    if (item.type === 'QUICK_MESSAGE') {
-      if (!item.read_at) markRead(item.id)
-      setViewing(item)
-      return
-    }
     if (!item.read_at) markRead(item.id)
     if (item.link) router.push(item.link)
     setOpen(false)
+  }
+
+  // Mensagem rápida: o toque no cabeçalho colapsa/expande o card (inicia
+  // recolhido). Expandir marca como lida automaticamente; não há link.
+  function toggleQuick(item: NotificationRow) {
+    setExpandedQuickIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.add(item.id)
+      return next
+    })
+    if (!item.read_at) markRead(item.id)
   }
 
   function markAllRead() {
@@ -231,111 +240,125 @@ export function NotificationsBell({
           <ul className="flex flex-col gap-2">
             {items.map((item) => {
               const meta = metaFor(item.type)
+              const expanded =
+                item.type === 'QUICK_MESSAGE' && expandedQuickIds.has(item.id)
               return (
                 <li
                   key={item.id}
                   className={cn(
-                    'flex items-start gap-3 rounded-xl border p-3 transition-colors',
+                    'rounded-xl border p-3 transition-colors',
                     item.read_at
                       ? 'border-slate-100 bg-white hover:bg-slate-50'
-                      : 'border-blue-200 bg-blue-50/70 hover:bg-blue-50'
+                      : 'border-blue-200 bg-blue-50/70 hover:bg-blue-50',
+                    item.type === 'QUICK_MESSAGE'
+                      ? 'flex flex-col gap-2'
+                      : 'flex items-start gap-3'
                   )}
                 >
-                  <span
-                    className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-xl',
-                      meta.chip
-                    )}
+                  <div
+                    className={
+                      item.type === 'QUICK_MESSAGE'
+                        ? 'flex items-start gap-3'
+                        : 'contents'
+                    }
                   >
-                    <meta.icon className="size-4" />
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => openItem(item)}
-                    className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-slate-800">
-                        {item.title}
-                      </span>
-                      {!item.read_at ? (
-                        <span className="size-2 shrink-0 rounded-full bg-blue-600" />
-                      ) : null}
+                    <span
+                      className={cn(
+                        'flex size-9 shrink-0 items-center justify-center rounded-xl',
+                        meta.chip
+                      )}
+                    >
+                      <meta.icon className="size-4" />
                     </span>
-                    <span className="text-sm text-slate-600">{item.body}</span>
-                    <span className="text-xs text-slate-400">
-                      {timeAgo(item.created_at)}
-                    </span>
-                    {item.type === 'QUICK_MESSAGE' && item.image_url ? (
-                      <img
-                        src={item.image_url}
-                        alt=""
-                        className="mt-1 size-14 rounded-lg border border-slate-200 object-cover"
-                      />
-                    ) : null}
-                  </button>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {!item.read_at ? (
-                      <button
-                        type="button"
-                        onClick={() => markRead(item.id)}
-                        aria-label="Marcar como lida"
-                        title="Marcar como lida"
-                        className="flex size-8 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700 active:scale-95"
-                      >
-                        <Check className="size-4" />
-                      </button>
-                    ) : null}
                     <button
                       type="button"
-                      onClick={() => removeItem(item.id)}
-                      aria-label="Apagar notificação"
-                      title="Apagar notificação"
-                      className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
+                      onClick={() =>
+                        item.type === 'QUICK_MESSAGE'
+                          ? toggleQuick(item)
+                          : openItem(item)
+                      }
+                      aria-expanded={
+                        item.type === 'QUICK_MESSAGE'
+                          ? expanded
+                          : undefined
+                      }
+                      className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
                     >
-                      <Trash2 className="size-4" />
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-slate-800">
+                          {item.title}
+                        </span>
+                        {!item.read_at ? (
+                          <span className="size-2 shrink-0 rounded-full bg-blue-600" />
+                        ) : null}
+                      </span>
+                      <span className="text-sm text-slate-600">{item.body}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-xs text-slate-400">
+                          {timeAgo(item.created_at)}
+                        </span>
+                        {item.type === 'QUICK_MESSAGE' ? (
+                          <ChevronDown
+                            className={cn(
+                              'size-4 shrink-0 text-slate-400 transition-transform',
+                              expanded && 'rotate-180'
+                            )}
+                          />
+                        ) : null}
+                      </span>
+                      {item.type === 'QUICK_MESSAGE' && item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt=""
+                          className="mt-1 size-14 rounded-lg border border-slate-200 object-cover"
+                        />
+                      ) : null}
                     </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {!item.read_at ? (
+                        <button
+                          type="button"
+                          onClick={() => markRead(item.id)}
+                          aria-label="Marcar como lida"
+                          title="Marcar como lida"
+                          className="flex size-8 items-center justify-center rounded-lg text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700 active:scale-95"
+                        >
+                          <Check className="size-4" />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                        aria-label="Apagar notificação"
+                        title="Apagar notificação"
+                        className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </div>
+
+                  {expanded ? (
+                    <div className="flex flex-col gap-2 border-t border-slate-200 pt-2">
+                      {item.body ? (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+                          {item.body}
+                        </p>
+                      ) : null}
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt="Imagem da mensagem"
+                          className="h-auto w-full rounded-xl border border-slate-200"
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
                 </li>
               )
             })}
           </ul>
         )}
-      </Modal>
-
-      {/* Visualizador da mensagem rápida: abrir marca como lida e mostra o
-          texto completo + a imagem em tamanho real. */}
-      <Modal
-        open={viewing !== null}
-        onClose={() => setViewing(null)}
-        title={viewing?.title ?? 'Mensagem'}
-      >
-        {viewing ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-slate-400">{timeAgo(viewing.created_at)}</p>
-            {viewing.body ? (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
-                {viewing.body}
-              </p>
-            ) : null}
-            {viewing.image_url ? (
-              <img
-                src={viewing.image_url}
-                alt="Imagem da mensagem"
-                className="h-auto w-full rounded-xl border border-slate-200"
-              />
-            ) : null}
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setViewing(null)}
-                className="w-full rounded-xl sm:w-auto"
-              >
-                Fechar
-              </Button>
-            </div>
-          </div>
-        ) : null}
       </Modal>
     </>
   )
