@@ -57,7 +57,7 @@ Foco opcional: $ARGUMENTS
 | `/rewards` | role-aware (ADMIN aprova resgates/sugestões; DEPENDENT catálogo + saldo) |
 | `/auth/callback` | **sem uso** (Google OAuth removido) |
 
-Nav (header fixo azul + bottom nav mobile) em `src/components/dashboard/dashboard-nav.tsx`, itens ativos por role: `/dashboard/admin`, `/dashboard/dependent`, `/dashboard/admin/houses`, `/tasks`, `/rewards`. O **avatar** do header é um botão que abre um `Modal` "Sua conta" (nome + pontos + `SignOutButton`) — garante "Sair" em qualquer largura (o "Sair" do header é `md+` e o slot extra da bottom nav só existe com < 4 itens).
+Nav (header fixo azul + bottom nav mobile) em `src/components/dashboard/dashboard-nav.tsx`, itens ativos por role: `/dashboard/admin`, `/dashboard/dependent`, `/dashboard/admin/houses`, `/tasks`, `/rewards`. O **avatar** do header é um botão que abre um `Modal` "Sua conta" (nome + pontos + `SignOutButton`) — garante "Sair" em qualquer largura (o "Sair" do header é `md+` e o slot extra da bottom nav só existe com < 4 itens). `points` é passado **só para DEPENDENT** (ADMIN não acumula pontos; badge e linha de pontos somem quando `points` não é número).
 
 ## 5. Modelo de dados (espelho de `src/types/database.ts`)
 

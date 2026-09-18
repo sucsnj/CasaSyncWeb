@@ -1,6 +1,18 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** todos os scripts/enums SQL citados neste documento (colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo ficam como registro do que foi rodado.
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
+
+## Pontos do ADMIN removidos da UI (concluída)
+
+### O que foi implementado
+- **ADMIN não acumula pontos**, então o saldo exibido para ele era ruído: o `DashboardNav` só recebe `points` no papel **DEPENDENT**. Removido `points={profile?.points}` do layout admin e, em `/tasks` e `/rewards` (role-aware), agora `points={isAdmin ? undefined : profile.points}`.
+- **Efeito:** some o badge "N pts" do cabeçalho e a linha de pontos do `Modal` "Sua conta" para ADMIN; dependentes seguem iguais. O `DashboardNav` já renderiza esses blocos só quando `points` é número.
+- **Nada mais alterado:** custos de recompensa, saldo do dependente e o resgate continuam como antes.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+---
 
 ## "Sair" acessível em qualquer tela (concluída)
 
@@ -312,8 +324,8 @@ O script `supabase/migration_features.sql` criou as colunas, a tabela de sugest�
 - **Dependentes também por username:** `createDependent` (`src/actions/houses.ts`) agora recebe `username` em vez de e-mail; gera o e-mail sintético `@dependente.casasync`, checa unicidade e cria a conta com `email_confirm: true`. O form em `houses-manager.tsx` trocou o campo E-mail por "Nome de usuário".
 - **UI em `/login`:** abas **"Entrar"** (username + senha, válido para ADMIN e DEPENDENT no mesmo form — sem Google OAuth) e **"Criar Conta Admin"** (Nome completo, Nome de usuário, Senha, PIN do sistema) em `login-form.tsx`; `register-form.tsx` atualizado para os novos campos e reutilizado na aba e na rota `/register` (mantida como URL independente).
 
-### Pontos de atenção / próximos passos
-- **Banco (necessário no Supabase):** adicionar a coluna `profiles.username` (única, lowercase) e preencher/validar para contas existentes. Sem a coluna, o cadastro/login por username falha.
+### Pontos de atenção / próximos passos *(histórico — já aplicado)*
+- **Banco:** a coluna `profiles.username` (única, lowercase) **já existe** no Supabase e as contas foram validadas — o cadastro/login por username está operacional (ver o aviso no topo).
 - Removido o login com **Google** (não faz sentido sem e-mail). `src/app/auth/callback/route.ts` ficou sem uso — pode ser removido em etapa futura.
 - `validateCredentials`/`EMAIL_PATTERN` removidos de `actions/types.ts`; novos helpers `validateUsername` (3–24 chars, `[a-z0-9._-]`) e `validatePassword` (≥6).
 - Gerar types via `supabase gen types` para casar com o schema real (inclui `username`).

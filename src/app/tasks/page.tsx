@@ -136,7 +136,7 @@ export default async function TasksPage() {
       <DashboardNav
         items={isAdmin ? adminItems : dependentItems}
         userName={profile.full_name}
-        points={profile.points}
+        points={isAdmin ? undefined : profile.points}
         userId={user.id}
         notifications={notifications}
       />

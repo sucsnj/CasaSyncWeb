@@ -8,11 +8,12 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 
 ## Funcionalidades
 - **Auth por username:** ADMIN cadastra-se com o PIN do sistema (`MASTER_PIN`); DEPENDENT é criado pelo ADMIN (nunca se cadastra sozinho). Sem e-mails reais — `${username}@admin.casasync` / `${username}@dependente.casasync`, criados já confirmados.
-- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes e **reset de senha** de qualquer membro (dependente ou co-ADMIN) pelo ADMIN, sem e-mail.
+- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes e **reset de senha** de qualquer membro (dependente ou co-ADMIN) pelo ADMIN, sem e-mail (ver ADR-0011).
 - **Tarefas:** ciclo `PENDING → COMPLETED → APPROVED` (aprovação credita pontos), desaprovação, **"não entregue"** com penalidade (o saldo pode ficar negativo), **restauração** de tarefas aprovadas, SLA de prazo e **pedido de adiamento** (+1/+3 dias).
 - **Recompensas:** catálogo, resgate com validação de saldo, aprovação/rejeição de resgates e **sugestões** enviadas pelo dependente.
 - **Notificações:** sino no cabeçalho azul para "o outro lado" da ação (dependente ↔ ADMINs), marcar como lida/todas, apagar uma/todas; lidas são apagadas após 5 dias. Ver ADR-0009.
-- **Realtime:** sincronização ao vivo de tarefas, recompensas, resgates, sugestões, saldo e notificações.
+- **Realtime:** sincronização ao vivo de tarefas, recompensas, resgates, sugestões, saldo e notificações (ver ADR-0010 — o cliente faz `setAuth` da sessão antes de assinar).
+- **Interface:** cabeçalho fixo azul + bottom nav no mobile; o **avatar** abre o `Modal` "Sua conta" com **Sair** (disponível em qualquer largura) e o saldo de pontos aparece **só para o DEPENDENT** (ADMIN não acumula pontos).
 - **Uploads:** bucket público `casasync-media` (avatars, casas, recompensas, tarefas, sugestões).
 
 ## Comandos

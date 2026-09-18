@@ -22,7 +22,6 @@ export default async function AdminDashboardLayout({
       <DashboardNav
         items={adminItems}
         userName={profile?.full_name}
-        points={profile?.points}
         userId={user?.id}
         notifications={notifications}
       />
