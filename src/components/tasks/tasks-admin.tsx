@@ -16,7 +16,12 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import type { Tables } from '@/types/database'
 import { DebouncedField } from './debounced-field'
-import { ImageUpload } from '@/components/ui/image-upload'
+// DESABILITADO — envio de imagem em tarefas (decisão de produto, 2026): as
+// imagens de tarefa inflavam o storage e a feature foi desativada. A coluna
+// `tasks.image_url` e as actions continuam intactas; imagens de tarefas
+// antigas seguem sendo exibidas nos cards. Reativar = descomentar import,
+// estado e bloco de formulário abaixo.
+// import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -103,7 +108,8 @@ export function TasksAdmin({
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
+  // DESABILITADO — estado do upload de imagem de tarefas (ver comentário na importação).
+  // const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState(nowDateTimeLocalValue)
   // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -147,6 +153,8 @@ export function TasksAdmin({
         dueDate: String(formData.get('due_date') ?? '') || null,
         points: Number(formData.get('points')),
         assignedTo: String(formData.get('assigned_to') ?? ''),
+        // Sem campo de imagem no form (upload desabilitado), `image_url` sempre
+        // volta null — a action cria a tarefa sem imagem.
         imageUrl: String(formData.get('image_url') ?? '') || null,
       })
 
@@ -156,7 +164,6 @@ export function TasksAdmin({
       }
 
       setFormError(null)
-      setTaskImageUrl(null)
       setDueDate(nowDateTimeLocalValue())
       form.reset()
       setShowTaskForm(false)
@@ -475,7 +482,15 @@ export function TasksAdmin({
               />
             </div>
 
-            <div className="flex flex-col gap-2 md:col-span-2">
+            {/*
+              Bloco DESATIVADO — upload de imagem da tarefa (decisão de produto, 2026):
+              envio de imagens em tarefas foi desligado para NÃO INFLAR o
+              storage/banco. Com o campo oculto (`image_url`) removido, o
+              `formData.get('image_url')` volta null e a tarefa nasce sem imagem.
+              A coluna `tasks.image_url` segue no schema e imagens de tarefas
+              antigas continuam aparecendo nos cards. Reativar = descomentar.
+            */}
+            {/* <div className="flex flex-col gap-2 md:col-span-2">
               <Label>Imagem (opcional)</Label>
               <ImageUpload
                 folder="tasks"
@@ -484,7 +499,7 @@ export function TasksAdmin({
                 onChange={setTaskImageUrl}
               />
               <input type="hidden" name="image_url" value={taskImageUrl ?? ''} />
-            </div>
+            </div> */}
 
             {formError ? (
               <p className="text-sm text-destructive md:col-span-2" role="alert">
@@ -575,6 +590,7 @@ export function TasksAdmin({
 
                 {isExpanded ? (
                   <>
+                {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
                 {task.image_url ? (
                   <img
                     src={task.image_url}

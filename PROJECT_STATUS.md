@@ -2,6 +2,18 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco). **Exceção única:** a coluna `rewards.active` da seção "Desativação de recompensa" abaixo ainda precisa ser aplicada manualmente no dashboard.
 
+## Upload de imagem em TAREFAS desabilitado (concluída — sem mudança de schema)
+
+### O que foi feito
+- **UI de upload de tarefas removida (comentada):** em `src/components/tasks/tasks-admin.tsx` o `ImageUpload` do form de tarefas (import, estado `taskImageUrl`, bloco JSX e `input hidden image_url`) está **comentado** com a explicação inline — o envio foi desligado para **não inflar o storage/banco**. Sem o campo, `formData.get('image_url')` volta `null` e a tarefa nova nasce sem imagem.
+- **Sem mudança no banco:** a coluna `tasks.image_url` e as actions `createTask`/`updateTask` **continuam intactas** — imagens de tarefas **antigas** seguem exibidas nos cards (ADMIN e DEPENDENT, com comentário nos pontos de exibição).
+- **Reativação:** basta descomentar import/estado/bloco — nenhuma migração necessária.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+---
+
 ## Desativação de recompensa pelo ADMIN (implementada — SQL `rewards.active` a aplicar)
 
 ### O que foi implementado

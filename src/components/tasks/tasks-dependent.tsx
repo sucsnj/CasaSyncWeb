@@ -163,6 +163,7 @@ export function TasksDependent({
               <Card key={task.id} className={cardClass}>
                 <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                   <div className="min-w-0 flex-1">
+                    {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
                     {task.image_url ? (
                       <img
                         src={task.image_url}
