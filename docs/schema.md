@@ -6,7 +6,7 @@ Fonte de verdade do código: `src/types/database.ts` (espelho manual). Para rege
 npx supabase gen types typescript --project-id <project-ref> > src/types/database.generated.ts
 ```
 
-As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication) já foram aplicados no projeto atual.**
+As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication e o bucket `casasync-media`) já foram aplicados no projeto atual — nada está pendente.**
 
 ## Tabelas
 
@@ -70,8 +70,6 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | created_by | uuid FK → profiles | |
 | created_at / updated_at | timestamptz | |
 
-> **A aplicar:** coluna `rewards.active` — `alter table public.rewards add column if not exists active boolean not null default true;` (registro em `PROJECT_STATUS.md`). **Também a aplicar ao ativar a mensagem rápida:** colunas `notifications.image_url`/`message_id` (registro na seção "Mensagem rápida" do `PROJECT_STATUS.md`).
-
 ### reward_redemptions
 | coluna | tipo | notas |
 |---|---|---|
@@ -104,7 +102,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | house_id | uuid FK → houses | isolamento multi-tenant (realtime filter) |
 | recipient_id | uuid FK → profiles | quem recebe (indexado junto de `read_at`) |
 | actor_id | uuid FK → profiles | nullable; quem gerou a ação |
-| type | text | valores em `NotificationType` (`src/types/notifications.ts`), com CHECK no banco |
+| type | text | valores definidos em `NotificationType` (`src/types/notifications.ts`); **sem CHECK no banco** |
 | title | text | resumo curto |
 | body | text | mensagem legível |
 | link | text | nullable; deep link (`/tasks`, `/rewards`) |
@@ -112,8 +110,6 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | message_id | uuid | nullable; agrupa as cópias de um mesmo envio de mensagem rápida (indexado) |
 | read_at | timestamptz | nullable; `null` = não lida |
 | created_at | timestamptz | |
-
-> **A aplicar (mensagem rápida):** `alter table public.notifications add column if not exists image_url text;` · `alter table public.notifications add column if not exists message_id uuid;` · `create index if not exists notifications_message_idx on public.notifications (message_id);` — e, se houver CHECK em `notifications.type`, incluir `'QUICK_MESSAGE'`.
 
 Notificações são registradas **best-effort** pelas actions (falha não derruba o fluxo
 principal). Destinatário = "o outro lado" da ação (dependente para ações do ADMIN;

@@ -29,7 +29,7 @@ Sem testes configurados. Verificação antes de entregar: **lint → typecheck �
 ## Setup
 1. `npm install`
 2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (cadastro de ADMIN) e `PIN_PTS` (alteração manual de pontos de dependente pelo ADMIN).
-3. Supabase: schema, RLS e publication Realtime. **Todos os scripts SQL já foram aplicados** neste projeto, **exceto** a coluna `rewards.active` (desativação de recompensa — aplicar `alter table public.rewards add column if not exists active boolean not null default true;`) e as colunas de mensagem rápida `notifications.image_url`/`message_id` (aplicar ao ativar a feature; ver SQL na seção "Mensagem rápida" do `PROJECT_STATUS.md`). Para um projeto novo, ver `docs/schema.md` e os blocos de SQL em `PROJECT_STATUS.md` (inclui a tabela `notifications`, a policy de SELECT em `recipient_id` e a adição à publication `supabase_realtime`). Migrações não ficam no repo.
+3. Supabase: schema, RLS e publication Realtime. **Todos os scripts SQL já foram aplicados** neste projeto (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, tabela `notifications` + policy de SELECT em `recipient_id`, enum `NOT_DELIVERED`, `reward_suggestions`, publicação e bucket público `casasync-media`). Para um projeto novo, ver `docs/schema.md` e os blocos de SQL em `PROJECT_STATUS.md` (registro histórico). Migrações não ficam no repo.
 
 ## Estrutura
 ```

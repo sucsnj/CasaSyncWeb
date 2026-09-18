@@ -1,8 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco). **Exceções a aplicar manualmente no dashboard:** a coluna `rewards.active` (seção "Desativação de recompensa") e as colunas de mensagem rápida (`notifications.image_url`/`message_id`, seção "Mensagem rápida" — **apenas quando for ativar a feature**; sem elas o envio/visualização de mensagens rápidas falha em runtime).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
-## Mensagem rápida DEPENDENT → ADMIN (implementada — SQL a aplicar)
+## Refresco de documentação e contexto (concluída)
+
+### O que foi feito
+- **Docs sincronizadas com o banco (nada pendente):** `AGENTS.md`, `README.md` e `docs/schema.md` deixaram de marcar `rewards.active`, `notifications.image_url`/`message_id` e o bucket/pasta `messages` como "a aplicar/pendente" — tudo **já aplicado** no Supabase (confirmado; os blocos de SQL em `PROJECT_STATUS.md` seguem como **registro histórico**). `docs/schema.md` perdeu as caixas "A aplicar" e documenta `notifications.type` como `text` **sem CHECK** no banco.
+- **Removido `src/app/auth/callback/route.ts`:** sem uso desde que o login com Google foi removido (nada o referenciava; `src/app/auth/` deixou de existir).
+- **Contagem de notificações corrigida:** são **17** tipos em `src/types/notifications.ts` (o `QUICK_MESSAGE` foi adicionado; antes constava 16).
+- **Types seguem espelho manual atualizado** (`src/types/database.ts` já contém `rewards.active` e `notifications.image_url`/`message_id`) — mantido sem regeneração via CLI.
+- **Evolução futura anotada (não feita):** migrar `supabase.auth.getUser()` → `getClaims()` no `updateSession` (docs atuais do Supabase preferem `getClaims()` no proxy — validar assinatura do JWT a cada request).
+- Material de ensino (skill `teach`) mantido como está.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+---
+
+## Mensagem rápida DEPENDENT → ADMIN (implementada — SQL aplicado)
 
 ### O que foi implementado
 - **Compositor no sino do DEPENDENT** (`src/components/notifications/quick-message-composer.tsx`, renderizado em `notifications-bell.tsx` quando `canSend`): **colapsável** — o cabeçalho (ícone violeta + "Mensagem rápida" + chevron girando) abre/fecha o compositor, que **inicia recolhido** (`open` default `false`). Texto **opcional** de até **50 caracteres** (contador) + **1 imagem** por mensagem (até **5 MB**, só `image/*`), escolhida da **Galeria** (input `accept="image/*"`) ou da **Câmera** — câmera **ao vivo real** em qualquer dispositivo via `getUserMedia` (`facingMode: 'environment'`, fallback para a webcam e para o seletor de arquivos quando a câmera está indisponível); preview com remover; upload via `uploadMedia('messages', user.id)` (nova pasta `messages` em `casasync-media`).
@@ -11,7 +26,7 @@
 - **Retenção ("2 lidas → apaga a mais antiga"):** `cleanupQuickMessages` em `src/utils/notifications.ts`, disparado em `markNotificationRead` e `markAllNotificationsRead`. A mensagem é considerada **lida** quando **qualquer cópia de destinatário** (ex.: qualquer ADMIN) foi aberta — **a cópia do próprio remetente é ignorada na contagem** (é só comprovante); ao atingir **2 lidas**, apaga o grupo mais antigo (todas as cópias pelo `message_id`, incluindo a do dependente, + remoção da imagem no storage, best-effort). Conta **MENSAGENS distintas**, não cópias por destinatário (casa com 2 ADMINS = 1 mensagem).
 - **Notificações comuns** (`tasks`/`rewards`/`sugestões`) ganharam passthrough de `image_url`/`message_id` em `notifyUser`/`notifyHouse` (sem uso atual) — o campo existe no banco e fica disponível para eventos futuros com imagem.
 
-### SQL a aplicar no Supabase
+### SQL aplicado no Supabase
 ```sql
 -- O bucket publico `casasync-media` NAO existia (upload falhava com "Bucket not
 -- found" em todas as pastas). Criar + liberar select publico e insert de upload
@@ -67,7 +82,7 @@ create index if not exists notifications_message_idx on public.notifications (me
 
 ---
 
-## Desativação de recompensa pelo ADMIN (implementada — SQL `rewards.active` a aplicar)
+## Desativação de recompensa pelo ADMIN (implementada — SQL `rewards.active` aplicado)
 
 ### O que foi implementado
 - **Nova coluna `rewards.active`** (`boolean not null default true`): recompensa ativa por padrão; `false` = desativada (indisponível), **nunca excluída**. Só o ADMIN alterna — o dependente nunca reativa.
@@ -77,7 +92,7 @@ create index if not exists notifications_message_idx on public.notifications (me
 - **UI DEPENDENTE (`rewards-dependent.tsx`):** recompensa desativada aparece acinzentada (borda/fundo `slate-300/50`, imagem em grayscale, título `slate-500`) com **"Indisponível"** no lugar do status de saldo; o botão "Resgatar" vira "Indisponível" e fica desabilitado. Reativação do ADMIN volta tudo ao normal automaticamente (Realtime).
 - **Realtime:** `rewards` já está na publication — o cambio de `active` chega nos listeners sem alteração de publication/RLS.
 
-### SQL a aplicar no Supabase
+### SQL aplicado no Supabase
 ```sql
 alter table public.rewards add column if not exists active boolean not null default true;
 ```
@@ -168,7 +183,7 @@ alter table public.rewards add column if not exists active boolean not null defa
 - **Tabela `notifications`** (1 linha por destinatário): `house_id`, `recipient_id`, `actor_id` (nullable), `type`, `title`, `body`, `link` (nullable), `read_at` (nullable; `null` = não lida), `created_at`.
 - **Registro best-effort** (`src/utils/notifications.ts`): `notifyUser` (um destinatário) e `notifyHouse` (resolve todos os ADMINs ou todos os DEPENDENTEs da casa e exclui quem agiu). Falha ao gravar **nunca** derruba a ação principal (crédito/débito de pontos, aprovações etc.).
 - **Destinatário = "o outro lado" da ação:** o dependente recebe tudo que os ADMINs fazem nas tarefas/resgates/sugestões dele; **todos os ADMINs membros** recebem tudo que o dependente faz. Quem agiu não recebe a própria ação.
-- **Eventos cobertos:** criação/conclusão/aprovação/devolução/restauração de tarefa, `NOT_DELIVERED`, pedido e resolução de adiamento, criação de recompensa, pedido e resolução de resgate, criação e resolução de sugestão — integrados nas actions existentes de `src/actions/tasks.ts` e `src/actions/rewards.ts` (16 tipos em `src/types/notifications.ts`).
+- **Eventos cobertos:** criação/conclusão/aprovação/devolução/restauração de tarefa, `NOT_DELIVERED`, pedido e resolução de adiamento, criação de recompensa, pedido e resolução de resgate, criação e resolução de sugestão — integrados nas actions existentes de `src/actions/tasks.ts` e `src/actions/rewards.ts` (17 tipos em `src/types/notifications.ts`).
 - **Gerenciamento** (`src/actions/notifications.ts`): `markNotificationRead`, `markAllNotificationsRead`, `deleteNotification`, `deleteAllNotifications`, `purgeReadNotifications` — escopo sempre `recipient_id = user.id` (derivado da sessão; service-role).
 - **Retenção:** lidas apagadas após **5 dias** por limpeza lazy em `getMyNotifications` (sem `pg_cron`); `READ_RETENTION_DAYS` em `src/utils/notifications.ts`.
 - **UI:** `NotificationsBell` (`src/components/notifications/notifications-bell.tsx`) no cabeçalho (`src/components/dashboard/dashboard-nav.tsx`), ao lado do avatar/pontos: badge de não lidas, painel em `Modal`, "marcar todas", "apagar todas" e apagar individual; clique marca lida e abre o `link` (`/tasks`/`/rewards`).
@@ -432,7 +447,7 @@ O script `supabase/migration_features.sql` criou as colunas, a tabela de sugest�
 
 ### Pontos de atenção / próximos passos *(histórico — já aplicado)*
 - **Banco:** a coluna `profiles.username` (única, lowercase) **já existe** no Supabase e as contas foram validadas — o cadastro/login por username está operacional (ver o aviso no topo).
-- Removido o login com **Google** (não faz sentido sem e-mail). `src/app/auth/callback/route.ts` ficou sem uso — pode ser removido em etapa futura.
+- Removido o login com **Google** (não faz sentido sem e-mail). `src/app/auth/callback/route.ts` ficou sem uso e foi **removido** (ver "Refresco de documentação e contexto" no topo).
 - `validateCredentials`/`EMAIL_PATTERN` removidos de `actions/types.ts`; novos helpers `validateUsername` (3–24 chars, `[a-z0-9._-]`) e `validatePassword` (≥6).
 - Gerar types via `supabase gen types` para casar com o schema real (inclui `username`).
 
@@ -470,7 +485,6 @@ src/
 │  ├─ (auth)/                  # Grupo de rota (sem efeito na URL)
 │  │  ├─ login/page.tsx
 │  │  └─ register/page.tsx
-│  ├─ auth/callback/route.ts   # Route handler do callback Supabase
 │  ├─ dashboard/
 │  │  ├─ admin/                # Visão ADMIN (layout, visão geral, houses/)
 │  │  └─ dependent/            # Visão DEPENDENT (layout, visão geral)
@@ -478,22 +492,29 @@ src/
 │  ├─ rewards/page.tsx         # Recompensas (role-aware)
 │  ├─ layout.tsx · globals.css · page.tsx
 ├─ components/                 # Componentes por domínio
-│  ├─ ui/                      # Shadcn UI (button, card, input, label, separator, tabs)
+│  ├─ ui/                      # Shadcn UI (button, card, input, label, separator, tabs, modal, empty-state, image-upload)
 │  ├─ auth/                    # login-form, register-form, sign-out-button
-│  ├─ dashboard/               # dashboard-nav
-│  ├─ tasks/                   # debounced-field, tasks-admin, tasks-dependent
+│  ├─ dashboard/               # dashboard-nav, profile-editor
+│  ├─ tasks/                   # debounced-field, tasks-admin, tasks-dependent, task-styles
 │  ├─ rewards/                 # rewards-admin, rewards-dependent
-│  └─ houses/                  # houses-manager
+│  ├─ houses/                  # houses-manager
+│  └─ notifications/           # notifications-bell, quick-message-composer
 ├─ actions/                    # Server Actions por domínio
 │  ├─ auth.ts · types.ts
-│  ├─ houses.ts                # createHouse, selectHouse, createDependent
+│  ├─ houses.ts                # createHouse, selectHouse, createDependent, …
 │  ├─ tasks.ts
-│  └─ rewards.ts
+│  ├─ rewards.ts
+│  └─ notifications.ts
 ├─ utils/
 │  ├─ house.ts                 # helpers de sessão/casa ativa
+│  ├─ notifications.ts         # notifyUser/notifyHouse (best-effort), retenção e limpeza
+│  ├─ quick-message.ts         # helpers da mensagem rápida (capacidade/cleanup)
+│  ├─ media.ts                 # uploadMedia (bucket casasync-media)
+│  ├─ task-sla.ts              # SLA de prazos
 │  └─ supabase/                # server.ts, client.ts, admin.ts, middleware.ts
 ├─ types/
-│  └─ database.ts              # schema tipado (profiles, tasks, rewards…)
+│  ├─ database.ts              # schema tipado (espelho manual)
+│  └─ notifications.ts         # NotificationType (17 tipos)
 ├─ hooks/                      # use-postgres-changes, use-profile-points
 └─ lib/
    └─ utils.ts                 # cn() (é a lib habitada; componentes ui usam pkg `cn`)

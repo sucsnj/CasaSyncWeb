@@ -9,7 +9,7 @@ Sem e-mails reais (app doméstico, sem provedor SMTP). O login por Google foi re
 - Contas usam e-mails sintéticos: `${username}@admin.casasync` (ADMIN) ou `${username}@dependente.casasync` (DEPENDENT), criadas via service role já com `email_confirm: true`.
 - Cadastro de ADMIN validado por `masterPin` (`MASTER_PIN` env, checado em `actions/auth.ts`); DEPENDENT **nunca se cadastra sozinho** (criado por `createDependent` em `actions/houses.ts`).
 - Login resolve username → e-mail sintético via `profiles` e chama `signInWithPassword` pelo cliente do servidor (Server Action em `src/actions/auth.ts`). Mensagem genérica "Credenciais inválidas." nos dois casos (não revela usernames existentes).
-- `src/app/auth/callback/route.ts` ficou sem uso (resto do fluxo OAuth/magic link) — pode ser removido em etapa futura.
+- O fluxo OAuth/magic link restante (`src/app/auth/callback/route.ts`) ficou sem uso e foi **removido** (ver seção "Refresco de documentação e contexto" do `PROJECT_STATUS.md`).
 
 ## Consequências
 - `profiles.username` é obrigatório (única, lowercase, validada 3–24 chars `[a-z0-9._-]`).
