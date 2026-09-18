@@ -9,7 +9,11 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import type { ActionResult } from './types'
-import { validatePassword, validateUsername } from './types'
+import {
+  validatePassword,
+  validatePoints,
+  validateUsername,
+} from './types'
 
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
@@ -595,4 +599,81 @@ export async function updateMemberPassword(
     ok: true,
     message: 'Senha atualizada. O membro já pode entrar com a nova senha.',
   }
+}
+
+/**
+ * ADMIN altera o saldo de pontos acumulados de um dependente, protegido pelo
+ * PIN_PTS (env server-only, mesma mecânica do MASTER_PIN). O valor é um SET
+ * absoluto do acumulado (pode ser negativo). Autorização derivada da sessão:
+ * o alvo precisa ser membro DEPENDENT de uma casa que o ator controla como
+ * ADMIN; a escrita de `profiles.points` usa service role.
+ */
+export async function updateDependentPoints(
+  dependentId: string,
+  newPoints: number,
+  pinPts: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem alterar pontos.' }
+  }
+
+  const pointsError = validatePoints(newPoints)
+  if (pointsError) {
+    return { ok: false, error: pointsError }
+  }
+
+  if (pinPts !== process.env.PIN_PTS) {
+    return { ok: false, error: 'PIN de pontos inválido.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  // O alvo precisa ser um DEPENDENT de alguma casa que o ator controla.
+  const { data: member } = await admin
+    .from('house_members')
+    .select('house_id')
+    .eq('profile_id', dependentId)
+    .eq('role', 'DEPENDENT')
+    .limit(1)
+    .maybeSingle()
+
+  if (!member) {
+    return { ok: false, error: 'Dependente não encontrado.' }
+  }
+
+  const { data: isAdmin } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', member.house_id)
+    .eq('profile_id', user.id)
+    .eq('role', 'ADMIN')
+    .maybeSingle()
+
+  if (!isAdmin) {
+    return { ok: false, error: 'Dependente não pertence a uma casa sua.' }
+  }
+
+  const { error } = await admin
+    .from('profiles')
+    .update({ points: newPoints })
+    .eq('id', dependentId)
+
+  if (error) {
+    return { ok: false, error: 'Falha ao atualizar os pontos.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/dashboard/dependent')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return { ok: true, message: `Pontos atualizados para ${newPoints}.` }
 }

@@ -8,6 +8,7 @@ import {
   createHouse,
   joinHouseByPin,
   selectHouse,
+  updateDependentPoints,
   updateDependentProfile,
   updateHouse,
   updateMemberPassword,
@@ -17,7 +18,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Copy, Key, Pencil } from 'lucide-react'
+import { Coins, Copy, Key, Pencil } from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -33,6 +34,7 @@ type Member = {
   fullName: string
   username: string | null
   avatarUrl: string | null
+  points: number
   role: 'ADMIN' | 'DEPENDENT'
 }
 
@@ -74,6 +76,11 @@ export function HousesManager({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
   const [passwordPending, setPasswordPending] = useState(false)
+
+  const [pointsMember, setPointsMember] = useState<Member | null>(null)
+  const [pointsError, setPointsError] = useState<string | null>(null)
+  const [pointsSuccess, setPointsSuccess] = useState<string | null>(null)
+  const [pointsPending, setPointsPending] = useState(false)
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -228,6 +235,38 @@ export function HousesManager({
       setPasswordSuccess(result.message ?? 'Senha atualizada.')
     } finally {
       setPasswordPending(false)
+    }
+  }
+
+  async function handleSavePoints(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!pointsMember) return
+
+    const form = event.currentTarget
+    setPointsError(null)
+    setPointsSuccess(null)
+    setPointsPending(true)
+
+    try {
+      // Valores lidos do FormData no submit — o PIN_PTS nunca vai para o
+      // estado do React (ver ADR-0003).
+      const formData = new FormData(form)
+      const result = await updateDependentPoints(
+        pointsMember.profileId,
+        Number(String(formData.get('newPoints') ?? '')),
+        String(formData.get('pinPts') ?? '')
+      )
+
+      if (!result.ok) {
+        setPointsError(result.error)
+        return
+      }
+
+      form.reset()
+      setPointsSuccess(result.message ?? 'Pontos atualizados.')
+      router.refresh()
+    } finally {
+      setPointsPending(false)
     }
   }
 
@@ -580,6 +619,11 @@ export function HousesManager({
                     >
                       {member.role === 'ADMIN' ? 'Administrador' : 'Dependente'}
                     </span>
+                    {member.role === 'DEPENDENT' ? (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                        {member.points} pts
+                      </span>
+                    ) : null}
                     <Button
                       type="button"
                       variant="ghost"
@@ -594,6 +638,22 @@ export function HousesManager({
                       <Key className="size-3.5" />
                       Senha
                     </Button>
+                    {member.role === 'DEPENDENT' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-9 px-2 text-xs text-slate-500"
+                        onClick={() => {
+                          setPointsError(null)
+                          setPointsSuccess(null)
+                          setPointsMember(member)
+                        }}
+                      >
+                        <Coins className="size-3.5" />
+                        Pontos
+                      </Button>
+                    ) : null}
                     {member.role === 'DEPENDENT' ? (
                       <Button
                         type="button"
@@ -764,6 +824,75 @@ export function HousesManager({
 
             <Button type="submit" disabled={passwordPending}>
               {passwordPending ? 'Salvando...' : 'Salvar Nova Senha'}
+            </Button>
+          </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!pointsMember}
+        onClose={() => {
+          setPointsMember(null)
+          setPointsError(null)
+          setPointsSuccess(null)
+        }}
+        title={`Alterar pontos — ${pointsMember?.fullName ?? ''}`}
+      >
+        {pointsMember ? (
+          <form
+            key={pointsMember.profileId}
+            onSubmit={handleSavePoints}
+            className="flex flex-col gap-3"
+          >
+            <p className="text-sm text-muted-foreground">
+              Saldo atual de <strong>{pointsMember.fullName}</strong>
+              {pointsMember.username ? ` (@${pointsMember.username})` : ''}:{' '}
+              <strong>{pointsMember.points} pts</strong>. Defina o novo total
+              acumulado (pode ser negativo).
+            </p>
+
+            <div className="grid gap-2">
+              <Label htmlFor="member-new-points">Novo total de pontos</Label>
+              <Input
+                id="member-new-points"
+                name="newPoints"
+                type="number"
+                inputMode="numeric"
+                defaultValue={pointsMember.points}
+                required
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="member-pin-pts">PIN de pontos</Label>
+              <Input
+                id="member-pin-pts"
+                name="pinPts"
+                type="password"
+                autoComplete="off"
+                placeholder="Informe o PIN_PTS para confirmar"
+                suppressHydrationWarning
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Senha de administração (env PIN_PTS) exigida para confirmar a
+                alteração.
+              </p>
+            </div>
+
+            {pointsError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {pointsError}
+              </p>
+            ) : null}
+            {pointsSuccess ? (
+              <p className="text-sm font-medium text-emerald-600" role="status">
+                {pointsSuccess}
+              </p>
+            ) : null}
+
+            <Button type="submit" disabled={pointsPending}>
+              {pointsPending ? 'Salvando...' : 'Salvar pontos'}
             </Button>
           </form>
         ) : null}

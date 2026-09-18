@@ -17,3 +17,16 @@ export function validatePassword(password: string): string | null {
   }
   return null
 }
+
+export const POINTS_MIN = -1000000
+export const POINTS_MAX = 1000000
+
+export function validatePoints(points: number): string | null {
+  if (!Number.isInteger(points)) {
+    return 'Informe um valor inteiro de pontos.'
+  }
+  if (points < POINTS_MIN || points > POINTS_MAX) {
+    return `Os pontos devem ficar entre ${POINTS_MIN} e ${POINTS_MAX}.`
+  }
+  return null
+}

@@ -2,6 +2,23 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Alteração de pontos de dependente pelo ADMIN via PIN_PTS (concluída)
+
+### O que foi implementado
+- **Nova env server-only `PIN_PTS`** (`.env.local`): senha exigida para o ADMIN alterar o saldo de pontos de um dependente — mesma mecânica do `MASTER_PIN` (fail closed se a env não estiver configurada).
+- **Server Action `updateDependentPoints(dependentId, newPoints, pinPts)`** (`src/actions/houses.ts`): exige sessão ADMIN; valida `pinPts === process.env.PIN_PTS`, `validatePoints` (inteiro entre `POINTS_MIN = -1.000.000` e `POINTS_MAX = 1.000.000`, em `actions/types.ts`) e que o alvo é `DEPENDENT` de uma casa que o ator controla como ADMIN. Escrita em `profiles.points` via service role — **SET absoluto**, pode ser negativo. Revalida casas/tarefas/recompensas/dashboard.
+- **UI (`houses-manager.tsx`):** pill âmbar **"N pts"** junto da role de cada dependente + botão **"Pontos"** (`Coins`) abre `Modal` "Alterar pontos — {nome}" com o saldo atual, input `newPoints` (number, **uncontrolled**) e o input `pinPts` (password, **uncontrolled**, `suppressHydrationWarning` — credencial nunca vai ao estado React, ADR-0003). Feedback **inline** (erro `role="alert"` / sucesso `role="status"`) + `router.refresh()` para a lista e o saldo mostrarem o novo valor (Realtime/`useProfilePoints` no lado do dependente também).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- VALOR = SET absoluto do acumulado (não delta) e restrito aos `DEPENDENT` da casa — pontos de ADMIN continuam sem significado na UI.
+- PIN exigido porque essa é a única forma de *editar* o saldo manualmente (fora do fluxo tarefas/recompensas); sem PIN, qualquer ADMIN membro poderia pontuar à vontade.
+- Detalhamento do "porquê" no **ADR-0012** (`docs/adr/0012-alteracao-de-pontos-pelo-admin-com-pin.md`).
+
+---
+
 ## Pontos do ADMIN removidos da UI (concluída)
 
 ### O que foi implementado

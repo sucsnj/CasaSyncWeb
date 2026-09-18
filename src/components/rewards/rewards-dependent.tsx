@@ -333,7 +333,7 @@ export function RewardsDependent({
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">
-                          Resgate enviado para aprovação
+                          Saldo suficiente
                         </span>
                       )}
                       <Button

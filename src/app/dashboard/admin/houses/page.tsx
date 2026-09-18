@@ -34,6 +34,7 @@ export default async function AdminHousesPage() {
     fullName: string
     username: string | null
     avatarUrl: string | null
+    points: number
     role: 'ADMIN' | 'DEPENDENT'
   }[] = []
 
@@ -45,11 +46,19 @@ export default async function AdminHousesPage() {
 
     const profileIds = houseMembers?.map((member) => member.profile_id) ?? []
 
-    let infoById = new Map<string, { full_name: string | null; username: string | null; avatar_url: string | null }>()
+    let infoById = new Map<
+      string,
+      {
+        full_name: string | null
+        username: string | null
+        avatar_url: string | null
+        points: number | null
+      }
+    >()
     if (profileIds.length > 0) {
       const { data: profiles } = await admin
         .from('profiles')
-        .select('id, full_name, username, avatar_url')
+        .select('id, full_name, username, avatar_url, points')
         .in('id', profileIds)
 
       infoById = new Map((profiles ?? []).map((p) => [p.id, p]))
@@ -63,6 +72,7 @@ export default async function AdminHousesPage() {
           fullName: info?.full_name ?? 'Sem nome',
           username: info?.username ?? null,
           avatarUrl: info?.avatar_url ?? null,
+          points: info?.points ?? 0,
           role: member.role,
         }
       }) ?? []

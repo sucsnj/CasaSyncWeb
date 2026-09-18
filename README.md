@@ -8,7 +8,7 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 
 ## Funcionalidades
 - **Auth por username:** ADMIN cadastra-se com o PIN do sistema (`MASTER_PIN`); DEPENDENT é criado pelo ADMIN (nunca se cadastra sozinho). Sem e-mails reais — `${username}@admin.casasync` / `${username}@dependente.casasync`, criados já confirmados.
-- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes e **reset de senha** de qualquer membro (dependente ou co-ADMIN) pelo ADMIN, sem e-mail (ver ADR-0011).
+- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes, **reset de senha** de qualquer membro pelo ADMIN sem e-mail (ver ADR-0011) e **alteração manual do saldo de pontos** de um dependente protegida por `PIN_PTS` (ver ADR-0012).
 - **Tarefas:** ciclo `PENDING → COMPLETED → APPROVED` (aprovação credita pontos), desaprovação, **"não entregue"** com penalidade (o saldo pode ficar negativo), **restauração** de tarefas aprovadas, SLA de prazo e **pedido de adiamento** (+1/+3 dias).
 - **Recompensas:** catálogo, resgate com validação de saldo, aprovação/rejeição de resgates e **sugestões** enviadas pelo dependente.
 - **Notificações:** sino no cabeçalho azul para "o outro lado" da ação (dependente ↔ ADMINs), marcar como lida/todas, apagar uma/todas; lidas são apagadas após 5 dias. Ver ADR-0009.
@@ -28,7 +28,7 @@ Sem testes configurados. Verificação antes de entregar: **lint → typecheck �
 
 ## Setup
 1. `npm install`
-2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN`.
+2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (cadastro de ADMIN) e `PIN_PTS` (alteração manual de pontos de dependente pelo ADMIN).
 3. Supabase: schema, RLS e publication Realtime. **Todos os scripts SQL já foram aplicados** neste projeto; para um projeto novo, ver `docs/schema.md` e os blocos de SQL em `PROJECT_STATUS.md` (inclui a tabela `notifications`, a policy de SELECT em `recipient_id` e a adição à publication `supabase_realtime`). Migrações não ficam no repo.
 
 ## Estrutura
