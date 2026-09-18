@@ -11,6 +11,7 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   Card,
@@ -300,20 +301,33 @@ export function RewardsDependent({
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {rewards.map((reward) => {
+              const inactive = !reward.active
               const disabled =
-                pendingId === reward.id || points < reward.points_cost
+                inactive || pendingId === reward.id || points < reward.points_cost
               return (
-                <Card key={reward.id}>
+                <Card
+                  key={reward.id}
+                  data-inactive={inactive}
+                  className={cn(inactive && 'border-slate-300 bg-slate-50')}
+                >
                   <CardContent className="flex flex-col gap-2 py-3">
                     {reward.image_url ? (
                       <img
                         src={reward.image_url}
                         alt=""
-                        className="h-32 w-full rounded-xl border border-slate-200 object-cover"
+                        className={cn(
+                          'h-32 w-full rounded-xl border border-slate-200 object-cover',
+                          inactive && 'opacity-50 grayscale'
+                        )}
                       />
                     ) : null}
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-semibold text-slate-800">
+                      <p
+                        className={cn(
+                          'font-semibold text-slate-800',
+                          inactive && 'text-slate-500'
+                        )}
+                      >
                         {reward.emoji ? `${reward.emoji} ` : ''}
                         {reward.title}
                       </p>
@@ -327,7 +341,11 @@ export function RewardsDependent({
                       </p>
                     ) : null}
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      {points < reward.points_cost ? (
+                      {inactive ? (
+                        <span className="text-xs font-medium text-slate-500">
+                          Indisponível
+                        </span>
+                      ) : points < reward.points_cost ? (
                         <span className="text-xs font-medium text-rose-600">
                           Saldo insuficiente
                         </span>
@@ -342,7 +360,11 @@ export function RewardsDependent({
                         disabled={disabled}
                         className="shrink-0"
                       >
-                        {pendingId === reward.id ? 'Resgatando...' : 'Resgatar'}
+                        {inactive
+                          ? 'Indisponível'
+                          : pendingId === reward.id
+                            ? 'Resgatando...'
+                            : 'Resgatar'}
                       </Button>
                     </div>
                   </CardContent>

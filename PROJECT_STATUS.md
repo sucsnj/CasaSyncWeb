@@ -1,6 +1,30 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento (coluna `profiles.username`, colunas `image_url`, tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura e publication Realtime) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco). **Exceção única:** a coluna `rewards.active` da seção "Desativação de recompensa" abaixo ainda precisa ser aplicada manualmente no dashboard.
+
+## Desativação de recompensa pelo ADMIN (implementada — SQL `rewards.active` a aplicar)
+
+### O que foi implementado
+- **Nova coluna `rewards.active`** (`boolean not null default true`): recompensa ativa por padrão; `false` = desativada (indisponível), **nunca excluída**. Só o ADMIN alterna — o dependente nunca reativa.
+- **Server Action `setRewardActive(rewardId, active)`** (`src/actions/rewards.ts`): só ADMIN da casa (`assertAdminCanManage`); confirma que a recompensa pertence à casa ativa (`house_id`) antes de alternar `active`; revalida `/rewards`. Não há notificação associada (ação administrativa de gestão da loja).
+- **`requestRedemption` guardado:** a consulta passa a incluir `active` e, com `active = false`, retorna `"Recompensa indisponível no momento."` — defesa no servidor, não depende só da UI.
+- **UI ADMIN (`rewards-admin.tsx`):** no catálogo cada recompensa ganhou o botão **Desativar**/**Reativar** (ao lado de Editar); quando inativa, o card fica com fundo `slate-50`/borda `slate-300`, a imagem dessaturada e um chip rosa **"Inativa"**. Atualização otimista + `router.refresh()`.
+- **UI DEPENDENTE (`rewards-dependent.tsx`):** recompensa desativada aparece acinzentada (borda/fundo `slate-300/50`, imagem em grayscale, título `slate-500`) com **"Indisponível"** no lugar do status de saldo; o botão "Resgatar" vira "Indisponível" e fica desabilitado. Reativação do ADMIN volta tudo ao normal automaticamente (Realtime).
+- **Realtime:** `rewards` já está na publication — o cambio de `active` chega nos listeners sem alteração de publication/RLS.
+
+### SQL a aplicar no Supabase
+```sql
+alter table public.rewards add column if not exists active boolean not null default true;
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+### Decisões
+- Desativar **não** apaga nem cancela resgates já aprovados/pendentes — afeta apenas novos pedidos (o guard bloqueia `requestRedemption`).
+- Sem novo enum/status: ser ativa ou não é um atributo da recompensa, não do catálogo; a coluna tem default `true` para que as recompensas existentes nasçam ativas.
+
+---
 
 ## Alteração de pontos de dependente pelo ADMIN via PIN_PTS (concluída)
 

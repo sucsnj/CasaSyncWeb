@@ -109,12 +109,15 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
 
   const { data: reward } = await admin
     .from('rewards')
-    .select('id, house_id, title, points_cost')
+    .select('id, house_id, title, points_cost, active')
     .eq('id', rewardId)
     .maybeSingle()
 
   if (!reward || reward.house_id !== house.id) {
     return { ok: false, error: 'Recompensa não encontrada na sua casa.' }
+  }
+  if (reward.active === false) {
+    return { ok: false, error: 'Recompensa indisponível no momento.' }
   }
 
   const { data: dependent } = await admin
@@ -339,6 +342,48 @@ export async function updateReward(
 
   revalidatePath('/rewards')
   return { ok: true, message: 'Recompensa atualizada.' }
+}
+
+/**
+ * ADMIN desativa/reativa uma recompensa da casa ativa. A recompensa nunca é
+ * excluída — apenas fica "indisponível" para os dependentes até ser reativada.
+ */
+export async function setRewardActive(
+  rewardId: string,
+  active: boolean
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: reward } = await admin
+    .from('rewards')
+    .select('id, house_id, title')
+    .eq('id', rewardId)
+    .maybeSingle()
+
+  if (!reward || reward.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Recompensa não encontrada nesta casa.' }
+  }
+
+  const { error } = await admin
+    .from('rewards')
+    .update({ active })
+    .eq('id', rewardId)
+    .eq('house_id', activeHouse.id)
+
+  if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
+
+  revalidatePath('/rewards')
+  return {
+    ok: true,
+    message: active
+      ? `Recompensa "${reward.title}" reativada.`
+      : `Recompensa "${reward.title}" desativada.`,
+  }
 }
 
 type CreateSuggestionInput = {

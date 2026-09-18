@@ -7,6 +7,7 @@ import {
   createReward,
   rejectRedemption,
   resolveRewardSuggestion,
+  setRewardActive,
   updateReward,
 } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
@@ -203,6 +204,24 @@ export function RewardsAdmin({
     })
   }
 
+  function handleToggleActive(reward: Reward) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await setRewardActive(reward.id, !reward.active)
+      if (!result.ok) {
+        setFormError(result.error)
+        return
+      }
+      const nextActive = !reward.active
+      setRewards((prev) =>
+        prev.map((item) =>
+          item.id === reward.id ? { ...item, active: nextActive } : item
+        )
+      )
+      router.refresh()
+    })
+  }
+
   function handleResolve(redemption: RedemptionView, approve: boolean) {
     startTransition(async () => {
       const result = approve
@@ -372,13 +391,19 @@ export function RewardsAdmin({
                 {rewards.map((reward) => (
                   <li
                     key={reward.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm"
+                    className={cn(
+                      'flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
+                      !reward.active && 'border-slate-300 bg-slate-50'
+                    )}
                   >
                     {reward.image_url ? (
                       <img
                         src={reward.image_url}
                         alt=""
-                        className="size-12 shrink-0 rounded-xl border border-slate-200 object-cover"
+                        className={cn(
+                          'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
+                          !reward.active && 'opacity-50 grayscale'
+                        )}
                       />
                     ) : null}
                     <div className="min-w-0 flex-1">
@@ -396,6 +421,21 @@ export function RewardsAdmin({
                       <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                         {reward.points_cost} pts
                       </span>
+                      {!reward.active ? (
+                        <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
+                          Inativa
+                        </span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-8 px-2 text-xs"
+                        onClick={() => handleToggleActive(reward)}
+                        disabled={pending}
+                      >
+                        {reward.active ? 'Desativar' : 'Reativar'}
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"

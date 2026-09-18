@@ -213,6 +213,7 @@ export interface Database {
         Row: {
           id: string
           house_id: string
+          active: boolean
           title: string
           description: string | null
           points_cost: number
@@ -225,6 +226,7 @@ export interface Database {
         Insert: {
           id?: string
           house_id: string
+          active?: boolean
           title: string
           description?: string | null
           points_cost: number
@@ -237,6 +239,7 @@ export interface Database {
         Update: {
           id?: string
           house_id?: string
+          active?: boolean
           title?: string
           description?: string | null
           points_cost?: number

@@ -62,12 +62,15 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 |---|---|---|
 | id | uuid PK | |
 | house_id | uuid FK → houses | |
+| active | bool | `true` (default) = ativa; `false` = desativada pelo ADMIN (indisponível, nunca excluída; guard em `requestRedemption`) |
 | title / description | text | |
 | points_cost | int | originalmente `cost` → renomeada |
 | emoji | text | |
 | image_url | text | |
 | created_by | uuid FK → profiles | |
 | created_at / updated_at | timestamptz | |
+
+> **A aplicar:** coluna `rewards.active` — `alter table public.rewards add column if not exists active boolean not null default true;` (registro em `PROJECT_STATUS.md`).
 
 ### reward_redemptions
 | coluna | tipo | notas |
