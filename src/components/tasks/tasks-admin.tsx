@@ -318,11 +318,11 @@ export function TasksAdmin({
         const restored =
           item.status === 'NOT_DELIVERED' && changed
             ? {
-                points: 0,
-                status: (nextDue && new Date(nextDue).getTime() < Date.now()
-                  ? 'NOT_DELIVERED'
-                  : 'PENDING') as Task['status'],
-              }
+              points: 0,
+              status: (nextDue && new Date(nextDue).getTime() < Date.now()
+                ? 'NOT_DELIVERED'
+                : 'PENDING') as Task['status'],
+            }
             : {}
         return { ...item, due_date: nextDue, ...cleared, ...restored }
       })
@@ -374,94 +374,94 @@ export function TasksAdmin({
         {showTaskForm ? (
           <CardContent>
             <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2 md:items-start">
-            <div className="grid gap-2">
-              <Label htmlFor="task-title">Título</Label>
-              <Input id="task-title" name="title" required placeholder="Ex.: Arrumar o quarto" />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="task-assignee">Dependente</Label>
-              <select
-                id="task-assignee"
-                name="assigned_to"
-                required
-                defaultValue=""
-                className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-              >
-                <option value="" disabled>
-                  Selecionar...
-                </option>
-                {assignees.map((assignee) => (
-                  <option key={assignee.id} value={assignee.id}>
-                    {assignee.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="task-due-date">Data/hora limite</Label>
-              <Input
-                id="task-due-date"
-                name="due_date"
-                type="datetime-local"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                suppressHydrationWarning
-              />
-              <div className="flex gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 1))}
-                >
-                  +1 Dia
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 0, 2))}
-                >
-                  +2h
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setDueDate(nowDateTimeLocalValue())}
-                >
-                  Limpar
-                </Button>
+              <div className="grid gap-2">
+                <Label htmlFor="task-title">Título</Label>
+                <Input id="task-title" name="title" required placeholder="Ex.: Arrumar o quarto" />
               </div>
-            </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="task-points">Pontos</Label>
-              <Input
-                id="task-points"
-                name="points"
-                type="number"
-                min={0}
-                step={1}
-                defaultValue={5}
-                required
-              />
-            </div>
+              <div className="grid gap-2">
+                <Label htmlFor="task-assignee">Dependente</Label>
+                <select
+                  id="task-assignee"
+                  name="assigned_to"
+                  required
+                  defaultValue=""
+                  className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                >
+                  <option value="" disabled>
+                    Selecionar...
+                  </option>
+                  {assignees.map((assignee) => (
+                    <option key={assignee.id} value={assignee.id}>
+                      {assignee.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="grid gap-2 md:col-span-2">
-              <Label htmlFor="task-description">Descrição</Label>
-              <textarea
-                id="task-description"
-                name="description"
-                rows={2}
-                placeholder="Opcional"
-                className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-              />
-            </div>
+              <div className="grid gap-2">
+                <Label htmlFor="task-due-date">Data/hora limite</Label>
+                <Input
+                  id="task-due-date"
+                  name="due_date"
+                  type="datetime-local"
+                  value={dueDate}
+                  onChange={(event) => setDueDate(event.target.value)}
+                  suppressHydrationWarning
+                />
+                <div className="flex gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 1))}
+                  >
+                    +1 Dia
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setDueDate((value) => modifyDateTimeLocal(value, 0, 2))}
+                  >
+                    +2h
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setDueDate(nowDateTimeLocalValue())}
+                  >
+                    Limpar
+                  </Button>
+                </div>
+              </div>
 
-            {/*
+              <div className="grid gap-2">
+                <Label htmlFor="task-points">Pontos</Label>
+                <Input
+                  id="task-points"
+                  name="points"
+                  type="number"
+                  min={0}
+                  step={1}
+                  defaultValue={5}
+                  required
+                />
+              </div>
+
+              <div className="grid gap-2 md:col-span-2">
+                <Label htmlFor="task-description">Descrição</Label>
+                <textarea
+                  id="task-description"
+                  name="description"
+                  rows={2}
+                  placeholder="Opcional"
+                  className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                />
+              </div>
+
+              {/*
               Bloco DESATIVADO — upload de imagem da tarefa (decisão de produto, 2026):
               envio de imagens em tarefas foi desligado para NÃO INFLAR o
               storage/banco. Com o campo oculto (`image_url`) removido, o
@@ -469,7 +469,7 @@ export function TasksAdmin({
               A coluna `tasks.image_url` segue no schema e imagens de tarefas
               antigas continuam aparecendo nos cards. Reativar = descomentar.
             */}
-            {/* <div className="flex flex-col gap-2 md:col-span-2">
+              {/* <div className="flex flex-col gap-2 md:col-span-2">
               <Label>Imagem (opcional)</Label>
               <ImageUpload
                 folder="tasks"
@@ -480,18 +480,18 @@ export function TasksAdmin({
               <input type="hidden" name="image_url" value={taskImageUrl ?? ''} />
             </div> */}
 
-            {formError ? (
-              <p className="text-sm text-destructive md:col-span-2" role="alert">
-                {formError}
-              </p>
-            ) : null}
+              {formError ? (
+                <p className="text-sm text-destructive md:col-span-2" role="alert">
+                  {formError}
+                </p>
+              ) : null}
 
-            <div className="md:col-span-2">
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Criando...' : 'Criar tarefa'}
-              </Button>
-            </div>
-          </form>
+              <div className="md:col-span-2">
+                <Button type="submit" disabled={pending}>
+                  {pending ? 'Criando...' : 'Criar tarefa'}
+                </Button>
+              </div>
+            </form>
           </CardContent>
         ) : null}
       </Card>
@@ -520,208 +520,208 @@ export function TasksAdmin({
             const isNotDelivered = task.status === 'NOT_DELIVERED'
 
             return (
-            <Card key={task.id} className={cardClass}>
-              <CardContent className="flex flex-col gap-3 py-3">
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(task.id)}
-                  aria-expanded={isExpanded}
-                  className="flex w-full flex-wrap items-center gap-2 text-left"
-                >
-                  <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
-                    {task.title}
-                  </span>
-                  <span className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    {!isNotDelivered && slaInfo ? (
+              <Card key={task.id} className={cardClass}>
+                <CardContent className="flex flex-col gap-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(task.id)}
+                    aria-expanded={isExpanded}
+                    className="flex w-full flex-wrap items-center gap-2 text-left"
+                  >
+                    <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
+                      {task.title}
+                    </span>
+                    <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      {!isNotDelivered && slaInfo ? (
+                        <span
+                          className={cn(
+                            'rounded-full px-2.5 py-1 text-xs font-medium',
+                            slaInfo.className
+                          )}
+                        >
+                          {slaInfo.label}
+                        </span>
+                      ) : null}
                       <span
                         className={cn(
-                          'rounded-full px-2.5 py-1 text-xs font-medium',
-                          slaInfo.className
+                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                          taskChipByStatus[task.status].className
                         )}
                       >
-                        {slaInfo.label}
+                        {taskChipByStatus[task.status].label}
                       </span>
-                    ) : null}
+                    </span>
                     <span
                       className={cn(
-                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                        taskChipByStatus[task.status].className
+                        'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                        POINTS_PILL_CLASS
                       )}
                     >
-                      {taskChipByStatus[task.status].label}
+                      {task.points} pts
                     </span>
-                  </span>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                      POINTS_PILL_CLASS
-                    )}
-                  >
-                    {task.points} pts
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                      isExpanded && 'rotate-180'
-                    )}
-                  />
-                </button>
+                    <ChevronDown
+                      className={cn(
+                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
+                  </button>
 
-                {isExpanded ? (
-                  <>
-                {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
-                {task.image_url ? (
-                  <img
-                    src={task.image_url}
-                    alt=""
-                    className="h-32 w-full rounded-xl border border-slate-200 object-cover"
-                  />
-                ) : null}
-
-                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                  <DebouncedField
-                    value={task.title}
-                    onSave={saveTitle(task.id)}
-                    placeholder="Título da tarefa"
-                  />
-
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="text-slate-500">Atribuída a</span>
-                    <select
-                      value={task.assigned_to ?? ''}
-                      onChange={(event) => changeAssignee(task, event.target.value)}
-                      className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
-                    >
-                      <option value="">Sem atribuição</option>
-                      {assignees.map((assignee) => (
-                        <option key={assignee.id} value={assignee.id}>
-                          {assignee.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <DebouncedField
-                  value={task.description ?? ''}
-                  onSave={saveDescription(task.id)}
-                  textarea
-                  placeholder="Descrição (opcional)"
-                />
-
-                {task.extension_requested ? (
-                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                    <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
-                      <Clock3 className="size-4" />
-                      Pedido de adiamento
-                    </p>
-                    <p className="mt-1 text-sm text-blue-700">
-                      {task.extension_reason ?? 'Sem justificativa informada.'}
-                    </p>
-                    {isNotDelivered ? (
-                      <p className="mt-1 text-xs text-blue-700">
-                        Aprovar devolve os pontos debitados e a tarefa passa a
-                        valer 0.
-                      </p>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={pending}
-                        className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                        onClick={() => handleResolveExtension(task, true, 1)}
-                      >
-                        Aprovar (+1 dia)
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={pending}
-                        className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                        onClick={() => handleResolveExtension(task, true, 3)}
-                      >
-                        Aprovar (+3 dias)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={pending}
-                        className="min-h-9 text-slate-600"
-                        onClick={() => handleResolveExtension(task, false)}
-                      >
-                        <X className="size-3.5" /> Rejeitar
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-<div
-                    className={cn(
-                      'grid gap-3',
-                      isNotDelivered ? 'grid-cols-1' : 'grid-cols-2'
-                    )}
-                  >
-                    {!isNotDelivered ? (
-                      <div className="grid gap-1">
-                        <span className="text-xs text-slate-500">Pontos</span>
-                        <DebouncedField
-                          value={String(task.points)}
-                          onSave={savePoints(task.id)}
-                          type="number"
+                  {isExpanded ? (
+                    <>
+                      {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
+                      {task.image_url ? (
+                        <img
+                          src={task.image_url}
+                          alt=""
+                          className="h-32 w-full rounded-xl border border-slate-200 object-cover"
                         />
-                      </div>
-                    ) : null}
-                    <div className="grid gap-1">
-                      <span className="text-xs text-slate-500">
-                        Data limite
-                      </span>
-                      <DebouncedField
-                        value={isoToDateTimeLocalValue(task.due_date)}
-                        onSave={saveDueDate(task.id)}
-                        type="datetime-local"
-                      />
-                    </div>
-                  </div>
-
-                  {isNotDelivered ? (
-                    <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                      Tarefa marcada como não entregue — {task.points} pt(s) já
-                      debitado(s) do dependente. Aprovar um adiamento (ou
-                      alterar o prazo) devolve os pontos e zera a tarefa.
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Button
-                        type="button"
-                        onClick={() => handleAdminComplete(task)}
-                        disabled={pending}
-                        className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
-                      >
-                        {pending
-                          ? 'Concluindo...'
-                          : 'Concluir e creditar pontos'}
-                      </Button>
-                      {sla === 'overdue' ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => handleMarkNotDelivered(task)}
-                          disabled={pending}
-                          className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
-                        >
-                          Marcar como não entregue
-                        </Button>
                       ) : null}
-                    </div>
-                  )}
-                  </>
-                ) : null}
-              </CardContent>
-            </Card>
+
+                      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                        <DebouncedField
+                          value={task.title}
+                          onSave={saveTitle(task.id)}
+                          placeholder="Título da tarefa"
+                        />
+
+                        <label className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-500">Atribuída a</span>
+                          <select
+                            value={task.assigned_to ?? ''}
+                            onChange={(event) => changeAssignee(task, event.target.value)}
+                            className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
+                          >
+                            <option value="">Sem atribuição</option>
+                            {assignees.map((assignee) => (
+                              <option key={assignee.id} value={assignee.id}>
+                                {assignee.full_name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <DebouncedField
+                        value={task.description ?? ''}
+                        onSave={saveDescription(task.id)}
+                        textarea
+                        placeholder="Descrição (opcional)"
+                      />
+
+                      {task.extension_requested ? (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                          <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+                            <Clock3 className="size-4" />
+                            Pedido de adiamento
+                          </p>
+                          <p className="mt-1 text-sm text-blue-700">
+                            {task.extension_reason ?? 'Sem justificativa informada.'}
+                          </p>
+                          {isNotDelivered ? (
+                            <p className="mt-1 text-xs text-blue-700">
+                              Aprovar devolve os pontos debitados e a tarefa passa a
+                              valer 0.
+                            </p>
+                          ) : null}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={pending}
+                              className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                              onClick={() => handleResolveExtension(task, true, 1)}
+                            >
+                              Aprovar (+1 dia)
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={pending}
+                              className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                              onClick={() => handleResolveExtension(task, true, 3)}
+                            >
+                              Aprovar (+3 dias)
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={pending}
+                              className="min-h-9 text-slate-600"
+                              onClick={() => handleResolveExtension(task, false)}
+                            >
+                              <X className="size-3.5" /> Rejeitar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div
+                        className={cn(
+                          'grid gap-3',
+                          isNotDelivered ? 'grid-cols-1' : 'grid-cols-2'
+                        )}
+                      >
+                        {!isNotDelivered ? (
+                          <div className="grid gap-1">
+                            <span className="text-xs text-slate-500">Pontos</span>
+                            <DebouncedField
+                              value={String(task.points)}
+                              onSave={savePoints(task.id)}
+                              type="number"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="grid gap-1">
+                          <span className="text-xs text-slate-500">
+                            Data limite
+                          </span>
+                          <DebouncedField
+                            value={isoToDateTimeLocalValue(task.due_date)}
+                            onSave={saveDueDate(task.id)}
+                            type="datetime-local"
+                          />
+                        </div>
+                      </div>
+
+                      {isNotDelivered ? (
+                        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                          Tarefa marcada como não entregue — {task.points} pt(s) já
+                          debitado(s) do dependente. Aprovar um adiamento (ou
+                          alterar o prazo) devolve os pontos e zera a tarefa.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            type="button"
+                            onClick={() => handleAdminComplete(task)}
+                            disabled={pending}
+                            className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
+                          >
+                            {pending
+                              ? 'Concluindo...'
+                              : 'Concluir e creditar pontos'}
+                          </Button>
+                          {sla === 'overdue' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleMarkNotDelivered(task)}
+                              disabled={pending}
+                              className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
+                            >
+                              Marcar como não entregue
+                            </Button>
+                          ) : null}
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
             )
-})
+          })
         )}
       </section>
 
@@ -742,77 +742,82 @@ export function TasksAdmin({
             const isExpanded = expandedIds.has(task.id)
 
             return (
-            <Card
-              key={task.id}
-              className="border-l-4 border-l-amber-400"
-            >
-              <CardContent className="flex flex-col gap-2 py-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(task.id)}
-                    aria-expanded={isExpanded}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                      {task.title}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                        isExpanded && 'rotate-180'
-                      )}
-                    />
-                  </button>
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      {taskChipByStatus.COMPLETED.label}
-                    </span>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRejectComplete(task)}
-                      disabled={pending}
-                      className="min-h-9 shrink-0 text-slate-600"
+              <Card
+                key={task.id}
+                className="border-l-4 border-l-amber-400"
+              >
+                <CardContent className="flex flex-col gap-2 py-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(task.id)}
+                      aria-expanded={isExpanded}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
-                      Desaprovar
-                    </Button>
-                    <Button
-                      onClick={() => handleApprove(task)}
-                      disabled={pending}
-                      className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
-                    >
-                      {pending ? (
-                        'Aprovando...'
-                      ) : (
-                        <>
-                          <span className="hidden sm:inline">
-                            Aprovar e creditar pontos
-                          </span>
-                          <span className="sm:hidden">Aprovar</span>
-                        </>
-                      )}
-                    </Button>
+                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                        {task.title}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          isExpanded && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        {taskChipByStatus.COMPLETED.label}
+                      </span>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleRejectComplete(task)}
+                        disabled={pending}
+                        className="min-h-9 shrink-0 text-slate-600"
+                      >
+                        Desaprovar
+                      </Button>
+                      <Button
+                        onClick={() => handleApprove(task)}
+                        disabled={pending}
+                        className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
+                      >
+                        {pending ? (
+                          'Aprovando...'
+                        ) : (
+                          <>
+                            <span className="hidden sm:inline">
+                              Aprovar e creditar pontos
+                            </span>
+                            <span className="sm:hidden">Aprovar</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
 
-                {isExpanded ? (
-                  <p className="text-sm text-slate-500">
-                    {assigneeName(task.assigned_to)} ·{' '}
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-0.5 font-semibold',
-                        POINTS_PILL_CLASS
-                      )}
-                    >
-                      {task.points} pts
-                    </span>
-                    {task.completed_at
-                      ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
-                      : ''}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
+                  {isExpanded ? (
+                    <>
+                      {task.description ? (
+                        <p className="text-sm text-slate-500">{task.description}</p>
+                      ) : null}
+                      <p className="text-sm text-slate-500">
+                        {assigneeName(task.assigned_to)} ·{' '}
+                        <span
+                          className={cn(
+                            'rounded-full px-2 py-0.5 font-semibold',
+                            POINTS_PILL_CLASS
+                          )}
+                        >
+                          {task.points} pts
+                        </span>
+                        {task.completed_at
+                          ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
+                          : ''}
+                      </p>
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
             )
           })
         )}
@@ -828,58 +833,63 @@ export function TasksAdmin({
             const isExpanded = expandedIds.has(task.id)
 
             return (
-            <Card
-              key={task.id}
-              className="border-l-4 border-l-emerald-500"
-            >
-              <CardContent className="flex flex-col gap-1 py-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(task.id)}
-                    aria-expanded={isExpanded}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                      {task.title}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                        isExpanded && 'rotate-180'
-                      )}
-                    />
-                  </button>
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                      {taskChipByStatus.APPROVED.label}
-                    </span>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRestore(task)}
-                      disabled={pending}
-                      className="min-h-9 shrink-0 text-slate-600"
+              <Card
+                key={task.id}
+                className="border-l-4 border-l-emerald-500"
+              >
+                <CardContent className="flex flex-col gap-1 py-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(task.id)}
+                      aria-expanded={isExpanded}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
-                      Restaurar
-                    </Button>
+                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                        {task.title}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          isExpanded && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                        {taskChipByStatus.APPROVED.label}
+                      </span>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleRestore(task)}
+                        disabled={pending}
+                        className="min-h-9 shrink-0 text-slate-600"
+                      >
+                        Restaurar
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                {isExpanded ? (
-                  <p className="mt-1 text-sm text-slate-500">
-                    {assigneeName(task.assigned_to)} ·{' '}
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-0.5 font-semibold',
-                        POINTS_PILL_CLASS
-                      )}
-                    >
-                      {task.points} pts
-                    </span>
-                    {' · '}pontos creditados
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
+                  {isExpanded ? (
+                    <>
+                      {task.description ? (
+                        <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                      ) : null}
+                      <p className="mt-1 text-sm text-slate-500">
+                        {assigneeName(task.assigned_to)} ·{' '}
+                        <span
+                          className={cn(
+                            'rounded-full px-2 py-0.5 font-semibold',
+                            POINTS_PILL_CLASS
+                          )}
+                        >
+                          {task.points} pts
+                        </span>
+                        {' · '}pontos creditados
+                      </p>
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
             )
           })}
         </section>

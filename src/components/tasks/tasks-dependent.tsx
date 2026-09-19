@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CircleCheck, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
+import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -46,6 +46,19 @@ export function TasksDependent({
   const [pending, startTransition] = useTransition()
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  function toggleExpanded(taskId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
+  }
 
   // ENSINO (teach): o evento de UPDATE é recebido ao vivo. Quando o ADMIN
   // aprova (APPROVED) a lista muda na hora; quando o ADMIN cria (INSERT) uma
@@ -266,35 +279,56 @@ export function TasksDependent({
           <h2 className="font-heading text-base font-semibold text-slate-800">
             Aguardando aprovação
           </h2>
-          {awaitingTasks.map((task) => (
-            <Card
-              key={task.id}
-              className="border-l-4 border-l-amber-400"
-            >
-              <CardContent className="py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold text-slate-800">{task.title}</p>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                      taskChipByStatus.COMPLETED.className
-                    )}
-                  >
-                    {taskChipByStatus.COMPLETED.label}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {task.points} pts · o administrador precisa aprovar
-                </p>
-                {creatorNames[task.created_by] ? (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
-                    <UserRound className="size-3.5" />
-                    Criada por {creatorNames[task.created_by]}
+          {awaitingTasks.map((task) => {
+            const isExpanded = expandedIds.has(task.id)
+            return (
+              <Card
+                key={task.id}
+                className="border-l-4 border-l-amber-400"
+              >
+                <CardContent className="flex flex-col gap-2 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(task.id)}
+                      aria-expanded={isExpanded}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                        {task.title}
+                      </p>
+                      <ChevronDown
+                        className={cn(
+                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          isExpanded && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                        taskChipByStatus.COMPLETED.className
+                      )}
+                    >
+                      {taskChipByStatus.COMPLETED.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {task.points} pts · o administrador precisa aprovar
                   </p>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
+                  {creatorNames[task.created_by] ? (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                      <UserRound className="size-3.5" />
+                      Criada por {creatorNames[task.created_by]}
+                    </p>
+                  ) : null}
+                  {isExpanded && task.description ? (
+                    <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )
+          })}
         </section>
       ) : null}
 
@@ -303,36 +337,57 @@ export function TasksDependent({
           <h2 className="font-heading text-base font-semibold text-slate-800">
             Concluídas
           </h2>
-          {doneTasks.map((task) => (
-            <Card
-              key={task.id}
-              className="border-l-4 border-l-emerald-500"
-            >
-              <CardContent className="py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold text-slate-800">{task.title}</p>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                      taskChipByStatus.APPROVED.className
-                    )}
-                  >
-                    {taskChipByStatus.APPROVED.label}
-                  </span>
-                </div>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                  <CircleCheck className="size-4 shrink-0 text-emerald-500" />
-                  {task.points} pts · pontos creditados
-                </p>
-                {creatorNames[task.created_by] ? (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
-                    <UserRound className="size-3.5" />
-                    Criada por {creatorNames[task.created_by]}
+          {doneTasks.map((task) => {
+            const isExpanded = expandedIds.has(task.id)
+            return (
+              <Card
+                key={task.id}
+                className="border-l-4 border-l-emerald-500"
+              >
+                <CardContent className="flex flex-col gap-2 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(task.id)}
+                      aria-expanded={isExpanded}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                        {task.title}
+                      </p>
+                      <ChevronDown
+                        className={cn(
+                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          isExpanded && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                        taskChipByStatus.APPROVED.className
+                      )}
+                    >
+                      {taskChipByStatus.APPROVED.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                    <CircleCheck className="size-4 shrink-0 text-emerald-500" />
+                    {task.points} pts · pontos creditados
                   </p>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
+                  {creatorNames[task.created_by] ? (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                      <UserRound className="size-3.5" />
+                      Criada por {creatorNames[task.created_by]}
+                    </p>
+                  ) : null}
+                  {isExpanded && task.description ? (
+                    <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )
+          })}
         </section>
       ) : null}
 
