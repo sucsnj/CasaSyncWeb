@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
   Card,
   CardContent,
@@ -442,7 +443,7 @@ export function RewardsDependent({
                   </p>
                   <p className="text-xs text-slate-500">
                     {redemption.points_cost} pts ·{' '}
-                    {new Date(redemption.created_at).toLocaleString('pt-BR')}
+                    <FormattedDateTime iso={redemption.created_at} />
                   </p>
                 </div>
                 <span

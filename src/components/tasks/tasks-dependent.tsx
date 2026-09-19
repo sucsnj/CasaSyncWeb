@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { Modal } from '@/components/ui/modal'
 import {
   POINTS_PILL_CLASS,
@@ -206,7 +207,7 @@ export function TasksDependent({
                       </span>
                       {task.due_date ? (
                         <span className="text-sm text-slate-500">
-                          até {new Date(task.due_date).toLocaleString('pt-BR')}
+                          até <FormattedDateTime iso={task.due_date} />
                         </span>
                       ) : null}
                       {task.extension_requested ? (

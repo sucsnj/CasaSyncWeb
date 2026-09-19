@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 import { Gift, ClipboardList, Layers, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
   Card,
   CardAction,
@@ -500,7 +501,7 @@ export function RewardsAdmin({
                     </span>
                     <span>{suggestion.profileName}</span>
                     <span>
-                      {new Date(suggestion.created_at).toLocaleString('pt-BR')}
+                      <FormattedDateTime iso={suggestion.created_at} />
                     </span>
                   </p>
                 </div>
@@ -587,7 +588,7 @@ export function RewardsAdmin({
                       {redemption.points_cost} pts
                     </span>{' '}
                     ·{' '}
-                    {new Date(redemption.created_at).toLocaleString('pt-BR')}
+                    <FormattedDateTime iso={redemption.created_at} />
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
@@ -635,7 +636,7 @@ export function RewardsAdmin({
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {redemption.points_cost} pts · tratado em{' '}
-                    {new Date(redemption.created_at).toLocaleString('pt-BR')}
+                    <FormattedDateTime iso={redemption.created_at} />
                   </p>
                 </div>
                 <span

@@ -84,6 +84,32 @@ async function adjustPoints(
   return !error
 }
 
+/** Detecta fuso embutido no fim da string (Z ou ±HH:MM). */
+const HAS_ZONE_DESIGNATOR = /(?:[zZ]|[+-]\d{2}:?\d{2})$/
+
+/**
+ * Guarda de integridade do prazo: `tasks.due_date` é `timestamptz` e uma string
+ * naive de `datetime-local` (sem fuso) seria interpretada como UTC pela sessão
+ * do Postgres, deslocando o prazo em ~3h para quem está em America/Recife. O
+ * cliente converte para o instante UTC antes de enviar (`datetimeLocalToIso` em
+ * `src/utils/datetime-local.ts`); aqui o servidor só aceita strings COM fuso —
+ * uma naive que chegar é rejeitada em vez de corromper a data silenciosamente.
+ */
+function normalizeDueDate(
+  value: string | null
+): { ok: true; dueDate: string | null } | { ok: false; error: string } {
+  if (!value) return { ok: true, dueDate: null }
+  const hasZone = HAS_ZONE_DESIGNATOR.test(value.trim())
+  const ms = new Date(value).getTime()
+  if (hasZone && !Number.isNaN(ms)) {
+    return { ok: true, dueDate: new Date(ms).toISOString() }
+  }
+  return {
+    ok: false,
+    error: 'Prazo inválido: envie a data/hora com o fuso do cliente.',
+  }
+}
+
 export async function createTask(input: CreateTaskInput): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) {
@@ -110,11 +136,14 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
     return { ok: false, error: 'O dependente selecionado não pertence a esta casa.' }
   }
 
+  const due = normalizeDueDate(input.dueDate)
+  if (!due.ok) return due
+
   const { error } = await admin.from('tasks').insert({
     house_id: activeHouse.id,
     title,
     description: input.description?.trim() ? input.description.trim() : null,
-    due_date: input.dueDate,
+    due_date: due.dueDate,
     points: input.points,
     assigned_to: input.assignedTo,
     created_by: auth.adminId,
@@ -210,7 +239,9 @@ export async function updateTask(
     updates.points = patch.points
   }
   if ('due_date' in patch) {
-    const nextDue = patch.due_date ? patch.due_date : null
+    const due = normalizeDueDate(patch.due_date ?? null)
+    if (!due.ok) return due
+    const nextDue = due.dueDate
     updates.due_date = nextDue
 
     // Pedido de adiamento pendente + prazo alterado para um valor diferente

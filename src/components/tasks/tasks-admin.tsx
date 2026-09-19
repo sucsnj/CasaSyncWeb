@@ -14,6 +14,12 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
+import {
+  datetimeLocalToIso,
+  isoToDateTimeLocalValue,
+  modifyDateTimeLocal,
+  nowDateTimeLocalValue,
+} from '@/utils/datetime-local'
 import type { Tables } from '@/types/database'
 import { DebouncedField } from './debounced-field'
 // DESABILITADO — envio de imagem em tarefas (decisão de produto, 2026): as
@@ -53,38 +59,6 @@ import {
 
 type Task = Tables<'tasks'>
 type Assignee = { id: string; full_name: string }
-
-/** ISO do banco (timestamptz) → valor aceito por <input type="datetime-local">. */
-function toDateTimeLocalValue(value: string | null): string {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** Agora em formato aceito por <input type="datetime-local">. */
-function nowDateTimeLocalValue(): string {
-  const date = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** Soma dias/horas a um valor `datetime-local` (base: agora se vazio). */
-function modifyDateTimeLocal(value: string, days = 0, hours = 0): string {
-  const date = value ? new Date(value) : new Date()
-  if (Number.isNaN(date.getTime())) return nowDateTimeLocalValue()
-  date.setDate(date.getDate() + days)
-  date.setHours(date.getHours() + hours)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
 
 function upsertTask(list: Task[], task: Task): Task[] {
   const exists = list.some((item) => item.id === task.id)
@@ -150,7 +124,7 @@ export function TasksAdmin({
       const result = await createTask({
         title: String(formData.get('title') ?? ''),
         description: String(formData.get('description') ?? ''),
-        dueDate: String(formData.get('due_date') ?? '') || null,
+        dueDate: datetimeLocalToIso(String(formData.get('due_date') ?? '')),
         points: Number(formData.get('points')),
         assignedTo: String(formData.get('assigned_to') ?? ''),
         // Sem campo de imagem no form (upload desabilitado), `image_url` sempre
@@ -314,10 +288,15 @@ export function TasksAdmin({
   }
 
   const saveDueDate = (taskId: string) => async (value: string) => {
-    const nextDue = value ? new Date(value).toISOString() : null
+    // O valor do `datetime-local` é a hora local (sem fuso) — converte para o
+    // instante UTC antes de gravar; a action rejeita prazo sem fuso.
+    const nextDue = datetimeLocalToIso(value)
+    if (value && !nextDue) {
+      return { ok: false as const, error: 'Prazo inválido.' }
+    }
 
     const result = await updateTask(taskId, {
-      due_date: value ? value : null,
+      due_date: nextDue,
     })
     if (!result.ok) return result
 
@@ -699,7 +678,7 @@ export function TasksAdmin({
                         Data limite
                       </span>
                       <DebouncedField
-                        value={toDateTimeLocalValue(task.due_date)}
+                        value={isoToDateTimeLocalValue(task.due_date)}
                         onSave={saveDueDate(task.id)}
                         type="datetime-local"
                       />

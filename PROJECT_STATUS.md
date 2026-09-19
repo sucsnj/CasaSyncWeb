@@ -17,6 +17,49 @@
 
 ---
 
+## Bug de fuso em prazos de tarefas — data/hora com 3h de diferença (corrigido)
+
+### Causa raiz (investigação)
+- O `<input type="datetime-local">` produz um valor **sem fuso** (`YYYY-MM-DDTHH:mm` — hora de parede local do usuário; America/Recife = UTC-3). O formulário enviava essa string **naive** direto ao banco (`createTask`/`updateTask` → coluna `tasks.due_date`, `timestamptz`). O Postgres interpreta string sem fuso na **timezone da sessão do servidor (Supabase: UTC)** → um prazo digitado 14:30 virava o instante `14:30Z` = **11:30 em Recife** (3 horas adiantado).
+- Por que "nem sempre": no salvamento de edição (`saveDueDate`) o card otimista usava `new Date(value).toISOString()` **no browser** (instante correto), mas enviava a string naive crua ao servidor — o card mostrava certo até o refresh/Realtime, aí o valor deslocado aparecia.
+
+### O que foi feito
+- **Novo helper `src/utils/datetime-local.ts`:** `datetimeLocalToIso` converte o valor naive do `datetime-local` para o **instante UTC correto no fuso do cliente** (`new Date(naive)` no browser = hora local por especificação do ECMAScript; `typeof window` trava para nunca rodar no servidor). Os formatadores que viviam em `tasks-admin.tsx` foram para lá (`isoToDateTimeLocalValue`, `nowDateTimeLocalValue`, `modifyDateTimeLocal`).
+- **Cliente converte antes de enviar** (`src/components/tasks/tasks-admin.tsx`): criação (`handleCreate`) e edição de prazo (`saveDueDate`) passam por `datetimeLocalToIso`, e o otimista usa o mesmo instante — sem `new Date().toISOString()` solto no submit.
+- **Guarda server-side** (`normalizeDueDate` em `src/actions/tasks.ts`): `createTask` e `updateTask` **rejeitam prazo sem fuso** (fail-closed) — uma naive que voltar a chegar vira erro visível em vez de re-gravar data errada.
+- **Exibição local só no cliente:** novo `FormattedDateTime` (`src/components/ui/formatted-date.tsx`, via `useSyncExternalStore`). Nos cards sempre renderizados (dependente/rewards) um `toLocaleString('pt-BR')` no SSR (Vercel/Netlify giram em UTC) produzia hora de parede UTC no HTML e o cliente re-hidratava em hora local — hydration mismatch + flash. O componente renderiza um placeholder estável até a hidratação e então formata no fuso do dispositivo.
+- **Prazos gerados pelo servidor** (`restoreTask`, `resolveTaskExtension`, auto-aceite do `updateTask`, `markTaskNotDelivered`) já usavam `.toISOString()`/instantes — corretos; não mudaram.
+- **Sem mudança de schema:** `tasks.due_date` continua `timestamptz`. Sem lib nova de datas (decisão: especificação do ECMAScript + trava de ambiente cobrem o caso sem dependência).
+
+### SQL opcional — corrigir tarefas JÁ criadas (manual, revertível, não destrói dados)
+Tarefas existentes criadas/editadas pelo input carregam o instante 3h adiantado. Correção **opcional** (nada quebra se pular): rodar no dashboard do Supabase, na ordem, com backup e rollback:
+```sql
+-- 1) Backup (revertível): guarda o estado atual de TODO o `due_date`.
+create table if not exists tasks_due_date_backup as
+  select id, due_date from tasks;
+
+-- 2) Corrige +3h SÓ nas tarefas "digitadas" pelo usuário.
+--    Datas de `datetime-local` têm precisão de minuto (segundos = 0), então
+--    `due_date = date_trunc('minute', due_date)` seleciona exatamente essas;
+--    prazos gerados pelo servidor (restore/adiamento) guardam segundos+
+--    milissegundos e ficam intactos. Ajuste o intervalo se o fuso não for -03.
+update tasks
+set due_date = due_date + interval '3 hours'
+where due_date is not null
+  and due_date = date_trunc('minute', due_date);
+
+-- 3) Rollback (restaura tudo como estava):
+update tasks t
+set due_date = b.due_date
+from tasks_due_date_backup b
+where t.id = b.id;
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
+
+---
+
 ## Mensagem rápida DEPENDENT → ADMIN (implementada — SQL aplicado)
 
 ### O que foi implementado
@@ -344,9 +387,9 @@ create policy "house_members_select_for_admin_members" on public.house_members
 ## UX de tarefas (data/hora, conclusão ADMIN e adiamento flexível)
 
 ### O que foi implementado
-- **Data/hora pré-selecionada ao criar tarefa:** o campo `datetime-local` do form inicia com o agora (`nowDateTimeLocalValue` em `src/components/tasks/tasks-admin.tsx`); input segue não-controlado na leitura (FormData), com `suppressHydrationWarning`.
+- **Data/hora pré-selecionada ao criar tarefa:** o campo `datetime-local` do form inicia com o agora (`nowDateTimeLocalValue` em `src/utils/datetime-local.ts`); input segue não-controlado na leitura (FormData), com `suppressHydrationWarning`.
 - **Botões de ajuste rápido de prazo:** "Amanhã" (+1 dia), "+2h", "Limpar" (reseta para agora) via `modifyDateTimeLocal` — o campo virou controlado (`dueDate`). Form ganhou `md:items-start` para evitar que o grid estique as células (o input de "Pontos" não desalinha mais).
-- **Bug corrigido — prazo vazio no card ADMIN:** `datetime-local` rejeitava o ISO completo do banco; `toDateTimeLocalValue` converte para `YYYY-MM-DDTHH:mm`.
+- **Bug corrigido — prazo vazio no card ADMIN:** `datetime-local` rejeitava o ISO completo do banco; `isoToDateTimeLocalValue` (`src/utils/datetime-local.ts`) converte para `YYYY-MM-DDTHH:mm`.
 - **ADMIN conclui e aprova a tarefa de uma vez:** nova action `adminCompleteTask` (`src/actions/tasks.ts`) — `PENDING/IN_PROGRESS → APPROVED` com guard `.in('status', [...])`, registra `completed_by/completed_at` do ADMIN e **credita pontos**; falha na creditação reverte ao estado anterior. Botão verde "Concluir e creditar pontos" no card pendente do ADMIN, mesmo com prazo ainda válido.
 - **ADMIN desaprova a conclusão do dependente:** action `rejectCompletedTask` — `COMPLETED → PENDING` com guard `.eq('status','COMPLETED')`, limpando `completed_by`/`completed_at` (o dependente refaz e marca de novo). Botão "Desaprovar" (outline) no cabeçalho do card concluído, ao lado de "Aprovar"; a transição guardada impede reabrir uma tarefa já creditada em outra aba.
 - **Adiamento flexível:** `resolveTaskExtension(taskId, approve, days=3)` agora aceita dias configuráveis; banner do ADMIN ganhou os botões **Aprovar (+1 dia)** e **Aprovar (+3 dias)** além do **Rejeitar**.
@@ -357,7 +400,7 @@ create policy "house_members_select_for_admin_members" on public.house_members
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).
 
 ### Pontos de atenção
-- `dueDateChanged` compara instantes (`getTime`); em fuso diferente do usuário, um blur sem mudança real ainda pode ser considerado "alteração" — aceitável para uso familiar (mesmo fuso).
+- `dueDateChanged` compara instantes (`getTime`); desde a correção de fuso (ver seção "Bug de fuso em prazos de tarefas" no topo) todo `due_date` é `timestamptz`/ISO com fuso, então a comparação é absoluta e correta.
 
 ---
 
