@@ -2,6 +2,18 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Ícone do app — otimizado, sem master no repo (Frontend, sem mudança de schema)
+
+### O que foi feito
+- **Master (4267×4267 @ 300dpi) removido do repo** (decisão: reduzir tamanho do versionamento e do app). Os ícones finais vivem em **`public/icons/`**: `icon-32.png` (~1,1 KB), `icon-192.png` (~13 KB) e `icon-512.png` (~64 KB) — redimensionamento System.Drawing (HighQualityBicubic), 32bpp ARGB. Guarde o master de 300dpi fora do repo se quiser regenerar versões futuras.
+- **`<head>` sem duplicatas:** só `metadata.icons` em `src/app/layout.tsx` — `icon-32` (favicon leve) e `icon-512` (não há file convention, então a rota `○ /icon.png` deixou de existir). `metadata.manifest: '/manifest.webmanifest'` + `viewport.themeColor: '#1d4ed8'` (na metadata virou **deprecated na Next 16** — warning do build mandou mover para `viewport`).
+- **`src/app/apple-icon.png` (180×180)** → file convention gera `<link rel="apple-touch-icon">` automático (home screen no iOS).
+- **`src/app/manifest.ts`** (file convention → rota estática `○ /manifest.webmanifest`): `name`/`short_name`/`description`, `start_url: '/'`, `display: 'standalone'`, `background_color: '#2563eb'`, `theme_color: '#1d4ed8'`, `icons` 192/512 (`purpose: 'any'`) + 512 `maskable` — apontando para `/icons/*`.
+- **Para trocar o ícone no futuro:** regenere `public/icons/` (32/192/512) e `src/app/apple-icon.png` (180) a partir do novo master — os `sizes` saem dos próprios arquivos, rotas estáticas recalculadas no build.
+
+### Verificação
+`npm run build` ✓ (rotas estáticas `○ /apple-icon.png` e `○ /manifest.webmanifest`; sem `/icon.png`) · `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓.
+
 ## Transições entre rotas mais ágeis (concluída — sem mudança de schema)
 
 ### Diagnóstico (lentidão era acúmulo de round-trips, não um endpoint específico)
