@@ -54,7 +54,12 @@ export function DashboardNav({
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4 md:px-6">
           <Link href={brandHref} className="flex min-h-12 items-center gap-2">
             <span className="flex size-9 items-center justify-center rounded-xl bg-white/10 text-amber-300">
-              <House className="size-5" />
+              <img
+                src='/icons/icon-512.png'
+                alt="CasaSync Logo"
+                className="size-9 rounded-lg"
+              />
+              {/* <House className="size-5" /> Não mais utilizado para dar lugar ao ícone do app*/}
             </span>
             <span className="text-lg font-bold tracking-tight">CasaSync</span>
           </Link>

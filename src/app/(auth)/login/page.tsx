@@ -22,7 +22,13 @@ export default async function LoginPage({
     <main className="flex min-h-svh flex-col items-center justify-center gap-8 bg-slate-100 p-4 py-10">
       <div className="flex flex-col items-center gap-3">
         <span className="flex size-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md">
-          <House className="size-7" />
+          <img
+            src='/icons/icon-192.png'
+            alt="CasaSync Logo"
+            className="size-15 rounded-lg border-1 border-blue-600"
+            style={{ borderColor: '#2563eb' }}
+          />
+          {/* <House className="size-7" /> Não mais utilizado para dar lugar ao ícone do app*/}
         </span>
         <div className="text-center">
           <p className="text-2xl font-bold tracking-tight text-slate-800">
