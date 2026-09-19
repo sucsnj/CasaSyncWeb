@@ -32,7 +32,7 @@
 - **Sem mudança de schema:** `tasks.due_date` continua `timestamptz`. Sem lib nova de datas (decisão: especificação do ECMAScript + trava de ambiente cobrem o caso sem dependência).
 
 ### SQL opcional — corrigir tarefas JÁ criadas (manual, revertível, não destrói dados)
-Tarefas existentes criadas/editadas pelo input carregam o instante 3h adiantado. Correção **opcional** (nada quebra se pular): rodar no dashboard do Supabase, na ordem, com backup e rollback:
+Tarefas existentes criadas/editadas pelo input carregam o instante 3h adiantado. Correção **já aplicada** (09/2026, com backup revertível — nada quebra se pular; rodar no dashboard do Supabase na ordem):
 ```sql
 -- 1) Backup (revertível): guarda o estado atual de TODO o `due_date`.
 create table if not exists tasks_due_date_backup as
@@ -54,6 +54,8 @@ set due_date = b.due_date
 from tasks_due_date_backup b
 where t.id = b.id;
 ```
+
+*O backup (`tasks_due_date_backup`) permanece no banco; com ele, o rollback continua disponível a qualquer momento. Decisão completa (contrato "todo `due_date` com fuso", SQL de reparo só faz sentido no offset de digitação) em **ADR-0013** (`docs/adr/0013-prazos-de-tarefa-com-fuso-horario.md`).*
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).

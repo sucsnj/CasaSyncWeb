@@ -51,7 +51,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | assigned_to | uuid FK → profiles | nullable; `''` normalizado para nul em `actions/tasks.ts` |
 | created_by | uuid FK → profiles | |
 | completed_by / completed_at | uuid / timestamptz | nullable |
-| due_date | timestamptz | SLA (`src/utils/task-sla.ts`) |
+| due_date | timestamptz | SLA (`src/utils/task-sla.ts`); **sempre gravado com fuso** — o cliente envia o instante ISO via `datetimeLocalToIso` e o servidor (`normalizeDueDate`) rejeita string naive (seria lida como UTC e deslocaria o prazo) |
 | image_url | text | |
 | extension_requested | bool | pedido de adiamento |
 | extension_reason | text | justificativa obrigatória |
