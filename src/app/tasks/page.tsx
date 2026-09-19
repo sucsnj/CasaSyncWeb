@@ -77,22 +77,29 @@ export default async function TasksPage() {
   // casa mesmo não sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
-  const notifications = await getMyNotifications(user.id)
+
+  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
+  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
+  const [notifications, activeHouse, dependentHouse] = await Promise.all([
+    getMyNotifications(user.id),
+    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+  ])
 
   let content: React.ReactNode
 
   if (isAdmin) {
-    const activeHouse = await getActiveAdminHouse()
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const { data: tasks } = await admin
-        .from('tasks')
-        .select('*')
-        .eq('house_id', activeHouse.id)
-        .order('created_at', { ascending: false })
-
-      const assignees = await getHouseAssignees(activeHouse.id)
+      const [{ data: tasks }, assignees] = await Promise.all([
+        admin
+          .from('tasks')
+          .select('*')
+          .eq('house_id', activeHouse.id)
+          .order('created_at', { ascending: false }),
+        getHouseAssignees(activeHouse.id),
+      ])
 
       content = (
         <TasksAdmin
@@ -104,14 +111,13 @@ export default async function TasksPage() {
       )
     }
   } else {
-    const house = await getDependentHouse(user.id)
-    if (!house) {
+    if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
       const { data: tasks } = await admin
         .from('tasks')
         .select('*')
-        .eq('house_id', house.id)
+        .eq('house_id', dependentHouse.id)
         .eq('assigned_to', user.id)
         .order('created_at', { ascending: false })
 
@@ -122,8 +128,8 @@ export default async function TasksPage() {
 
       content = (
         <TasksDependent
-          key={house.id}
-          houseId={house.id}
+          key={dependentHouse.id}
+          houseId={dependentHouse.id}
           initialTasks={taskList}
           creatorNames={creatorNames}
         />

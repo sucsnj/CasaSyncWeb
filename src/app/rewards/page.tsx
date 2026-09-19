@@ -45,12 +45,18 @@ export default async function RewardsPage() {
   // da casa mesmo não sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
-  const notifications = await getMyNotifications(user.id)
+
+  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
+  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
+  const [notifications, activeHouse, dependentHouse] = await Promise.all([
+    getMyNotifications(user.id),
+    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+  ])
 
   let content: React.ReactNode
 
   if (isAdmin) {
-    const activeHouse = await getActiveAdminHouse()
     if (!activeHouse) {
       content = (
         <p className="text-sm text-muted-foreground">
@@ -139,8 +145,7 @@ export default async function RewardsPage() {
       )
     }
   } else {
-    const house = await getDependentHouse(user.id)
-    if (!house) {
+    if (!dependentHouse) {
       content = (
         <p className="text-sm text-muted-foreground">
           Você ainda não foi vinculado a uma casa.
@@ -152,18 +157,18 @@ export default async function RewardsPage() {
           admin
             .from('rewards')
             .select('*')
-            .eq('house_id', house.id)
+            .eq('house_id', dependentHouse.id)
             .order('created_at', { ascending: true }),
           admin
             .from('reward_redemptions')
             .select('*')
-            .eq('house_id', house.id)
+            .eq('house_id', dependentHouse.id)
             .eq('profile_id', user.id)
             .order('created_at', { ascending: true }),
           admin
             .from('reward_suggestions')
             .select('*')
-            .eq('house_id', house.id)
+            .eq('house_id', dependentHouse.id)
             .eq('profile_id', user.id)
             .order('created_at', { ascending: false }),
         ])
@@ -184,8 +189,8 @@ export default async function RewardsPage() {
 
       content = (
         <RewardsDependent
-          key={house.id}
-          houseId={house.id}
+          key={dependentHouse.id}
+          houseId={dependentHouse.id}
           myId={user.id}
           initialPoints={profile.points}
           initialRewards={rewards ?? []}

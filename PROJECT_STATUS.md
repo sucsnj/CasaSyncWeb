@@ -2,6 +2,24 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Transições entre rotas mais ágeis (concluída — sem mudança de schema)
+
+### Diagnóstico (lentidão era acúmulo de round-trips, não um endpoint específico)
+- Todas as páginas são `dynamic = 'force-dynamic'` → cada navegação é um render dinâmico novo, sem cache.
+- Cadeia serial por navegação ADMIN (`/tasks`): proxy (`getUser()` + select `profiles.user_role`) → página (`getSessionProfile` = `getUser()` + select `profiles`) → `getMyNotifications` (DELETE de limpeza lazy + SELECT) → `getActiveAdminHouse` (**chamava `getSessionProfile` de novo** + listagem de casas) → tarefas + assignees. **~12 chamadas HTTP em série** (amplificado por acesso em rede local/outro dispositivo).
+- Sem `loading.tsx`/`Suspense` em nenhum segmento → durante a navegação dinâmica não havia feedback; `/tasks` e `/rewards` renderizam o próprio shell (nav/sino + canal Realtime remontando a cada transição).
+
+### O que foi feito (conjunto "menos dramático": A1 + A3 + B6)
+- **A1 — `React.cache` (memoização por request) em `src/utils/house.ts`:** `getSessionProfile` (elimina o `getUser()`+`profiles` duplicado que `getActiveAdminHouse` disparava no mesmo request; layouts e páginas do dashboard compartilham uma única chamada) e `getAdminHouses` (a consulta interna de `getActiveAdminHouse` e a da página `/dashboard/admin/houses` viram uma só). Sem mudança de assinatura.
+- **A3 — `Promise.all` nas páginas:** `tasks`/`rewards` buscam notificações + casa (ativa p/ ADMIN, do dependente) em paralelo e usam referências comuns; admin de `tasks` paraleliza tarefas + assignees; `/dashboard/admin/houses` paraleliza casa ativa + casas; `/dashboard/admin` paraleliza sessão + casa ativa.
+- **B6 — telas de loading amigáveis:** novo `PageSkeleton` (`src/components/ui/page-skeleton.tsx`, placeholders `animate-pulse` no visual do app — hero, header fixo opcional e grid de cards) + `loading.tsx` em `tasks/`, `rewards/`, `dashboard/admin/`, `dashboard/dependent/` e `dashboard/admin/houses/`. Feedback instantâneo na transição.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run build` ✓ (rotas idênticas, `ƒ Proxy` ativo) · `npm run typecheck` ✓.
+
+### Próximo passo (não feito — maior esforço/risco)
+- Proxy `getUser()` → `getClaims()` (+ role num claim do JWT, se quisermos zerar o round-trip do proxy); layout compartilhado para o shell do dashboard (evita remount do nav/sino/Realtime entre `/*`, `/tasks` e `/rewards`); `unstable_cache`/Cache Components para navegação "instantânea" de verdade; Condição de execução da limpeza lazy de notificações (hoje roda um DELETE a cada render).
+
 ## Refresco de documentação e contexto (concluída)
 
 ### O que foi feito

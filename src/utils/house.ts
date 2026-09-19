@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import type { Database } from '@/types/database'
@@ -22,29 +23,36 @@ export const ACTIVE_HOUSE_COOKIE = 'casasync_active_house'
 /**
  * Retorna o usuário autenticado e seu perfil (via RLS, cliente autenticado).
  * `profile` é `null` se a linha em `profiles` ainda não existir.
+ *
+ * Envolto em `React.cache` (memoização POR REQUEST): várias páginas chamam
+ * `getSessionProfile` direto e indiretamente (ex.: `getActiveAdminHouse`); sem
+ * isso cada chamada geraria um `auth.getUser()` + SELECT `profiles` extra — era
+ * a maior fonte de round-trips em série nas transições de rota.
  */
-export async function getSessionProfile(): Promise<{
-  user: { id: string } | null
-  profile: SessionProfile | null
-}> {
-  const supabase = await createClient()
+export const getSessionProfile = cache(
+  async (): Promise<{
+    user: { id: string } | null
+    profile: SessionProfile | null
+  }> => {
+    const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-  if (!user) {
-    return { user: null, profile: null }
+    if (!user) {
+      return { user: null, profile: null }
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, full_name, user_role, points, avatar_url')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    return { user: { id: user.id }, profile: profile ?? null }
   }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, user_role, points, avatar_url')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  return { user: { id: user.id }, profile: profile ?? null }
-}
+)
 
 /**
  * Casas que o ADMIN controla: as que criou (owner) E as que entrou via PIN
@@ -54,22 +62,28 @@ export async function getSessionProfile(): Promise<{
  * a listagem das casas não depender de policies RLS específicas para
  * co-gerentes — o que importa é o controle medido pela membresia. O `userId`
  * sempre vem da sessão autenticada, nunca de input público.
+ *
+ * Envolto em `React.cache` (memoização por request) porque
+ * `getActiveAdminHouse` e a página `/dashboard/admin/houses` chamam a mesma
+ * listagem com o mesmo `userId` no mesmo request — o cache deduplica a query.
  */
-export async function getAdminHouses(userId: string): Promise<
-  { id: string; name: string; image_url: string | null; code: string }[]
-> {
-  const admin = createAdminClient()
+export const getAdminHouses = cache(
+  async (userId: string): Promise<
+    { id: string; name: string; image_url: string | null; code: string }[]
+  > => {
+    const admin = createAdminClient()
 
-  const { data: memberships } = await admin
-    .from('house_members')
-    .select('house_id, houses ( id, name, image_url, code )')
-    .eq('profile_id', userId)
-    .eq('role', 'ADMIN')
-    .order('created_at', { ascending: true })
+    const { data: memberships } = await admin
+      .from('house_members')
+      .select('house_id, houses ( id, name, image_url, code )')
+      .eq('profile_id', userId)
+      .eq('role', 'ADMIN')
+      .order('created_at', { ascending: true })
 
-  const rows = (memberships ?? []).flatMap((member) => member.houses ?? [])
-  return Array.from(new Map(rows.map((house) => [house.id, house])).values())
-}
+    const rows = (memberships ?? []).flatMap((member) => member.houses ?? [])
+    return Array.from(new Map(rows.map((house) => [house.id, house])).values())
+  }
+)
 
 /**
  * Casa ativa do ADMIN: prioriza o cookie, senão cai para a primeira casa

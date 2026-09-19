@@ -24,10 +24,14 @@ export default async function AdminHousesPage() {
   // Service-role: ver membros de qualquer casa que o ADMIN controla
   // (dono ou co-gerente) sem depender de políticas RLS específicas.
   const admin = createAdminClient()
-  const activeHouse = await getActiveAdminHouse()
 
-  // Casas controladas: criadas E co-geridas via PIN (membro role ADMIN).
-  const houses = await getAdminHouses(user.id)
+  // Casa ativa e lista de casas em paralelo. `getAdminHouses` é memoizado por
+  // request (`React.cache`), então a consulta interna de `getActiveAdminHouse`
+  // não se repete aqui.
+  const [activeHouse, houses] = await Promise.all([
+    getActiveAdminHouse(),
+    getAdminHouses(user.id),
+  ])
 
   let members: {
     profileId: string

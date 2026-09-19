@@ -41,8 +41,10 @@ const actions = [
 ] as const
 
 export default async function AdminDashboardPage() {
-  const { user, profile } = await getSessionProfile()
-  const activeHouse = await getActiveAdminHouse()
+  const [{ user, profile }, activeHouse] = await Promise.all([
+    getSessionProfile(),
+    getActiveAdminHouse(),
+  ])
 
   return (
     <div className="flex flex-col gap-6">
