@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/card'
 
 export const metadata: Metadata = {
-  title: 'Tarefas | CasaSync',
+  title: 'Tarefas',
 }
 
 export const dynamic = 'force-dynamic'

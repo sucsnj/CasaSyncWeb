@@ -3,7 +3,7 @@ import { House } from 'lucide-react'
 import { LoginForm } from '@/components/auth/login-form'
 
 export const metadata: Metadata = {
-  title: 'Entrar | CasaSync',
+  title: 'Entrar',
 }
 
 type LoginSearchParams = {
@@ -23,10 +23,10 @@ export default async function LoginPage({
       <div className="flex flex-col items-center gap-3">
         <span className="flex size-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md">
           <img
-            src='/icons/icon-192.png'
+            src='/icons/icon-512.png'
             alt="CasaSync Logo"
             className="size-15 rounded-lg border-1 border-blue-600"
-            style={{ borderColor: '#2563eb' }}
+            style={{ borderColor: '#82a6f3' }}
           />
           {/* <House className="size-7" /> Não mais utilizado para dar lugar ao ícone do app*/}
         </span>

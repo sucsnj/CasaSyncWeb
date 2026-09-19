@@ -13,7 +13,7 @@ import { RewardsDependent } from '@/components/rewards/rewards-dependent'
 import type { Tables } from '@/types/database'
 
 export const metadata: Metadata = {
-  title: 'Recompensas | CasaSync',
+  title: 'Recompensas',
 }
 
 export const dynamic = 'force-dynamic'

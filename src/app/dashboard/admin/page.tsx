@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card'
 
 export const metadata: Metadata = {
-  title: 'Visão geral | CasaSync',
+  title: 'Visão geral',
 }
 
 export const dynamic = 'force-dynamic'

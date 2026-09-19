@@ -8,7 +8,7 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 export const metadata: Metadata = {
   title: {
     default: 'CasaSync',
-    template: '%s | CasaSync',
+    template: 'CasaSync | %s',
   },
   description: 'Gestão de tarefas, pontos e recompensas para a sua casa.',
   manifest: '/manifest.webmanifest',

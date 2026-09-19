@@ -3,7 +3,7 @@ import { House } from 'lucide-react'
 import { RegisterForm } from '@/components/auth/register-form'
 
 export const metadata: Metadata = {
-  title: 'Cadastro de Administrador | CasaSync',
+  title: 'Cadastro de Administrador',
 }
 
 export default function RegisterPage() {

@@ -9,7 +9,7 @@ import {
 import { HousesManager } from '@/components/houses/houses-manager'
 
 export const metadata: Metadata = {
-  title: 'Casas | CasaSync',
+  title: 'Casas',
 }
 
 export const dynamic = 'force-dynamic'
