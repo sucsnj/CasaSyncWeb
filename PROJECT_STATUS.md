@@ -325,6 +325,66 @@ alter publication supabase_realtime add table public.notifications;
 
 ---
 
+## Web Push Notifications (PWA) — notificações nativas no Android/Desktop (concluída)
+
+### O que foi implementado
+- **VAPID Keys** geradas e configuradas no `.env.local` (`VAPID_PRIVATE_KEY` server-only, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` client).
+- **Service Worker (`public/sw.js`)** estendido com handlers `push`, `notificationclick` e `pushsubscriptionchange`: exibe notificação nativa do SO, abre/foca o app ao clicar, limpa subscriptions expiradas.
+- **Tabela `push_subscriptions`** no Supabase: `endpoint`, `p256dh`, `auth`, `user_id`, `house_id`, `user_agent` — RLS por usuário + admin da casa, publication Realtime.
+- **Client-side (`src/utils/push.ts`)**: `urlBase64ToUint8Array`, `subscribeToPush`, `unsubscribeFromPush`, `subscriptionToJSON`.
+- **Hook `usePushNotifications`** (`src/hooks/use-push-notifications.ts`): pede permissão `Notification.requestPermission()`, subscreve via `pushManager`, registra a subscription no backend via `registerPushSubscription` action.
+- **Server Actions (`src/actions/push.ts`)**: `registerPushSubscription`, `unregisterPushSubscription`, `unregisterAllPushSubscriptions`, `sendPushToUser`, `sendPushToHouseAdmins`, `sendPushToHouseDependents` — usa `web-push` lib com chaves VAPID.
+- **Integração nas notificações existentes** (`src/utils/notifications.ts`): `notifyUser` e `notifyHouse` agora disparam também `sendPushToUser` / `sendPushToHouseAdmins` / `sendPushToHouseDependents` (best-effort, não bloqueia).
+- **Setup automático no Dashboard** (`src/components/notifications/push-notifications-setup.tsx`): incluído nos layouts admin/dependent — pede permissão e subscreve na primeira visita.
+- **Dependência `web-push`** adicionada ao `package.json` + `@types/web-push` em devDependencies.
+
+### SQL aplicado no Supabase
+```sql
+-- docs/sql/push_subscriptions.sql
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+create index if not exists push_subscriptions_house_idx on public.push_subscriptions (house_id);
+alter table public.push_subscriptions enable row level security;
+create policy "push_subscriptions_select_own" on public.push_subscriptions for select to authenticated using (user_id = auth.uid());
+create policy "push_subscriptions_insert_own" on public.push_subscriptions for insert to authenticated with check (user_id = auth.uid());
+create policy "push_subscriptions_delete_own" on public.push_subscriptions for delete to authenticated using (user_id = auth.uid());
+create policy "push_subscriptions_select_admin" on public.push_subscriptions for select to authenticated using (exists (select 1 from public.house_members hm where hm.house_id = push_subscriptions.house_id and hm.profile_id = auth.uid() and hm.role = 'ADMIN'));
+alter publication supabase_realtime add table public.push_subscriptions;
+```
+
+### Arquivos criados/modificados
+- `src/utils/push.ts` — utilitários client-side VAPID/subscription
+- `src/hooks/use-push-notifications.ts` — hook de permissão + subscription
+- `src/actions/push.ts` — server actions CRUD + envio
+- `src/utils/notifications.ts` — integração push no `notifyUser`/`notifyHouse`
+- `src/components/notifications/push-notifications-setup.tsx` — client component setup
+- `src/components/notifications/realtime-toast-listener.tsx` — já existia (toasts internos)
+- `public/sw.js` — handlers push/notificationclick/pushsubscriptionchange
+- `docs/sql/push_subscriptions.sql` — SQL da tabela
+- `.env.local` — VAPID keys
+- `package.json` — `web-push` + `@types/web-push`
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Decisões
+- **Push = complemento, não substituto**: toasts internos (Sonner/Realtime) funcionam com app aberto; Web Push funciona com app fechado/instalado como PWA.
+- **Best-effort**: falha no envio push não derruba a ação principal (mesmo padrão das notificações in-app).
+- **Permissão no primeiro uso**: o hook pede `Notification.requestPermission()` ao montar no Dashboard; se negado, não subscreve (respeita escolha do usuário).
+- **Service Worker no `public/`**: Next.js serve como arquivo estático (`○ /sw.js` no build), sem compilação — compatível com `navigator.serviceWorker.register('/sw.js')`.
+
+---
+
 ## Tutores da casa e criador da tarefa para o dependente (concluída)
 
 ### O que foi implementado

@@ -447,9 +447,60 @@ export interface Database {
             referencedColumns: ['id']
           }
         ]
-      }
+}
+  }
+  push_subscriptions: {
+    Row: {
+      id: string
+      user_id: string
+      house_id: string
+      endpoint: string
+      p256dh: string
+      auth: string
+      user_agent: string | null
+      created_at: string
+      updated_at: string
     }
-    Views: {
+    Insert: {
+      id?: string
+      user_id: string
+      house_id: string
+      endpoint: string
+      p256dh: string
+      auth: string
+      user_agent?: string | null
+      created_at?: string
+      updated_at?: string
+    }
+    Update: {
+      id?: string
+      user_id?: string
+      house_id?: string
+      endpoint?: string
+      p256dh?: string
+      auth?: string
+      user_agent?: string | null
+      created_at?: string
+      updated_at?: string
+    }
+    Relationships: [
+      {
+        foreignKeyName: 'push_subscriptions_user_id_fkey'
+        columns: ['user_id']
+        isOneToOne: false
+        referencedRelation: 'profiles'
+        referencedColumns: ['id']
+      },
+      {
+        foreignKeyName: 'push_subscriptions_house_id_fkey'
+        columns: ['house_id']
+        isOneToOne: false
+        referencedRelation: 'houses'
+        referencedColumns: ['id']
+      },
+    ]
+  }
+  Views: {
       [_ in never]: never
     }
     Functions: {

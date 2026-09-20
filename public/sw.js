@@ -1,4 +1,4 @@
-// CasaSync Service Worker - Basic offline support for PWA installability
+// CasaSync Service Worker - Offline support + Web Push notifications
 const CACHE_NAME = 'casasync-v1';
 const STATIC_ASSETS = [
   '/',
@@ -60,4 +60,58 @@ self.addEventListener('fetch', (event) => {
       });
     })
   );
+});
+
+// Web Push: receber notificações do servidor
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    const { title, body, icon, badge, tag, data: payload, actions } = data;
+
+    const options = {
+      body: body ?? '',
+      icon: icon ?? '/icons/icon-192.png',
+      badge: badge ?? '/icons/icon-192.png',
+      tag: tag ?? 'casasync-notification',
+      data: payload ?? {},
+      actions: actions ?? [],
+      requireInteraction: true,
+      renotify: true,
+    };
+
+    event.waitUntil(
+      self.registration.showNotification(title ?? 'CasaSync', options)
+    );
+  } catch (err) {
+    console.error('Push event error:', err);
+  }
+});
+
+// Web Push: clique na notificação abre/foca o app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const urlToOpen = event.notification.data?.url ?? '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Verifica se já tem uma janela aberta do app
+      for (const client of windowClients) {
+        if (client.url.includes(location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICK', url: urlToOpen });
+          return client.focus();
+        }
+      }
+      // Abre nova janela se não tiver nenhuma
+      return clients.openWindow(urlToOpen);
+    })
+  );
+});
+
+// Web Push: erro de push subscription
+self.addEventListener('pushsubscriptionchange', (event) => {
+  console.log('Push subscription changed:', event);
+  // O cliente vai re-subscrever automaticamente na próxima visita
 });

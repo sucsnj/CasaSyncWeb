@@ -1,6 +1,11 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { MEDIA_BUCKET } from '@/utils/media'
 import { QUICK_MESSAGE_CAPACITY } from '@/utils/quick-message'
+import {
+  sendPushToUser,
+  sendPushToHouseAdmins,
+  sendPushToHouseDependents,
+} from '@/actions/push'
 import type { NotificationRow, NotificationType } from '@/types/notifications'
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -43,7 +48,7 @@ async function getHouseMemberIds(
 }
 
 /**
- * Cria uma notificação para um destinatário específico.
+ * Cria uma notificação para um destinatário específico + envia push.
  *
  * Best-effort: a notificação é efeito secundário do fluxo de negócio — uma
  * falha ao gravá-la NUNCA deve derrubar a ação principal (crédito de pontos,
@@ -67,6 +72,21 @@ export async function notifyUser(
     })
   } catch {
     // Ignorado de propósito (best-effort).
+  }
+
+  // Envia push notification (não bloqueia, best-effort)
+  try {
+    await sendPushToUser(input.recipientId, {
+      title: input.title,
+      body: input.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: `casasync-${input.type.toLowerCase()}`,
+      data: { url: input.link ?? '/', notifType: input.type, ...input },
+      actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+    })
+  } catch {
+    // Ignorado (push falha não deve derrubar a ação)
   }
 }
 
@@ -104,6 +124,33 @@ export async function notifyHouse(
     )
   } catch {
     // Ignorado de propósito (best-effort).
+  }
+
+  // Envia push notifications (não bloqueia, best-effort)
+  try {
+    if (input.side === 'ADMINS') {
+      await sendPushToHouseAdmins(input.houseId, {
+        title: input.title,
+        body: input.body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: `casasync-${input.type.toLowerCase()}`,
+        data: { url: input.link ?? '/', notifType: input.type, ...input },
+        actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+      })
+    } else {
+      await sendPushToHouseDependents(input.houseId, {
+        title: input.title,
+        body: input.body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: `casasync-${input.type.toLowerCase()}`,
+        data: { url: input.link ?? '/', notifType: input.type, ...input },
+        actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+      })
+    }
+  } catch {
+    // Ignorado (push falha não deve derrubar a ação)
   }
 }
 
