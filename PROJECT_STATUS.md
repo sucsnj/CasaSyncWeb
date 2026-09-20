@@ -377,6 +377,47 @@ alter publication supabase_realtime add table public.push_subscriptions;
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
 
+---
+
+## Realtime Hook — melhoria no `usePostgresChanges` (concluída)
+
+### Problema
+O hook original tinha race conditions: canais não eram limpos corretamente antes de recriar, nome do canal podia colidir entre montagens, e o `setAuth` podia não completar antes do `subscribe()`, gerando erro "cannot add callbacks after subscribe()".
+
+### O que foi implementado
+- **Nome de canal único** por montagem: `pg-changes:${table}:${filter}:${Date.now()}:${Math.random()}` — evita colisão com canais anteriores.
+- **Cleanup defensivo** antes de criar novo canal: remove canal anterior se existir (try/catch silencioso).
+- **Ordem garantida**: `getSession()` → `setAuth(token)` (await) → cria canal `.on()` → `.subscribe()`.
+- **Cleanup síncrono no unmount**: remove canal imediatamente sem bloquear desmontagem.
+- **Flag `cancelled`** verificada no callback do payload e no status do subscribe.
+- **Log de status** (`SUBSCRIBED`, `CHANNEL_ERROR`, `TIMED_OUT`, `CLOSED`) para debug.
+
+### Arquivos alterados
+- `src/hooks/use-postgres-changes.ts` — reescrito com as melhorias acima.
+
+### Verificação
+`npm run lint` ✓ · `npm run typecheck` ✓ · `npm run build` ✓.
+
+---
+
+## Página raiz `/` dinâmica — fix do middleware no Vercel (concluída)
+
+### Problema
+A página `/` era prerenderizada como estática (`○ /` no build). No Vercel, rotas estáticas **não passam pelo middleware/proxy**, então usuários autenticados ficavam presos em `/` sem redirecionar para o dashboard da role.
+
+### O que foi feito
+- Adicionado `export const dynamic = 'force-dynamic'` em `src/app/page.tsx`.
+- Agora a raiz aparece como `ƒ /` (Dynamic) no build, forçando o proxy a rodar e redirecionar:
+  - Não autenticado → `/login`
+  - ADMIN → `/dashboard/admin`
+  - DEPENDENT → `/dashboard/dependent`
+
+### Arquivos alterados
+- `src/app/page.tsx` — adicionado `export const dynamic = 'force-dynamic'`.
+
+### Verificação
+`npm run lint` ✓ · `npm run typecheck` ✓ · `npm run build` ✓ (build agora mostra `ƒ /`).
+
 ### Decisões
 - **Push = complemento, não substituto**: toasts internos (Sonner/Realtime) funcionam com app aberto; Web Push funciona com app fechado/instalado como PWA.
 - **Best-effort**: falha no envio push não derruba a ação principal (mesmo padrão das notificações in-app).

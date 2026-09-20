@@ -38,13 +38,20 @@ async function getHouseMemberIds(
   houseId: string,
   role: 'ADMIN' | 'DEPENDENT'
 ): Promise<string[]> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('house_members')
     .select('profile_id')
     .eq('house_id', houseId)
     .eq('role', role)
 
-  return (data ?? []).map((member) => member.profile_id)
+  if (error) {
+    console.error('[getHouseMemberIds] Query error:', error)
+    return []
+  }
+
+  const ids = (data ?? []).map((member) => member.profile_id)
+  console.log('[getHouseMemberIds] House:', houseId, 'Role:', role, 'IDs:', ids)
+  return ids
 }
 
 /**
@@ -106,10 +113,13 @@ export async function notifyHouse(
       input.side === 'ADMINS' ? 'ADMIN' : 'DEPENDENT'
     )
 
+    console.log('[notifyHouse] House ID:', input.houseId, 'Side:', input.side, 'Actor:', input.actorId, 'Found member IDs:', ids)
+
     const recipients = ids.filter((id) => id !== input.excludeUserId)
+    console.log('[notifyHouse] Recipients after exclude:', recipients)
     if (recipients.length === 0) return
 
-    await admin.from('notifications').insert(
+    const { error } = await admin.from('notifications').insert(
       recipients.map((recipientId) => ({
         house_id: input.houseId,
         recipient_id: recipientId,
@@ -122,8 +132,13 @@ export async function notifyHouse(
         message_id: input.messageId ?? null,
       }))
     )
-  } catch {
-    // Ignorado de propósito (best-effort).
+    if (error) {
+      console.error('[notifyHouse] Insert error:', error)
+    } else {
+      console.log('[notifyHouse] Inserted successfully for', recipients.length, 'recipients')
+    }
+  } catch (err) {
+    console.error('[notifyHouse] Unexpected error:', err)
   }
 
   // Envia push notifications (não bloqueia, best-effort)
