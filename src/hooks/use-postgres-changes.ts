@@ -6,36 +6,13 @@ import { createClient } from '@/utils/supabase/client'
 type ChangeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*'
 
 type UsePostgresChangesOptions<T extends { id: string }> = {
-  /** Tabela do schema `public` (ex.: 'tasks'). */
   table: string
-  /**
-   * Filtro do Realtime, ex.: `house_id=eq.abc`. Funciona como um índice de
-   * origem: a publicação envia toda mudança da tabela que "bate" no filter,
-   * e o RLS ainda estreita o que o assinante AUTORIZA ver. Ou seja, o
-   * filter de casa + policy SELECT por `house_id` = isolamento multi-tenant
-   * de verdade mesmo com uma única channel compartilhada.
-   */
   filter?: string
   event?: ChangeEvent
   onUpsert?: (row: T) => void
   onDelete?: (id: string) => void
 }
 
-/**
- * Assina mudanças (INSERT/UPDATE/DELETE) de uma tabela via `postgres_changes`.
- *
- * ENSINO (teach) — como o Realtime funciona aqui:
- *  1. `supabase.channel(nome)` cria um canal de broadcast.
- *  2. `.on('postgres_changes', {...})` registra a assinatura do WAL do
- *     Postgres (a tabela precisa estar na publication `supabase_realtime`).
- *  3. `.subscribe()` conecta via WebSocket. O payload chega em tempo real
- *     para TODOS os clientes conectados que satisfazem o filter E o RLS.
- *  4. No cleanup removemos o canal — vital para evitar vazamento de
- *     listeners quando o componente desmonta ou o usuário troca de casa.
- *
- * Manter o `supabase` criado DENTRO do useEffect evita assinaturas
- * duplicadas em re-renders (cada montagem = um canal).
- */
 export function usePostgresChanges<T extends { id: string }>({
   table,
   filter,
@@ -44,53 +21,89 @@ export function usePostgresChanges<T extends { id: string }>({
   onDelete,
 }: UsePostgresChangesOptions<T>) {
   const handlers = useRef({ onUpsert, onDelete })
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+  const subscribedRef = useRef(false)
 
-  // Mantém handlers sempre atuais SEM recriar o canal a cada render.
   useEffect(() => {
     handlers.current = { onUpsert, onDelete }
   })
 
   useEffect(() => {
     const supabase = createClient()
-    let channel: ReturnType<typeof supabase.channel> | null = null
     let cancelled = false
+    // Nome único por montagem para evitar colisão com canais anteriores
+    const channelName = `pg-changes:${table}:${filter ?? 'all'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
 
-    async function subscribe() {
-      // ENSINO (teach): antes de assinar, propaga o JWT da sessão para o
-      // Realtime. Quando a sessão é restaurada do storage/cookies (caso do
-      // browser), o socket pode conectar como `anon` — o canal devolve
-      // SUBSCRIBED normalmente, mas o RLS descarta TODOS os eventos em
-      // silêncio. `setAuth` com o access token garante `auth.uid()` no RLS.
-      const { data } = await supabase.auth.getSession()
-      await supabase.realtime.setAuth(data.session?.access_token ?? null)
-      if (cancelled) return
+    async function setupChannel() {
+      try {
+        // 1. Garante sessão atualizada antes de criar canal
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          console.warn('[Realtime] Sem sessão válida, pulando subscription')
+          return
+        }
 
-      channel = supabase
-        .channel(`pg-changes:${table}:${filter ?? 'all'}`)
-        .on(
-          'postgres_changes',
-          {
-            event,
-            schema: 'public',
-            table,
-            ...(filter ? { filter } : {}),
-          },
-          (payload) => {
-            if (payload.eventType === 'DELETE') {
-              handlers.current.onDelete?.(payload.old?.id as string)
-              return
-            }
-            handlers.current.onUpsert?.(payload.new as T)
+        // 2. Define auth no realtime ANTES de criar canal
+        await supabase.realtime.setAuth(session.access_token)
+        if (cancelled) return
+
+        // 3. Remove canal anterior se existir (cleanup defensivo)
+        if (channelRef.current) {
+          try {
+            await supabase.removeChannel(channelRef.current)
+          } catch {
+            // ignora erro de canal já removido
           }
-        )
-        .subscribe()
+          channelRef.current = null
+          subscribedRef.current = false
+        }
+
+        // 4. Cria canal com callbacks JÁ anexados (antes do subscribe)
+        const channel = supabase
+          .channel(channelName)
+          .on(
+            'postgres_changes',
+            { event, schema: 'public', table, ...(filter ? { filter } : {}) },
+            (payload) => {
+              if (cancelled) return
+              if (payload.eventType === 'DELETE') {
+                handlers.current.onDelete?.(payload.old?.id as string)
+              } else {
+                handlers.current.onUpsert?.(payload.new as T)
+              }
+            }
+          )
+
+        channelRef.current = channel
+
+        // 5. Subscribe por último
+        channel.subscribe((status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            subscribedRef.current = true
+            console.log(`[Realtime] Conectado: ${table}${filter ? ` (${filter})` : ''}`)
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`[Realtime] Status: ${status} para ${table}`)
+            subscribedRef.current = false
+          }
+        })
+      } catch (err) {
+        if (!cancelled) console.error('[Realtime] Erro ao configurar:', err)
+      }
     }
 
-    void subscribe()
+    void setupChannel()
 
     return () => {
       cancelled = true
-      if (channel) void supabase.removeChannel(channel)
+      // Cleanup síncrono imediato
+      const ch = channelRef.current
+      channelRef.current = null
+      subscribedRef.current = false
+      if (ch) {
+        // removeChannel é assíncrono mas não await aqui para não bloquear unmount
+        void supabase.removeChannel(ch)
+      }
     }
   }, [table, filter, event])
 }

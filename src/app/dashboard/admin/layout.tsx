@@ -3,6 +3,7 @@ import { getSessionProfile } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
+import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 
 const adminItems: NavItem[] = [
   { href: '/dashboard/admin', label: 'Visão geral' },
@@ -30,6 +31,7 @@ export default async function AdminDashboardLayout({
       />
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}
+      {user && <PushPermissionPrompt userId={user.id} />}
       {children}
     </div>
   )
