@@ -14,6 +14,17 @@
 ### Verificação
 `npm run build` ✓ (rotas estáticas `○ /apple-icon.png` e `○ /manifest.webmanifest`; sem `/icon.png`) · `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓.
 
+## PWA / WebAPK — suporte completo à instalação (concluída)
+
+### O que foi implementado
+- **Manifesto (`src/app/manifest.ts`)** atualizado com todos os campos obrigatórios para instalabilidade: `name`, `short_name`, `description`, `start_url: '/'`, `scope: '/'`, `display: 'standalone'`, `orientation: 'portrait'`, `background_color: '#2563eb'`, `theme_color: '#1d4ed8'`. Ícones declarados com `purpose: 'any'` (192 e 512) e `purpose: 'maskable'` (512) — atende critérios do WebAPK Android.
+- **Meta tags e Viewport (`src/app/layout.tsx`)**: exportados `viewport` (themeColor, width, initialScale, maximumScale) e `metadata` com `manifest: '/manifest.webmanifest'`, `appleWebApp` (`capable: true`, `statusBarStyle: 'default'`, `title: 'CasaSync'`), `icons.apple: '/apple-icon.png'` — suporte completo a iOS/Safari "Add to Home Screen".
+- **Service Worker (`public/sw.js`)** básico criado e registrado via Client Component (`src/components/pwa/service-worker-registration.tsx`) no `RootLayout`: cache estático dos assets essenciais (`/`, manifesto, ícones), `skipWaiting`/`clients.claim` para atualização ativa, estratégia *cache-first* para navegação e assets estáticos (ignora chamadas de API `/api/`, `/auth/`). Garante o critério "service worker registrado com fetch handler" para instalação WebAPK no Chrome/Edge Android.
+- **Ícones verificados**: `/icons/icon-32.png`, `/icons/icon-192.png`, `/icons/icon-512.png` em `public/icons/` (acessíveis sem redirecionamento); `/apple-icon.png` (180×180) em `src/app/` via file convention.
+
+### Verificação
+`npm run lint` ✓ · `npm run typecheck` ✓ · `npm run build` ✓ (rotas estáticas `○ /apple-icon.png`, `○ /manifest.webmanifest`, `○ /sw.js` servido como arquivo estático).
+
 ## Transições entre rotas mais ágeis (concluída — sem mudança de schema)
 
 ### Diagnóstico (lentidão era acúmulo de round-trips, não um endpoint específico)
