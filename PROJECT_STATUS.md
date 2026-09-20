@@ -727,3 +727,31 @@ Sem saber se o CLD é invocável por modelo (`disable-model-invocation: true`), 
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓.
+
+---
+
+## Notificações Internas Visuais (Toasts) + Tempo Real (concluída)
+
+### O que foi implementado
+- **Toast Provider (`src/app/layout.tsx`)**: instalado e configurado `sonner` com `Toaster` no `RootLayout`. Estilo consistente com o app: fundo branco com blur, bordas arredondadas (`rounded-xl`), sombra, ícones por tipo (success/error/info/warning).
+- **Listener Global em Tempo Real (`src/components/notifications/realtime-toast-listener.tsx`)**: componente client incluído nos layouts do Dashboard (admin e dependent). Escuta `INSERT` na tabela `notifications` filtrando por `recipient_id=eq.{userId}` via `usePostgresChanges`. Ao receber uma nova notificação, dispara automaticamente o Toast correspondente (`toast[style]`) usando o `title` e `body` gravados no banco.
+- **Mapeamento de tipos para estilo visual**: cada `NotificationType` (17 tipos: TASK_CREATED, TASK_APPROVED, REDEMPTION_APPROVED, QUICK_MESSAGE, etc.) mapeia para `success`/`error`/`info`/`warning` com rótulo amigável.
+- **Gatilhos de Toast em Server Actions / Formulários**: adicionado `toast.success`/`toast.error`/`toast.info` nos handlers das principais ações:
+  - **Admin (Tarefas)**: criar, aprovar, desaprovar, concluir+creditar, marcar não entregue, restaurar, resolver adiamento.
+  - **Dependente (Tarefas)**: concluir, pedir adiamento.
+  - **Admin (Recompensas)**: criar, editar, desativar/reativar, aprovar/rejeitar resgate, aprovar/rejeitar sugestão.
+  - **Dependente (Recompensas)**: solicitar resgate, sugerir recompensa.
+  - **Admin (Casas/Dependentes)**: criar casa, entrar por PIN, selecionar casa, editar casa, criar dependente, editar dependente, redefinir senha, alterar pontos.
+- **Painel de Notificações (Sino)**: já existia e permanece funcional — badge de não lidas, lista com marcar/apagar, compositor de mensagem rápida (DEPENDENT). Agora os toasts complementam com feedback instantâneo ao receber notificações em tempo real, sem precisar abrir o sino.
+
+### Arquivos criados/modificados
+- `src/app/layout.tsx` — adicionado `Toaster` do `sonner`.
+- `src/components/notifications/realtime-toast-listener.tsx` — novo componente listener global.
+- `src/app/dashboard/admin/layout.tsx` e `src/app/dashboard/dependent/layout.tsx` — incluído `RealtimeToastListener`.
+- `src/components/tasks/tasks-admin.tsx`, `src/components/tasks/tasks-dependent.tsx` — toasts nas ações.
+- `src/components/rewards/rewards-admin.tsx`, `src/components/rewards/rewards-dependent.tsx` — toasts nas ações.
+- `src/components/houses/houses-manager.tsx` — toasts nas ações de casa/dependente/senha/pontos.
+- `package.json` — dependência `sonner` adicionada.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.

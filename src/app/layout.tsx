@@ -3,6 +3,7 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
+import { Toaster } from "sonner";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -40,6 +41,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
         {children}
         <ServiceWorkerRegistration />
+        <Toaster
+          position="bottom-right"
+          theme="system"
+          toastOptions={{
+            classNames: {
+              toast: 'rounded-xl border bg-white/95 backdrop-blur-sm shadow-lg',
+              description: 'text-sm text-slate-600',
+              actionButton: 'rounded-lg bg-slate-100 hover:bg-slate-200',
+              cancelButton: 'rounded-lg bg-slate-100 hover:bg-slate-200',
+            },
+          }}
+        />
       </body>
     </html>
   );

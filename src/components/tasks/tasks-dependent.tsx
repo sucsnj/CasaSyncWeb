@@ -8,6 +8,7 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -81,8 +82,11 @@ export function TasksDependent({
         const result = await completeTask(task.id)
         if (!result.ok) {
           setError(result.error)
+          toast.error(result.error)
           return
         }
+
+        toast.success('Tarefa concluída! Aguardando aprovação.')
 
         if (task.status !== 'COMPLETED' && task.status !== 'APPROVED') {
           setTasks((prev) =>
@@ -95,7 +99,9 @@ export function TasksDependent({
         }
         router.refresh()
       } catch {
-        setError('Falha de conexão. Tente novamente.')
+        const msg = 'Falha de conexão. Tente novamente.'
+        setError(msg)
+        toast.error(msg)
       }
     })
   }
@@ -111,8 +117,10 @@ export function TasksDependent({
         const result = await requestTaskExtension(task.id, reason)
         if (!result.ok) {
           setExtensionError(result.error)
+          toast.error(result.error)
           return
         }
+        toast.success('Pedido de adiamento enviado!')
         setExtendingTask(null)
         setTasks((prev) =>
           upsertTask(prev, {
@@ -123,7 +131,9 @@ export function TasksDependent({
         )
         router.refresh()
       } catch {
-        setExtensionError('Falha de conexão. Tente novamente.')
+        const msg = 'Falha de conexão. Tente novamente.'
+        setExtensionError(msg)
+        toast.error(msg)
       }
     })
   }

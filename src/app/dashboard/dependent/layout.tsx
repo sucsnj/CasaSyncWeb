@@ -1,6 +1,7 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { getSessionProfile } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -26,6 +27,7 @@ export default async function DependentDashboardLayout({
         notifications={notifications}
         role="DEPENDENT"
       />
+      {user && <RealtimeToastListener userId={user.id} />}
       {children}
     </div>
   )

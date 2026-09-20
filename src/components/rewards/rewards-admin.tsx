@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import { Gift, ClipboardList, Layers, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -167,9 +168,11 @@ export function RewardsAdmin({
 
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success('Recompensa criada!')
       form.reset()
       setShowRewardForm(false)
       setRewardEmoji(null)
@@ -196,9 +199,11 @@ export function RewardsAdmin({
 
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success('Recompensa atualizada!')
       setEditingReward(null)
       setEditImageUrl(null)
       router.refresh()
@@ -211,8 +216,10 @@ export function RewardsAdmin({
       const result = await setRewardActive(reward.id, !reward.active)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
+      toast.success(!reward.active ? 'Recompensa reativada!' : 'Recompensa desativada.')
       const nextActive = !reward.active
       setRewards((prev) =>
         prev.map((item) =>
@@ -231,7 +238,14 @@ export function RewardsAdmin({
 
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
+      }
+
+      if (approve) {
+        toast.success('Resgate aprovado e pontos debitados!')
+      } else {
+        toast.info('Resgate rejeitado.')
       }
 
       const nextStatus = approve ? 'APPROVED' : 'REJECTED'
@@ -250,8 +264,16 @@ export function RewardsAdmin({
       const result = await resolveRewardSuggestion(suggestion.id, approve)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
+
+      if (approve) {
+        toast.success('Sugestão aprovada e recompensa criada!')
+      } else {
+        toast.info('Sugestão rejeitada.')
+      }
+
       const nextStatus = approve ? 'APPROVED' : 'REJECTED'
       setSuggestions((prev) =>
         prev.map((item) =>

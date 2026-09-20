@@ -31,6 +31,7 @@ import { DebouncedField } from './debounced-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import {
   ChevronDown,
   CircleCheckBig,
@@ -134,9 +135,11 @@ export function TasksAdmin({
 
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success(result.message ?? 'Tarefa criada')
       setFormError(null)
       setDueDate(nowDateTimeLocalValue())
       form.reset()
@@ -151,9 +154,11 @@ export function TasksAdmin({
       const result = await approveTask(task.id)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success(result.message ?? 'Tarefa aprovada')
       // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'APPROVED' })
@@ -168,9 +173,11 @@ export function TasksAdmin({
       const result = await rejectCompletedTask(task.id)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success(result.message ?? 'Tarefa devolvida')
       // Otimista: devolve o card à lista de pendentes na hora.
       setTasks((prev) =>
         upsertTask(prev, {
@@ -190,9 +197,11 @@ export function TasksAdmin({
       const result = await adminCompleteTask(task.id)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success(result.message ?? 'Tarefa concluída e creditada')
       // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'APPROVED' })
@@ -207,9 +216,11 @@ export function TasksAdmin({
       const result = await markTaskNotDelivered(task.id)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.warning(result.message ?? 'Tarefa marcada como não entregue')
       // Otimista: o card passa a exibir o estado "não entregue" na hora.
       setTasks((prev) =>
         upsertTask(prev, { ...task, status: 'NOT_DELIVERED' })
@@ -224,9 +235,11 @@ export function TasksAdmin({
       const result = await restoreTask(task.id)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success(result.message ?? 'Tarefa restaurada')
       // Otimista: volta para Pendentes com o prazo reiniciado (+1 dia). Os
       // pontos já creditados são mantidos e a tarefa reaparece para o dependente.
       const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
@@ -251,7 +264,14 @@ export function TasksAdmin({
       const result = await resolveTaskExtension(task.id, approve, days)
       if (!result.ok) {
         setFormError(result.error)
+        toast.error(result.error)
         return
+      }
+
+      if (approve) {
+        toast.success(result.message ?? `Adiamento aprovado (+${days} dias)`)
+      } else {
+        toast.info('Pedido de adiamento rejeitado')
       }
 
       // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar também

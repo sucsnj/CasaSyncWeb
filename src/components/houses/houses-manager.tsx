@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import {
   createDependent,
   createHouse,
@@ -90,8 +91,10 @@ export function HousesManager({
       const result = await createHouse(houseName)
       if (!result.ok) {
         setError(result.error)
+        toast.error(result.error)
         return
       }
+      toast.success('Casa criada!')
       setHouseName('')
       setShowHouseForm(false)
       router.refresh()
@@ -109,8 +112,10 @@ export function HousesManager({
       )
       if (!result.ok) {
         setError(result.error)
+        toast.error(result.error)
         return
       }
+      toast.success(result.message ?? 'Casa vinculada!')
       setShowHouseForm(false)
       router.refresh()
     })
@@ -145,9 +150,11 @@ export function HousesManager({
 
       if (!result.ok) {
         setDepError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success('Dependente criado!')
       form.reset()
       setShowDependentForm(false)
       router.refresh()
@@ -159,7 +166,12 @@ export function HousesManager({
   function handleSelect(houseId: string) {
     startTransition(async () => {
       const result = await selectHouse(houseId)
-      if (!result.ok) setError(result.error)
+      if (!result.ok) {
+        setError(result.error)
+        toast.error(result.error)
+      } else {
+        toast.success('Casa ativa alterada!')
+      }
       router.refresh()
     })
   }
@@ -178,8 +190,10 @@ export function HousesManager({
       })
       if (!result.ok) {
         setError(result.error)
+        toast.error(result.error)
         return
       }
+      toast.success('Casa atualizada!')
       setEditingHouse(null)
       setHouseImageUrl(null)
       router.refresh()
@@ -201,8 +215,10 @@ export function HousesManager({
       })
       if (!result.ok) {
         setDepError(result.error)
+        toast.error(result.error)
         return
       }
+      toast.success('Dependente atualizado!')
       setEditingDependent(null)
       setDependentAvatarUrl(null)
       router.refresh()
@@ -228,9 +244,11 @@ export function HousesManager({
 
       if (!result.ok) {
         setPasswordError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success('Senha redefinida!')
       form.reset()
       setPasswordSuccess(result.message ?? 'Senha atualizada.')
     } finally {
@@ -259,9 +277,11 @@ export function HousesManager({
 
       if (!result.ok) {
         setPointsError(result.error)
+        toast.error(result.error)
         return
       }
 
+      toast.success('Pontos atualizados!')
       form.reset()
       setPointsSuccess(result.message ?? 'Pontos atualizados.')
       router.refresh()

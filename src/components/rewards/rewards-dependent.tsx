@@ -11,6 +11,7 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -153,14 +154,18 @@ export function RewardsDependent({
         })
         if (!result.ok) {
           setError(result.error)
+          toast.error(result.error)
           return
         }
+        toast.success('Sugestão enviada para aprovação!')
         form.reset()
         setShowSuggestionModal(false)
         setSuggestionImageUrl(null)
         router.refresh()
       } catch {
-        setError('Falha de conexão. Tente novamente.')
+        const msg = 'Falha de conexão. Tente novamente.'
+        setError(msg)
+        toast.error(msg)
       }
     })()
   }
@@ -174,12 +179,16 @@ export function RewardsDependent({
         const result = await requestRedemption(reward.id)
         if (!result.ok) {
           setError(result.error)
+          toast.error(result.error)
           return
         }
+        toast.success('Resgate solicitado! Aguardando aprovação.')
         // O INSERT chega também via Realtime; refresh é a rede de segurança.
         router.refresh()
       } catch {
-        setError('Falha de conexão. Tente novamente.')
+        const msg = 'Falha de conexão. Tente novamente.'
+        setError(msg)
+        toast.error(msg)
       } finally {
         setPendingId(null)
       }

@@ -1,6 +1,7 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { getSessionProfile } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 
 const adminItems: NavItem[] = [
   { href: '/dashboard/admin', label: 'Visão geral' },
@@ -26,6 +27,7 @@ export default async function AdminDashboardLayout({
         notifications={notifications}
         role="ADMIN"
       />
+      {user && <RealtimeToastListener userId={user.id} />}
       {children}
     </div>
   )
