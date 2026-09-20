@@ -12,9 +12,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public assets (svg, png, jpg, jpeg, gif, webp)
+     * - public assets (svg, png, jpg, jpeg, gif, webp, js, json, webmanifest)
+     *   — inclui /sw.js e /manifest.webmanifest (PWA) que precisam chegar
+     *     íntegros à engine de instalação mesmo sem sessão.
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|json|webmanifest)$).*)',
   ],
 }

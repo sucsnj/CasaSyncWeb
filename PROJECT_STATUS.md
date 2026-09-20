@@ -4,6 +4,25 @@
 
 ---
 
+## Instalação PWA falhava em navegadores móveis Chromium (corrigido — proxy libera assets do PWA)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** o PWA instalava no Edge desktop e no Firefox mobile, mas **não** no Edge/Chrome mobile (sem a opção "Instalar app", só "Adicionar à tela inicial" = atalho).
+- **Causa raiz (medido em produção, sem sessão):** o proxy redirecionava para `/login` — além de `/` — também `/manifest.webmanifest` e `/sw.js` (ambos **307**). O matcher de `src/proxy.ts` excluía do proxy apenas `_next/static`, `_next/image`, `favicon.ico` e imagens (`svg|png|jpg|jpeg|gif|webp`) — **não excluía `.js`/`.json`/`.webmanifest`**, e esses paths também não estavam em `PUBLIC_PATHS` do middleware. Efeito: na primeira visita (deslogada) o navegador baixava "HTML de login" onde esperava o JSON do manifest e o JS do service worker → **manifest inválido + SW não registra → a engine de instalação do Chromium (que exige manifest + SW) falhava** no celular. Firefox mobile instala porque é mais permissivo (não exige nem o SW); Edge desktop "funcionava" porque a verificação ocorria numa sessão já autenticada (o proxy deixa passar autenticado).
+- **Fix (`src/proxy.ts`):** ampliado o matcher para também excluir `js|json|webmanifest` — `/sw.js` e `/manifest.webmanifest` agora são servidos como assets públicos, íntegros, independente de sessão (os ícones já passavam por serem `png`). Sem mudança de schema.
+
+### Arquivos alterados
+- `src/proxy.ts` — matcher exclui `.*\.(?:svg|png|jpg|jpeg|gif|webp|js|json|webmanifest)$`.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (`ƒ Proxy` ativo, rotas `○ /manifest.webmanifest` e assets estáticos inalterados).
+
+### Pontos de atenção
+- **Requer deploy:** a correção só vale online após subir para a Vercel; testar a instalação no Edge/Chrome do celular na URL de produção (a primeira visita pode abrir em `/login` — é o cenário que o fix cobre).
+- Persiste como melhoria (não bloqueia) o `icon-512-maskable.png` ser byte-idêntico ao `icon-512.png` (sem margem segura — renderização do ícone na home screen pode sofrer crop).
+
+---
+
 ## Auditoria do sistema de notificações — inconsistências corrigidas (sem mudança de schema)
 
 ### O que foi encontrado e corrigido
