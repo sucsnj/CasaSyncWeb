@@ -4,6 +4,25 @@
 
 ---
 
+## Push no Android não chegava — subscription nunca era registrada (corrigido, sem mudança de schema)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** notificações push não chegavam no Android mesmo com a permissão concedida ao app.
+- **Causa raiz:** `registerPushSubscription` (`src/actions/push.ts`) usava `upsert({...}, { onConflict: 'user_id,endpoint' })`, mas a tabela `push_subscriptions` **não tem constraint única em `(user_id, endpoint)`** no schema aplicado (`docs/sql/push_subscriptions.sql` só cria índices, não unique). Sem a constraint, o Postgres rejeita o `ON CONFLICT (user_id, endpoint)` ("no unique or exclusion constraint matching") e a subscription **nunca era gravada** — o push era "enviado" mas não havia destinatário registrado. Como o registro é best-effort (só um `console.warn` no hook), o problema passava em silêncio e afetava qualquer dispositivo, não só o Android.
+- **Fix:** trocado o `upsert` por **delete + insert** (remove qualquer linha antiga do mesmo endpoint antes de gravar a nova) — não depende mais de constraint única, funciona no schema atual. O erro real do insert agora é logado (`console.error`) em vez de engolir.
+
+### Arquivos alterados
+- `src/actions/push.ts` — `registerPushSubscription` sem `onConflict`; delete por `user_id`+`endpoint` antes do insert.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Pontos de atenção
+- **Requer deploy** para a correção valer online; após subir, refazer a subscription no dispositivo (o hook re-registra ao abrir o app com permissão `granted`; em testes, revogar/recarregar ajuda).
+- Opcional (higiene): adicionar `create unique index if not exists push_subscriptions_user_endpoint_key on public.push_subscriptions (user_id, endpoint);` — não é exigido pelo código novo, apenas evita duplicidade.
+
+---
+
 ## Instalação PWA falhava em navegadores móveis Chromium (corrigido — proxy libera assets do PWA)
 
 ### O que foi encontrado e corrigido

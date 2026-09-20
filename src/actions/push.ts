@@ -30,8 +30,9 @@ function getPushTable(admin: ReturnType<typeof createAdminClient>) {
 }
 
 /**
- * Registra (upsert) a push subscription do usuário autenticado.
- * Chave: endpoint único por usuário/dispositivo.
+ * Registra a push subscription do usuário autenticado.
+ * A linha antiga do mesmo endpoint é removida antes do insert (não depende de
+ * constraint única em `(user_id, endpoint)`).
  */
 export async function registerPushSubscription(
   endpoint: string,
@@ -61,20 +62,29 @@ export async function registerPushSubscription(
     return { ok: false, error: 'Configuração do servidor indisponível.' }
   }
 
-  const { error } = await getPushTable(admin)
-    .upsert(
-      {
-        user_id: user.id,
-        house_id: house.id,
-        endpoint,
-        p256dh,
-        auth,
-        user_agent: userAgent ?? null,
-      },
-      { onConflict: 'user_id,endpoint' }
-    )
+  // Remove qualquer subscription antiga deste endpoint antes de gravar a nova.
+  // Evita depender de constraint única em `push_subscriptions` (o upsert com
+  // onConflict: 'user_id,endpoint' falhava porque o schema não tem essa
+  // constraint — sem ela o Postgres rejeita o ON CONFLICT e a subscription
+  // nunca era registrada, matando o push silenciosamente).
+  await getPushTable(admin)
+    .delete()
+    .eq('user_id', user.id)
+    .eq('endpoint', endpoint)
 
-  if (error) return { ok: false, error: 'Falha ao registrar subscription.' }
+  const { error } = await getPushTable(admin).insert({
+    user_id: user.id,
+    house_id: house.id,
+    endpoint,
+    p256dh,
+    auth,
+    user_agent: userAgent ?? null,
+  })
+
+  if (error) {
+    console.error('Push subscription register error:', error)
+    return { ok: false, error: 'Falha ao registrar subscription.' }
+  }
 
   return { ok: true }
 }
