@@ -4,6 +4,27 @@
 
 ---
 
+## Auditoria do sistema de notificações — inconsistências corrigidas (sem mudança de schema)
+
+### O que foi encontrado e corrigido
+- **Mensagem rápida não disparava Web Push:** `sendQuickMessage` inseria as cópias em `notifications` mas não avisava os ADMINs quando o app estava fechado (todos os outros 16 tipos passavam pelo push via `notifyUser`/`notifyHouse`). Agora, após o insert, envia push aos ADMINs da casa (**best-effort**, quem agiu excluído) com `tag: casasync-quick_message` e `url: '/'`.
+- **Push de `notifyHouse` ignorava `excludeUserId`:** o banco excluía o ator dos inserts, mas `sendPushToHouseAdmins`/`sendPushToHouseDependents` enviavam a **todos** os membros do lado. As duas actions de push ganharam o parâmetro opcional `excludeUserId?` e `notifyHouse` repassa o ator — alinhado ao comentário "Quem agiu é sempre excluído".
+- **Capacidade de mensagem rápida fora da documentação:** o guard era `accumulated >= QUICK_MESSAGE_CAPACITY + 1` (bloqueava só na 3ª, permitindo 3 acumuladas), enquanto a regra documentada é **no máx. 2**. Corrigido para `>= QUICK_MESSAGE_CAPACITY` (bloqueia a partir da 2ª acumulada — 0 ou 1 pendentes permitem enviar).
+- **Validação de imagem de mensagem rápida fraca no servidor:** só conferia o prefixo do bucket; aceitava qualquer URL pública de `casasync-media` (ex.: avatares/houses). Agora exige a pasta **`messages/`** na URL (a compositor faz `uploadMedia('messages', ...)`), alinhado à defesa documentada.
+
+### Documentação sincronizada
+- `AGENTS.md`, `PROJECT_STATUS.md` (seção "Mensagem rápida…") e `.opencode/command/context.md` divergiam do código em pontos da mensagem rápida: diziam `≤ 50` caracteres (o código é `≤ 100` — `QUICK_MESSAGE_MAX_CHARS`) e "não tiver mais de 2" acumuladas (a regra efetiva é "menos de 2"). Atualizados junto com a menção ao push.
+
+### Arquivos alterados
+- `src/actions/notifications.ts` — import de `sendPushToHouseAdmins`, guard de capacidade, validação da pasta `messages/` e push pós-insert.
+- `src/actions/push.ts` — `excludeUserId?` em `sendPushToHouseAdmins`/`sendPushToHouseDependents`.
+- `src/utils/notifications.ts` — `notifyHouse` repassa `excludeUserId` ao push.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+---
+
 ## App preso na raiz `https://casa-sync-web.vercel.app/` em alguns navegadores (corrigido — SW `public/sw.js`)
 
 ### Causa raiz
@@ -130,7 +151,7 @@ where t.id = b.id;
 
 ### O que foi implementado
 - **Compositor no sino do DEPENDENT** (`src/components/notifications/quick-message-composer.tsx`, renderizado em `notifications-bell.tsx` quando `canSend`): **colapsável** — o cabeçalho (ícone violeta + "Mensagem rápida" + chevron girando) abre/fecha o compositor, que **inicia recolhido** (`open` default `false`). Texto **opcional** de até **100 caracteres** (contador) + **1 imagem** por mensagem (até **5 MB**, só `image/*`), escolhida da **Galeria** (input `accept="image/*"`) ou da **Câmera** — câmera **ao vivo real** em qualquer dispositivo via `getUserMedia` (`facingMode: 'environment'`, fallback para a webcam e para o seletor de arquivos quando a câmera está indisponível); preview com remover; upload via `uploadMedia('messages', user.id)` (nova pasta `messages` em `casasync-media`).
-- **Server Action `sendQuickMessage(text, imageUrl?)`** (`src/actions/notifications.ts`): só **DEPENDENT** (papel derivado da sessão); valida `≤ 50` caracteres, exige texto OU imagem, e que a imagem seja URL pública do bucket (defesa server-side); checa **capacidade** — o dependente envia apenas se não tiver **mais de 2 mensagens próprias acumuladas** (lidas ou não); insere **1 cópia por ADMIN da casa** (mesmo `message_id`, título "Mensagem de {nome}", `image_url`) **+ 1 cópia para o próprio dependente** como **comprovante já lido** (título "Mensagem enviada", `read_at` preenchido — chega no sino dele como notificação **simples, sem possibilidade de edição**; não conta como não-lida nem para a retenção). Realtime entrega aos sinos dos ADMINs (e ao do próprio dependente).
+- **Server Action `sendQuickMessage(text, imageUrl?)`** (`src/actions/notifications.ts`): só **DEPENDENT** (papel derivado da sessão); valida `≤ 100` caracteres, exige texto OU imagem, e que a imagem seja URL pública do bucket na pasta **`messages/`** (defesa server-side); checa **capacidade** — o dependente envia apenas enquanto tiver **menos de 2 mensagens próprias acumuladas** (lidas ou não; `QUICK_MESSAGE_CAPACITY=2`, guard `>= CAPACITY`); insere **1 cópia por ADMIN da casa** (mesmo `message_id`, título "Mensagem de {nome}", `image_url`) **+ 1 cópia para o próprio dependente** como **comprovante já lido** (título "Mensagem enviada", `read_at` preenchido — chega no sino dele como notificação **simples, sem possibilidade de edição**; não conta como não-lida nem para a retenção) e, ao final, **envia push aos ADMINs da casa** (best-effort, quem agiu excluído). Realtime entrega aos sinos dos ADMINs (e ao do próprio dependente).
 - **Visualização com leitura automática:** o card da `QUICK_MESSAGE` é **colapsável** — tocar no cabeçalho expande (texto completo + imagem em tamanho real, chevron girando) e **marca como lida imediatamente**; **todos iniciam recolhidos** por padrão (`expandedQuickIds: Set<string>`); na lista o card recolhido mostra o texto e um thumbnail quando há imagem.
 - **Retenção ("2 lidas → apaga a mais antiga"):** `cleanupQuickMessages` em `src/utils/notifications.ts`, disparado em `markNotificationRead` e `markAllNotificationsRead`. A mensagem é considerada **lida** quando **qualquer cópia de destinatário** (ex.: qualquer ADMIN) foi aberta — **a cópia do próprio remetente é ignorada na contagem** (é só comprovante); ao atingir **2 lidas**, apaga o grupo mais antigo (todas as cópias pelo `message_id`, incluindo a do dependente, + remoção da imagem no storage, best-effort). Conta **MENSAGENS distintas**, não cópias por destinatário (casa com 2 ADMINS = 1 mensagem).
 - **Notificações comuns** (`tasks`/`rewards`/`sugestões`) ganharam passthrough de `image_url`/`message_id` em `notifyUser`/`notifyHouse` (sem uso atual) — o campo existe no banco e fica disponível para eventos futuros com imagem.

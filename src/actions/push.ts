@@ -190,11 +190,13 @@ export async function sendPushToUser(
 }
 
 /**
- * Envia push notification para TODOS os ADMINs de uma casa.
+ * Envia push notification para TODOS os ADMINs de uma casa, opcionalmente
+ * excluindo quem agiu (mesma semântica de `notifyHouse` no banco).
  */
 export async function sendPushToHouseAdmins(
   houseId: string,
-  payload: Parameters<typeof sendPushToUser>[1]
+  payload: Parameters<typeof sendPushToUser>[1],
+  excludeUserId?: string
 ): Promise<{ sent: number; failed: number }> {
   let admin: ReturnType<typeof createAdminClient>
   try {
@@ -220,6 +222,7 @@ export async function sendPushToHouseAdmins(
   let totalFailed = 0
 
   for (const member of adminMembers) {
+    if (member.profile_id === excludeUserId) continue
     const result = await sendPushToUser(member.profile_id, payload)
     totalSent += result.sent
     totalFailed += result.failed
@@ -229,11 +232,13 @@ export async function sendPushToHouseAdmins(
 }
 
 /**
- * Envia push notification para TODOS os DEPENDENTES de uma casa.
+ * Envia push notification para TODOS os DEPENDENTES de uma casa, opcionalmente
+ * excluindo quem agiu.
  */
 export async function sendPushToHouseDependents(
   houseId: string,
-  payload: Parameters<typeof sendPushToUser>[1]
+  payload: Parameters<typeof sendPushToUser>[1],
+  excludeUserId?: string
 ): Promise<{ sent: number; failed: number }> {
   let admin: ReturnType<typeof createAdminClient>
   try {
@@ -258,6 +263,7 @@ export async function sendPushToHouseDependents(
   let totalFailed = 0
 
   for (const member of dependentMembers) {
+    if (member.profile_id === excludeUserId) continue
     const result = await sendPushToUser(member.profile_id, payload)
     totalSent += result.sent
     totalFailed += result.failed

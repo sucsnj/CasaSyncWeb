@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
+import { sendPushToHouseAdmins } from '@/actions/push'
 import { MEDIA_BUCKET } from '@/utils/media'
 import {
   cleanupQuickMessages,
@@ -148,9 +149,10 @@ export async function purgeReadNotifications(): Promise<ActionResult> {
  *
  * Regras de negócio:
  * - Apenas DEPENDENT envia (papel derivado da sessão, nunca do cliente).
- * - O dependente só envia se não tiver mais de 2 mensagens próprias
- *   acumuladas (lidas ou não) na casa.
- * - A imagem precisa ser uma URL pública do bucket (defesa de servidor).
+ * - O dependente envia apenas enquanto tiver menos de 2 mensagens próprias
+ *   acumuladas (lidas ou não) na casa — a 3ª é bloqueada.
+ * - A imagem precisa ser uma URL pública do bucket na pasta `messages`
+ *   (defesa de servidor).
  */
 export async function sendQuickMessage(
   text: string,
@@ -176,7 +178,9 @@ export async function sendQuickMessage(
   }
   if (
     imageUrl &&
-    !imageUrl.includes(`/storage/v1/object/public/${MEDIA_BUCKET}/`)
+    !imageUrl.includes(
+      `/storage/v1/object/public/${MEDIA_BUCKET}/messages/`
+    )
   ) {
     return { ok: false, error: 'Imagem inválida.' }
   }
@@ -200,7 +204,7 @@ export async function sendQuickMessage(
       .filter((id): id is string => !!id)
   ).size
 
-  if (accumulated >= QUICK_MESSAGE_CAPACITY + 1) {
+  if (accumulated >= QUICK_MESSAGE_CAPACITY) {
     return {
       ok: false,
       error: `Você já tem ${accumulated} mensagens acumuladas. Espere os tutores lerem as anteriores.`,
@@ -262,6 +266,26 @@ export async function sendQuickMessage(
   const { error } = await admin.from('notifications').insert(copies)
 
   if (error) return { ok: false, error: 'Falha ao enviar a mensagem.' }
+
+  // Push para os ADMINs da casa (best-effort, não bloqueia o envio) — mesmas
+  // regras de `notifyHouse`: só quem não agiu recebe.
+  try {
+    await sendPushToHouseAdmins(
+      house.id,
+      {
+        title: senderName ? `Mensagem de ${senderName}` : 'Nova mensagem rápida',
+        body: body || 'Enviou uma imagem.',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: `casasync-quick_message`,
+        data: { url: '/', notifType: 'QUICK_MESSAGE' },
+        actions: [],
+      },
+      user.id
+    )
+  } catch {
+    // Ignorado de propósito (push falha não deve derrubar o envio).
+  }
 
   return { ok: true }
 }

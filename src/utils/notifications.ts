@@ -144,25 +144,33 @@ export async function notifyHouse(
   // Envia push notifications (não bloqueia, best-effort)
   try {
     if (input.side === 'ADMINS') {
-      await sendPushToHouseAdmins(input.houseId, {
-        title: input.title,
-        body: input.body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: `casasync-${input.type.toLowerCase()}`,
-        data: { url: input.link ?? '/', notifType: input.type, ...input },
-        actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
-      })
+      await sendPushToHouseAdmins(
+        input.houseId,
+        {
+          title: input.title,
+          body: input.body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          tag: `casasync-${input.type.toLowerCase()}`,
+          data: { url: input.link ?? '/', notifType: input.type, ...input },
+          actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+        },
+        input.excludeUserId
+      )
     } else {
-      await sendPushToHouseDependents(input.houseId, {
-        title: input.title,
-        body: input.body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: `casasync-${input.type.toLowerCase()}`,
-        data: { url: input.link ?? '/', notifType: input.type, ...input },
-        actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
-      })
+      await sendPushToHouseDependents(
+        input.houseId,
+        {
+          title: input.title,
+          body: input.body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          tag: `casasync-${input.type.toLowerCase()}`,
+          data: { url: input.link ?? '/', notifType: input.type, ...input },
+          actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+        },
+        input.excludeUserId
+      )
     }
   } catch {
     // Ignorado (push falha não deve derrubar a ação)
