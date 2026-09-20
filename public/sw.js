@@ -1,7 +1,8 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-const CACHE_NAME = 'casasync-v1';
+const CACHE_NAME = 'casasync-v2';
+// Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
+// é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
 const STATIC_ASSETS = [
-  '/',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -32,6 +33,13 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-GET requests and non-same-origin requests
   if (request.method !== 'GET' || url.origin !== location.origin) {
+    return;
+  }
+
+  // Navegação de página NUNCA vem do cache-first: o app é dinâmico e o proxy
+  // do servidor decide o redirect por sessão/role. Servir HTML em cache
+  // impedia o redirect e prendia o usuário na página inicial.
+  if (request.mode === 'navigate' || request.destination === 'document') {
     return;
   }
 

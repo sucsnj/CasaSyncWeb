@@ -2,6 +2,29 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+---
+
+## App preso na raiz `https://casa-sync-web.vercel.app/` em alguns navegadores (corrigido — SW `public/sw.js`)
+
+### Causa raiz
+- **O service worker era cache-first para TODA requisição GET**, incluindo **navegação** (`mode: 'navigate'`), e ainda **pré-cacheiava `/` no `install`** (`cache.addAll(['/', ...])`). Quando `/` era prerenderizada como estática (antes do `force-dynamic`), o SW gravou o HTML antigo da raiz no cache (`casasync-v1`).
+- Efeito: ao abrir `https://casa-sync-web.vercel.app/`, a navegação era respondida **pelo cache local sem chegar ao servidor** — o proxy (que decide o redirect por sessão/role) **nunca rodava**, então o app ficava preso na home e só saía com troca manual de URL. **Só "alguns navegadores"** (os que instalaram o SW com a raiz estática) sofriam; como o `CACHE_NAME` nunca mudava, o browser não reinstalava o SW e o cache velho persistia para sempre.
+- Bônus: `cache.addAll(['/'])` também quebrava o `install` (rejeição em respostas não-2xx — hoje `/` é dinâmica e devolve 307), o que impedia o SW de ativar de forma confiável nos navegadores novos.
+
+### O que foi feito (`public/sw.js`)
+- **Navegação sai do cache-first:** no handler `fetch`, requisições com `request.mode === 'navigate'` **ou** `request.destination === 'document'` retornam sem `respondWith` → sempre vão à rede, o proxy roda e o redirect por sessão/role acontece. Cache-first ficou restrito a assets (manifest/ícones/etc.).
+- **`/` removido do `STATIC_ASSETS` do `install`:** a raiz é 100% dinâmica, não é asset estático — evita o redirecionamento/307 e a gravação de HTML da home no cache.
+- **`CACHE_NAME` → `casasync-v2`:** a mudança de bytes do `sw.js` + bump de versão forçam reinstalação nos browsers afetados; o `activate` apaga o cache `casasync-v1` com o HTML velho preso.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 workers, `ƒ /` dinâmica, `ƒ Proxy (Middleware)` ativo).
+
+### Pontos de atenção / próximos passos
+- Usuários com o SW antigo preso podem precisar de uma recarga extra (ou uma recarga com o DevTools aberto) enquanto o `sw.js` novo não chega — o deploy do novo arquivo dispara o update automaticamente.
+- O cache-first mantido ainda grava respostas 200 de qualquer GET same-origin (ex.: payloads RSC) — se aparecerem problemas de staleness pós-deploy, a evolução é restringir o cache-first a somente `STATIC_ASSETS` explícitos.
+
+---
+
 ## Ícone do app — otimizado, sem master no repo (Frontend, sem mudança de schema)
 
 ### O que foi feito
