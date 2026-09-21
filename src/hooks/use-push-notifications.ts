@@ -36,14 +36,10 @@ export function usePushNotifications(userId: string | undefined) {
       }
     }
 
-    // Pede permissão e subscreve se concedida
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().then((permission) => {
-        if (permission === 'granted') {
-          setupPush()
-        }
-      })
-    } else if (Notification.permission === 'granted') {
+    // Só subscreve se a permissão JÁ está concedida. O pedido de permissão
+    // acontece no botão do PushPermissionPrompt (gesto real do usuário) —
+    // no Android, requestPermission() fora de gesto é auto-negado em silêncio.
+    if (Notification.permission === 'granted') {
       setupPush()
     }
 
@@ -51,6 +47,40 @@ export function usePushNotifications(userId: string | undefined) {
       mounted = false
     }
   }, [userId])
+
+  // Pede permissão (exige gesto) e subscreve/registra assim que concedida.
+  // Chamado pelo botão "Ativar" do PushPermissionPrompt.
+  async function enablePush(): Promise<boolean> {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return false
+
+    try {
+      if (Notification.permission !== 'granted') {
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') return false
+      }
+
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await subscribeToPush(registration)
+
+      if (!subscription) return false
+
+      const subJson = subscriptionToJSON(subscription)
+      const result = await registerPushSubscription(
+        subJson.endpoint,
+        subJson.keys.p256dh,
+        subJson.keys.auth,
+        navigator.userAgent
+      )
+      if (!result.ok) {
+        console.warn('Failed to register push subscription:', result.error)
+        return false
+      }
+      return true
+    } catch (err) {
+      console.error('Enable push error:', err)
+      return false
+    }
+  }
 
   // Função para o usuário desativar push manualmente (ex: nas configurações)
   async function disablePush() {
@@ -68,5 +98,5 @@ export function usePushNotifications(userId: string | undefined) {
     }
   }
 
-  return { disablePush }
+  return { enablePush, disablePush }
 }

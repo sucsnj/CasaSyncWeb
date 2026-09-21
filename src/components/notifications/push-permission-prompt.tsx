@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 
 export function PushPermissionPrompt({ userId }: { userId: string | undefined }) {
   const [dismissed, setDismissed] = useState(false)
-  usePushNotifications(userId)
+  const [activating, setActivating] = useState(false)
+  const { enablePush } = usePushNotifications(userId)
 
   if (dismissed || !userId || typeof window === 'undefined') return null
 
@@ -46,15 +47,18 @@ export function PushPermissionPrompt({ userId }: { userId: string | undefined })
           </Button>
           <Button
             className="flex-1 bg-blue-600 hover:bg-blue-700"
+            disabled={activating}
             onClick={async () => {
-              const permission = await Notification.requestPermission()
-              if (permission === 'granted') {
+              setActivating(true)
+              const ok = await enablePush()
+              setActivating(false)
+              if (ok) {
                 setDismissed(true)
               }
             }}
           >
             <Check className="size-3.5 mr-1.5" />
-            Ativar
+            {activating ? 'Ativando...' : 'Ativar'}
           </Button>
         </div>
       </div>

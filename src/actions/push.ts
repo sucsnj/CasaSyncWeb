@@ -168,6 +168,9 @@ export async function sendPushToUser(
   const subs = (subscriptions ?? []) as PushSubscriptionRow[]
 
   if (!subs.length) {
+    console.warn(
+      `[push] sendPushToUser: nenhuma subscription registrada para o usuário ${targetUserId}`
+    )
     return { sent: 0, failed: 0 }
   }
 

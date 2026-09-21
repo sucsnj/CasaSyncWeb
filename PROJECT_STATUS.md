@@ -4,6 +4,27 @@
 
 ---
 
+## Push real não chegava no Android — permissão pedida fora de gesto (corrigido)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** o push de teste do DevTools chegava no Android, mas o push real do servidor (gerado pelo app no navegador/PWA) nunca chegava — só a notificação interna (sino/toast via Realtime). No desktop funcionava.
+- **Causa raiz:** no Android, `Notification.requestPermission()` chamado **fora de um gesto do usuário** (no mount, em `usePushNotifications`) é **auto-negado em silêncio**. Aí o `PushPermissionPrompt` escondia (`permission !== 'default'` → `null`), nunca mais dava chance de ativar, e a **subscription nunca era criada** — logo o servidor não tinha destinatário. No desktop o Chrome permite o pedido fora de gesto, por isso funcionava. O teste do DevTools não prova delivery real (atira direto no SW, sem passar por FCM/subscription).
+- **Fix:** o pedido de permissão saiu do mount e virou **`enablePush()`** (`src/hooks/use-push-notifications.ts`), chamado no clique do botão "Ativar" do `PushPermissionPrompt` (gesto real do usuário); após `granted`, cria a subscription e a registra ali mesmo, e só então fecha o modal. No mount, o setup roda apenas se a permissão **já** estava `granted`.
+- **Diagnóstico:** `sendPushToUser` agora loga `[push] ... nenhuma subscription registrada para o usuário <id>` quando não há destinatário — o caso que antes sumia em silêncio.
+
+### Arquivos alterados
+- `src/hooks/use-push-notifications.ts` — sem `requestPermission` no mount; novo `enablePush()` (pede + assina + registra).
+- `src/components/notifications/push-permission-prompt.tsx` — botão chama `enablePush()` com estado "Ativando...".
+- `src/actions/push.ts` — warn quando um usuário alvo não tem subscription.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Pontos de atenção
+- **Requer deploy.** Depois de subir, no Android que já tinha sido "negado" pelo comportamento antigo: limpar os dados/permissão do site (em Configurações do site do navegador ou `chrome://settings/content/notifications`), reabrir o app e tocar "Ativar" no prompt.
+
+---
+
 ## Handler de push do SW deixava de exibir notificação com payload não-JSON (corrigido)
 
 ### O que foi encontrado e corrigido
