@@ -2,6 +2,15 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Fila de resgates do ADMIN atualizada via notificação Realtime (concluída)
+
+- A página `/rewards` passou a assinar `REDEMPTION_REQUESTED` para o ADMIN e chamar `router.refresh()` quando a notificação chega.
+- A chave do `RewardsAdmin` inclui os ids/status dos resgates recebidos pelo servidor, garantindo remontagem do Client Component após o refresh e evitando preservar a lista inicial em estado React.
+- A assinatura direta de `reward_redemptions` foi preservada; a notificação funciona como fallback quando a publicação ou RLS dessa tabela não entrega o `INSERT` diretamente ao navegador.
+
+### Verificação
+`npm run lint` (somente warnings esperados de `<img>`) ✓ · `npm run typecheck` ✓ · `npm run build` ✓.
+
 ---
 
 ## Backend de push centralizado — validação de VAPID + envio multi-dispositivo (concluído, sem mudança de schema)

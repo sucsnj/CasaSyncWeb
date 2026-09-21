@@ -132,8 +132,11 @@ export default async function RewardsPage() {
 
       content = (
         <RewardsAdmin
-          key={activeHouse.id}
+          key={`${activeHouse.id}:${(redemptions ?? [])
+            .map((redemption) => `${redemption.id}-${redemption.status}`)
+            .join(',')}`}
           houseId={activeHouse.id}
+          userId={user.id}
           initialRewards={rewards ?? []}
           initialRedemptions={redemptionViews}
           initialSuggestions={suggestionViews}

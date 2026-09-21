@@ -11,6 +11,7 @@ import {
   updateReward,
 } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import type { NotificationRow } from '@/types/notifications'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
@@ -56,12 +57,14 @@ type SuggestionView = {
 
 export function RewardsAdmin({
   houseId,
+  userId,
   initialRewards,
   initialRedemptions,
   initialSuggestions,
   dependents,
 }: {
   houseId: string
+  userId: string
   initialRewards: Reward[]
   initialRedemptions: RedemptionView[]
   initialSuggestions: SuggestionView[]
@@ -114,6 +117,20 @@ export function RewardsAdmin({
           ? prev.map((item) => (item.id === row.id ? view : item))
           : [view, ...prev]
       }),
+  })
+
+  // O INSERT do resgate já dispara uma notificação aos ADMINs. Usamos esse
+  // canal como fallback para atualizar a página quando a publicação/RLS de
+  // reward_redemptions não entregar o evento diretamente.
+  usePostgresChanges<NotificationRow>({
+    table: 'notifications',
+    filter: `recipient_id=eq.${userId}`,
+    event: 'INSERT',
+    onUpsert: (notification) => {
+      if (notification.type === 'REDEMPTION_REQUESTED') {
+        router.refresh()
+      }
+    },
   })
 
   usePostgresChanges<Reward>({
