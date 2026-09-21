@@ -20,6 +20,9 @@
 ### Pontos de atenção
 - **Requer deploy** para valer na Vercel. Depois de subir, reproduzir um dos 4 fluxos (criar tarefa, concluir tarefa, solicitar ou aprovar/rejeitar resgate) e conferir no runtime os logs `[PUSH] …→ push disparado …` seguidos de `[PUSH SUCCESS]`/`[PUSH ERROR]` do serviço (validação de VAPID continua em `src/lib/push-service.ts`).
 
+### Resolução (deploy com os logs ativos)
+- **Causa raiz encontrada via log:** com os `[PUSH]` logs em produção, viu-se que o disparo acontecia mas **uma das chaves VAPID estava corrompida** (`NEXT_PUBLIC_VAPID_PUBLIC_KEY` ou `VAPID_PRIVATE_KEY` — par inconsistente), então o servidor de push retornava erro de assinatura e nada chegava ao dispositivo. **Resolvido:** as chaves foram regeneradas em par e atualizadas no `.env.local` **e** nas variáveis de ambiente da Vercel. A partir daí o push real passou a chegar (logs `[PUSH SUCCESS]`). Nenhuma mudança de código adicional foi necessária — os `[PUSH]` logs é que tornaram o diagnóstico possivel.
+
 ---
 
 ## Fila de resgates do ADMIN atualizada via notificação Realtime (concluída)
