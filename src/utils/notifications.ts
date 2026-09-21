@@ -15,7 +15,7 @@ export const READ_RETENTION_DAYS = 5
 
 const RETENTION_MS = READ_RETENTION_DAYS * 24 * 60 * 60 * 1000
 
-type NotifyInput = {
+export type NotifyInput = {
   houseId: string
   actorId: string
   type: NotificationType
@@ -26,10 +26,36 @@ type NotifyInput = {
   messageId?: string | null
 }
 
-type NotifyHouseInput = NotifyInput & {
+export type NotifyHouseInput = NotifyInput & {
   side: 'ADMINS' | 'DEPENDENTS'
   /** Nunca notificar quem agiu. */
   excludeUserId?: string
+}
+
+export type PushPayloadInput = NotifyInput & {
+  recipientId?: string
+}
+
+/**
+ * Monta o payload do Web Push a partir dos mesmos dados da notificação interna.
+ * Compartilhado por `notifyUser`/`notifyHouse` (disparo automático) e pelas
+ * Server Actions que disparam o push explicitamente (padrão `dispatchPush: false`).
+ */
+export function toPushPayload(input: NotifyInput) {
+  return {
+    title: input.title,
+    body: input.body,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: `casasync-${input.type.toLowerCase()}`,
+    data: { url: input.link ?? '/', notifType: input.type, ...input },
+    actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
+  }
+}
+
+export type NotifyOptions = {
+  /** Se `false`, grava apenas a linha interna e NÃO dispara o push (quem chama assume o push). */
+  dispatchPush?: boolean
 }
 
 /** Ids dos membros da casa com o papel informado. */
@@ -63,7 +89,8 @@ async function getHouseMemberIds(
  */
 export async function notifyUser(
   admin: AdminClient,
-  input: NotifyInput & { recipientId: string }
+  input: NotifyInput & { recipientId: string },
+  options?: NotifyOptions
 ): Promise<void> {
   try {
     await admin.from('notifications').insert({
@@ -77,23 +104,17 @@ export async function notifyUser(
       image_url: input.imageUrl ?? null,
       message_id: input.messageId ?? null,
     })
-  } catch {
-    // Ignorado de propósito (best-effort).
+  } catch (err) {
+    console.error('[notifications] Erro ao inserir notificação interna:', err)
   }
 
   // Envia push notification (não bloqueia, best-effort)
+  if (options?.dispatchPush === false) return
   try {
-    await sendPushToUser(input.recipientId, {
-      title: input.title,
-      body: input.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: `casasync-${input.type.toLowerCase()}`,
-      data: { url: input.link ?? '/', notifType: input.type, ...input },
-      actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
-    })
-  } catch {
-    // Ignorado (push falha não deve derrubar a ação)
+    await sendPushToUser(input.recipientId, toPushPayload(input))
+    console.log(`[PUSH] notifyUser: push disparado para o usuário ${input.recipientId}`)
+  } catch (err) {
+    console.error('[PUSH] Erro ao disparar push via notifyUser:', err)
   }
 }
 
@@ -104,7 +125,8 @@ export async function notifyUser(
  */
 export async function notifyHouse(
   admin: AdminClient,
-  input: NotifyHouseInput
+  input: NotifyHouseInput,
+  options?: NotifyOptions
 ): Promise<void> {
   try {
     const ids = await getHouseMemberIds(
@@ -142,38 +164,16 @@ export async function notifyHouse(
   }
 
   // Envia push notifications (não bloqueia, best-effort)
+  if (options?.dispatchPush === false) return
   try {
     if (input.side === 'ADMINS') {
-      await sendPushToHouseAdmins(
-        input.houseId,
-        {
-          title: input.title,
-          body: input.body,
-          icon: '/icons/icon-192.png',
-          badge: '/icons/icon-192.png',
-          tag: `casasync-${input.type.toLowerCase()}`,
-          data: { url: input.link ?? '/', notifType: input.type, ...input },
-          actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
-        },
-        input.excludeUserId
-      )
+      await sendPushToHouseAdmins(input.houseId, toPushPayload(input), input.excludeUserId)
     } else {
-      await sendPushToHouseDependents(
-        input.houseId,
-        {
-          title: input.title,
-          body: input.body,
-          icon: '/icons/icon-192.png',
-          badge: '/icons/icon-192.png',
-          tag: `casasync-${input.type.toLowerCase()}`,
-          data: { url: input.link ?? '/', notifType: input.type, ...input },
-          actions: input.link ? [{ action: 'open', title: 'Abrir' }] : [],
-        },
-        input.excludeUserId
-      )
+      await sendPushToHouseDependents(input.houseId, toPushPayload(input), input.excludeUserId)
     }
-  } catch {
-    // Ignorado (push falha não deve derrubar a ação)
+    console.log('[PUSH] notifyHouse: push disparado para os', input.side.toLowerCase(), 'da casa', input.houseId)
+  } catch (err) {
+    console.error('[PUSH] Erro ao disparar push via notifyHouse:', err)
   }
 }
 

@@ -7,7 +7,14 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
-import { notifyHouse, notifyUser } from '@/utils/notifications'
+import {
+  notifyHouse,
+  notifyUser,
+  toPushPayload,
+  type NotifyInput,
+  type NotifyHouseInput,
+} from '@/utils/notifications'
+import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import type { ActionResult } from './types'
 
 type CreateRewardInput = {
@@ -140,7 +147,7 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
 
   if (error) return { ok: false, error: 'Falha ao solicitar o resgate.' }
 
-  await notifyHouse(admin, {
+  const notifInput: NotifyHouseInput = {
     houseId: house.id,
     actorId: user.id,
     side: 'ADMINS',
@@ -149,7 +156,16 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
     title: 'Novo resgate',
     body: `${profile?.full_name ?? 'O dependente'} resgatou "${reward.title}" (${reward.points_cost} pts).`,
     link: '/rewards',
-  })
+  }
+
+  await notifyHouse(admin, notifInput, { dispatchPush: false })
+
+  try {
+    await sendPushToHouseAdmins(house.id, toPushPayload(notifInput), user.id)
+    console.log(`[PUSH] Resgate solicitado → push disparado para os ADMINs da casa ${house.id}`)
+  } catch (err) {
+    console.error('[PUSH] Falha ao disparar push na solicitação de resgate:', err)
+  }
 
   revalidatePath('/rewards')
   return { ok: true, message: `Resgate de "${reward.title}" solicitado.` }
@@ -221,7 +237,7 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     return { ok: false, error: 'Falha ao debitar pontos. Resgate revertido.' }
   }
 
-  await notifyUser(admin, {
+  const notifInput: NotifyInput & { recipientId: string } = {
     houseId: activeHouse.id,
     recipientId: redemption.profile_id,
     actorId: auth.adminId,
@@ -229,7 +245,16 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     title: 'Resgate aprovado',
     body: `Seu resgate foi aprovado. −${redemption.points_cost} pts.`,
     link: '/rewards',
-  })
+  }
+
+  await notifyUser(admin, notifInput, { dispatchPush: false })
+
+  try {
+    await sendPushToUser(redemption.profile_id, toPushPayload(notifInput))
+    console.log(`[PUSH] Resgate aprovado → push disparado para o dependente ${redemption.profile_id}`)
+  } catch (err) {
+    console.error('[PUSH] Falha ao disparar push na aprovação de resgate:', err)
+  }
 
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -271,7 +296,7 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
 
   if (error) return { ok: false, error: 'Falha ao rejeitar o resgate.' }
 
-  await notifyUser(admin, {
+  const notifInput: NotifyInput & { recipientId: string } = {
     houseId: activeHouse.id,
     recipientId: redemption.profile_id,
     actorId: auth.adminId,
@@ -279,7 +304,16 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
     title: 'Resgate recusado',
     body: 'Seu resgate foi recusado.',
     link: '/rewards',
-  })
+  }
+
+  await notifyUser(admin, notifInput, { dispatchPush: false })
+
+  try {
+    await sendPushToUser(redemption.profile_id, toPushPayload(notifInput))
+    console.log(`[PUSH] Resgate recusado → push disparado para o dependente ${redemption.profile_id}`)
+  } catch (err) {
+    console.error('[PUSH] Falha ao disparar push na rejeição de resgate:', err)
+  }
 
   revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }

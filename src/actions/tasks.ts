@@ -7,7 +7,14 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
-import { notifyHouse, notifyUser } from '@/utils/notifications'
+import {
+  notifyHouse,
+  notifyUser,
+  toPushPayload,
+  type NotifyInput,
+  type NotifyHouseInput,
+} from '@/utils/notifications'
+import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -153,7 +160,7 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
 
   if (error) return { ok: false, error: 'Falha ao criar a tarefa.' }
 
-  await notifyUser(admin, {
+  const notifInput: NotifyInput & { recipientId: string } = {
     houseId: activeHouse.id,
     recipientId: input.assignedTo,
     actorId: auth.adminId,
@@ -161,7 +168,16 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
     title: 'Nova tarefa',
     body: `Você recebeu a tarefa "${title}" (${input.points} pts).`,
     link: '/tasks',
-  })
+  }
+
+  await notifyUser(admin, notifInput, { dispatchPush: false })
+
+  try {
+    await sendPushToUser(input.assignedTo, toPushPayload(notifInput))
+    console.log(`[PUSH] Tarefa criada → push disparado para o dependente ${input.assignedTo}`)
+  } catch (err) {
+    console.error('[PUSH] Falha ao disparar push na criação de tarefa:', err)
+  }
 
   revalidatePath('/tasks')
   return { ok: true, message: `Tarefa "${title}" criada.` }
@@ -365,7 +381,7 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
 
   if (error) return { ok: false, error: 'Falha ao concluir a tarefa.' }
 
-  await notifyHouse(admin, {
+  const notifInput: NotifyHouseInput = {
     houseId: house.id,
     actorId: user.id,
     side: 'ADMINS',
@@ -374,7 +390,16 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     title: 'Tarefa concluída',
     body: `${profile?.full_name ?? 'O dependente'} concluiu "${task.title}". Aguardando aprovação.`,
     link: '/tasks',
-  })
+  }
+
+  await notifyHouse(admin, notifInput, { dispatchPush: false })
+
+  try {
+    await sendPushToHouseAdmins(house.id, toPushPayload(notifInput), user.id)
+    console.log(`[PUSH] Tarefa concluída → push disparado para os ADMINs da casa ${house.id}`)
+  } catch (err) {
+    console.error('[PUSH] Falha ao disparar push na conclusão de tarefa:', err)
+  }
 
   revalidatePath('/tasks')
   return { ok: true }

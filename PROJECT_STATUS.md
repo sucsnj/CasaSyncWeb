@@ -2,6 +2,26 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Push disparado explicitamente nas Server Actions dos fluxos-chave (concluída)
+
+### O que foi implementado
+- **Invocações diretas de push nos fluxos pedidos**, após a criação da notificação interna em `notifications` (o banner Realtime/sino continua servido pelo insert; o push sai explicitamente da própria action):
+  - `createTask` (`src/actions/tasks.ts`) → **`sendPushToUser(assigneeId, …)`** com log `[PUSH] Tarefa criada → push disparado para o dependente …`.
+  - `completeTask` (`src/actions/tasks.ts`) → **`sendPushToHouseAdmins(house.id, …, user.id)`** excluindo quem agiu, com log `[PUSH] Tarefa concluída → push disparado para os ADMINs da casa …`.
+  - `requestRedemption` (`src/actions/rewards.ts`) → **`sendPushToHouseAdmins(house.id, …, user.id)`**, log `[PUSH] Resgate solicitado → …`.
+  - `approveRedemption` / `rejectRedemption` (`src/actions/rewards.ts`) → **`sendPushToUser(profile_id, …)`**, logs `[PUSH] Resgate aprovado/recusado → …`.
+- **`notifyUser`/`notifyHouse` ganharam a opção `dispatchPush: false`** (`src/utils/notifications.ts`): quando passada, o helper grava **apenas** a linha interna e devolve o disparo de push ao chamador. Os 4 fluxos acima usam `{ dispatchPush: false }` e chamam o push explicitamente — **sem duplicar o envio** (quem antes disparava dentro do helper, agora dispara na action, o que torna a execução visível nos logs da Vercel). Todos os demais call sites seguem sem a opção (padrão = dispara), mantendo o comportamento anterior.
+- **Payload único compartilhado:** novo `toPushPayload(input)` em `src/utils/notifications.ts` monta o objeto de push (título/body/icon/badge/tag/data com `url`/actions) a partir do mesmo `NotifyInput` usado no insert — `notifyUser`/`notifyHouse` e as invocações explícitas nas actions usam a mesma fonte, sem divergência.
+- **Erros de push não somem em silêncio:** `notifyUser`/`notifyHouse` agora logam `console.error('[PUSH] Erro ao disparar push …')` no catch (antes o bloco engolia tudo), e as chamadas explícitas nas actions também têm `try/catch` com `console.error` — se o push falhar, o motivo fica nos logs.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer na Vercel. Depois de subir, reproduzir um dos 4 fluxos (criar tarefa, concluir tarefa, solicitar ou aprovar/rejeitar resgate) e conferir no runtime os logs `[PUSH] …→ push disparado …` seguidos de `[PUSH SUCCESS]`/`[PUSH ERROR]` do serviço (validação de VAPID continua em `src/lib/push-service.ts`).
+
+---
+
 ## Fila de resgates do ADMIN atualizada via notificação Realtime (concluída)
 
 - A página `/rewards` passou a assinar `REDEMPTION_REQUESTED` para o ADMIN e chamar `router.refresh()` quando a notificação chega.
