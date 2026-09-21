@@ -72,29 +72,44 @@ self.addEventListener('fetch', (event) => {
 
 // Web Push: receber notificações do servidor
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  try {
-    const data = event.data.json();
-    const { title, body, icon, badge, tag, data: payload, actions } = data;
-
-    const options = {
-      body: body ?? '',
-      icon: icon ?? '/icons/icon-192.png',
-      badge: badge ?? '/icons/icon-192.png',
-      tag: tag ?? 'casasync-notification',
-      data: payload ?? {},
-      actions: actions ?? [],
-      requireInteraction: true,
-      renotify: true,
-    };
-
-    event.waitUntil(
-      self.registration.showNotification(title ?? 'CasaSync', options)
+  // Sem payload: ainda assim exibe uma notificação (não engolir em silêncio).
+  if (!event.data) {
+    return event.waitUntil(
+      self.registration.showNotification('CasaSync', {
+        body: 'Nova notificação recebida.',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: 'casasync-notification',
+        data: {},
+      })
     );
-  } catch (err) {
-    console.error('Push event error:', err);
   }
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    // Payload não-JSON (ex.: push de teste do DevTools, que envia texto cru):
+    // usa o texto como corpo em vez de abortar a exibição.
+    data = { body: event.data.text() };
+  }
+
+  const { title, body, icon, badge, tag, data: payload, actions } = data;
+
+  const options = {
+    body: typeof body === 'string' ? body : '',
+    icon: icon ?? '/icons/icon-192.png',
+    badge: badge ?? '/icons/icon-192.png',
+    tag: tag ?? 'casasync-notification',
+    data: payload ?? {},
+    actions: actions ?? [],
+    requireInteraction: true,
+    renotify: true,
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title ?? 'CasaSync', options)
+  );
 });
 
 // Web Push: clique na notificação abre/foca o app

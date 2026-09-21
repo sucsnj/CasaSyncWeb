@@ -4,6 +4,20 @@
 
 ---
 
+## Handler de push do SW deixava de exibir notificação com payload não-JSON (corrigido)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** no Android, pushes de teste/estranhos não exibiam notificação nativa; no console do SW aparecia `Push event error: SyntaxError: Failed to execute 'json' on 'PushMessageData'` — o handler de `push` chamava `event.data.json()` sem proteção e o `catch` engolia o erro, abortando o `showNotification`. O push de teste do DevTools envia **texto cru** ("Teste a me..."), não JSON; em produção o servidor sempre envia JSON, mas qualquer payload vazio/estranho matava a exibição em silêncio (clássico em Android).
+- **Fix (`public/sw.js`):** handler blindado — sem payload, exibe notificação genérica ("Nova notificação recebida."); com payload não-JSON, usa `event.data.text()` como corpo em vez de abortar. `event.waitUntil(showNotification(...))` sempre executado.
+
+### Arquivos alterados
+- `public/sw.js` — handler `push` resiliente a payload nulo/não-JSON.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+---
+
 ## Push no Android não chegava — subscription nunca era registrada (corrigido, sem mudança de schema)
 
 ### O que foi encontrado e corrigido
