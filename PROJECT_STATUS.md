@@ -23,6 +23,24 @@
 
 ---
 
+## Log explícito e isolamento de erros por subscription no envio (concluído, sem mudança de schema)
+
+### O que foi implementado (dentro de `sendPushNotification` em `src/lib/push-service.ts`)
+- **Isolamento por subscription:** o envio de cada dispositivo roda num mapeado dentro de `Promise.allSettled` — um token com erro (ex.: única subscription Android com problema) **não interrompe** os demais dispositivos do mesmo usuário nem rejeita o grupo, e o resumo final (`sent`/`failed` de `N` dispositivos) é logado.
+- **Log explícito por envio (para depurar a Vercel):**
+  - `[PUSH SUCCESS] User <id> | Status: <httpStatus> | Endpoint: <url.slice(0,30)>...` — o status de sucesso vem do `SendResult.statusCode` do `web-push`.
+  - `[PUSH ERROR] User <id> | Endpoint: <url...> | Status: <statusCode> | Message: <message>` — com o `statusCode` do `WebPushError` (é isso que revela o que o **FCM/Mozilla retorna para o Android**: 201 sucesso, 400/401 falha de VAPID, 404/410 subscription morta, 403 etc.).
+  - `[PUSH CLEANUP] Removida assinatura expirada id: <id>` — quando o erro é **404 ou 410** a linha é deletada por `id` (e um erro de deleção também é logado).
+- **Payload JSON garantido:** novo `buildPayloadString()` normaliza o objeto para a string enviada, assegurando os campos obrigatórios **`title`, `body` e `url`** (o `url` de destino é resolvido do campo top-level ou de `data.url`, retrocompatível com `notifyUser`/`notifyHouse`), além de `icon`, `badge`, `tag`, `data` e `actions` com defaults.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Pontos de atenção
+- **Requer deploy.** Depois de subir, reproduzir um fluxo que gera push (ex.: concluir tarefa no Android) e conferir no runtime da Vercel os logs `[PUSH SUCCESS]`/`[PUSH ERROR]` — o `Status` informado é o código HTTP do servidor de push.
+
+---
+
 ## Push real não chegava no Android — permissão pedida fora de gesto (corrigido)
 
 ### O que foi encontrado e corrigido
