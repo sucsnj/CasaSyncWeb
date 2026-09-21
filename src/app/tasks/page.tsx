@@ -10,6 +10,7 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
@@ -86,6 +87,10 @@ export default async function TasksPage() {
     isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
   ])
 
+  const quickMessageSettings = !isAdmin && dependentHouse
+    ? await getHouseQuickMessageSettings(dependentHouse.id)
+    : undefined
+
   let content: React.ReactNode
 
   if (isAdmin) {
@@ -146,6 +151,7 @@ export default async function TasksPage() {
         userId={user.id}
         notifications={notifications}
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
+        quickMessageSettings={quickMessageSettings}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

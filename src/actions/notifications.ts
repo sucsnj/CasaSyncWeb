@@ -4,14 +4,11 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
 import { sendPushToHouseAdmins } from '@/actions/push'
 import { MEDIA_BUCKET } from '@/utils/media'
+import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import {
   cleanupQuickMessages,
   cleanupReadNotifications,
 } from '@/utils/notifications'
-import {
-  QUICK_MESSAGE_CAPACITY,
-  QUICK_MESSAGE_MAX_CHARS,
-} from '@/utils/quick-message'
 import type { ActionResult } from './types'
 
 /**
@@ -166,11 +163,16 @@ export async function sendQuickMessage(
     return { ok: false, error: 'Apenas dependentes enviam mensagens rápidas.' }
   }
 
+  const house = await getDependentHouse(user.id)
+  if (!house) return { ok: false, error: 'Você ainda não pertence a uma casa.' }
+
+  const settings = await getHouseQuickMessageSettings(house.id)
+
   const body = text.trim()
-  if (body.length > QUICK_MESSAGE_MAX_CHARS) {
+  if (body.length > settings.maxChars) {
     return {
       ok: false,
-      error: `A mensagem deve ter no máximo ${QUICK_MESSAGE_MAX_CHARS} caracteres.`,
+      error: `A mensagem deve ter no máximo ${settings.maxChars} caracteres.`,
     }
   }
   if (!body && !imageUrl) {
@@ -184,9 +186,6 @@ export async function sendQuickMessage(
   ) {
     return { ok: false, error: 'Imagem inválida.' }
   }
-
-  const house = await getDependentHouse(user.id)
-  if (!house) return { ok: false, error: 'Você ainda não pertence a uma casa.' }
 
   const admin = createAdminClient()
 
@@ -204,7 +203,7 @@ export async function sendQuickMessage(
       .filter((id): id is string => !!id)
   ).size
 
-  if (accumulated >= QUICK_MESSAGE_CAPACITY) {
+  if (accumulated >= settings.capacity) {
     return {
       ok: false,
       error: `Você já tem ${accumulated} mensagens acumuladas. Espere os tutores lerem as anteriores.`,

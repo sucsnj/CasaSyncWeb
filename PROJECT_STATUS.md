@@ -1,6 +1,42 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
+
+## Menu de configurações da casa (ADMIN) — economia de pontos e mensagem rápida (concluída)
+
+### O que foi implementado
+- **Nova tabela `house_settings`** (PK `house_id,key`, `value` jsonb, `updated_by`/`updated_at`) com **RLS + policy de SELECT por membro da mesma casa** (SQL aplicado abaixo). **Sem Realtime** — a propagação é via `router.refresh()` pós-ação.
+- **Server Action `updateHouseSettings(key, patch)`** (`src/actions/settings.ts`): escrita **exclusiva** via service role; autorização derivada da sessão (house ativa + membresia ADMIN); valida o patch por chave (bounds em `validateRewardPricing`/`validateQuickMessage`, fail-closed) e grava um upsert `(house_id, key)`. Revalida `/dashboard/admin/settings` (+ `/tasks`, `/rewards`, `/dashboard/dependent` quando `quick_message` muda).
+- **Getters cached** (`getHouseRewardPricingSettings`/`getHouseQuickMessageSettings` em `src/utils/house-settings.ts`, `React.cache` + service role): leitura por casa com fallback aos **defaults** de `src/utils/settings.ts` (`DEFAULT_REWARD_PRICING`, `DEFAULT_QUICK_MESSAGE`), em linha ausente ou campo omitido (`mergeSettings`).
+- **Economia de pontos:** `approveRedemption` lê as settings da casa e só encarece com `enabled`; `nextRewardCost(currentCost, settings)` usa `noIncreaseMax`/`midMax`/`midRate`/`highRate`/`minBump` configuráveis (defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt). Guard anti-race e rollback preservados. Com `enabled=false`, o body da notificação volta ao texto sem o novo preço.
+- **Mensagem rápida:** `sendQuickMessage` valida `maxChars` e bloqueia na capacidade `capacity`; `cleanupQuickMessages` apaga a mais antiga quando `lidas >= capacity`; o compositor usa `QuickMessageSettings` para o contador/límite de caracteres e o tamanho da imagem; a plumbagem bell→nav carrega as settings nos call sites DEPENDENT (`getHouseQuickMessageSettings(house.id)` no layout dependente, `/tasks` e `/rewards`).
+- **UI:** nova rota **`/dashboard/admin/settings`** (`settings-admin.tsx`, cliente) com os cards **Economia de pontos** (toggle de aumento + faixas/taxas/piso) e **Mensagem rápida** (maxChars, maxImageMb, capacity); card **Configurações** (`SlidersHorizontal`) adicionado à Visão geral (grid passou de 3 para 4 colunas em `lg:`). Feedback inline + toast + `router.refresh()`.
+- **Fase 2 planejada (não feita):** configurações de SLA/prazos de tarefas e retenção de notificações comuns — mesma mecânica de `house_settings`, novas chaves em `HouseSettingsKey`.
+
+### SQL aplicado no Supabase
+```sql
+create table if not exists public.house_settings (
+  house_id uuid not null references public.houses(id) on delete cascade,
+  key text not null,
+  value jsonb not null,
+  updated_by uuid references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  primary key (house_id, key)
+);
+alter table public.house_settings enable row level security;
+create policy "house_settings_select_members" on public.house_settings
+  for select to authenticated
+  using (exists (
+    select 1 from public.house_members hm
+    where hm.house_id = house_settings.house_id
+      and hm.profile_id = auth.uid()
+  ));
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
 
 ## Aumento automático de custo de recompensa a cada resgate aprovado (concluída — sem mudança de schema)
 
@@ -9,7 +45,7 @@
   - **≤ 25 pts → não encarece** (fica fixo no custo atual)
   - 26–200 pts → **+3%**
   - > 200 pts → **+2%**
-- **`nextRewardCost(currentCost)`** (`src/actions/rewards.ts`, helper interno — sem `export` porque o arquivo é `'use server'`): `Math.round(custo atual × (1 + taxa))` com **piso de +1 pt** quando encarece (26 pts +3% = 27; recompensa pequena não fica parada uma vez que passou dos 25). Decisões de faixa/arredondamento/piso alinhadas com o usuário.
+- **`nextRewardCost(currentCost, settings)`** (`src/actions/rewards.ts`, helper interno — sem `export` porque o arquivo é `'use server'`): aplica a taxa da faixa configurada da casa com **piso de +1 pt** quando encarece (26 pts +3% = 27; recompensa pequena não fica parada uma vez que passou dos 25). *Em `src/utils/settings.ts` virou configurável por casa — ver seção "Menu de configurações da casa" no topo.*
 - **Guard anti-race:** o update usa `.eq('id', reward_id)` + `.eq('points_cost', cost_antigo)` — se duas aprovações concorrentes tentarem encarecer a mesma recompensa, a segunda não sobrescreve o aumento da primeira.
 - **Rollback completo se o bump falhar:** caso o update retorne zero linhas (ou erro), o resgate volta a `PENDING` (limpa `approved_by`/`resolved_at`) e os pontos são devolvidos ao dependente — mesmo padrão do rollback do débito. Não há resgate aprovado "pela metade".
 - **Notificação ao dependente menciona o novo preço:** body `"Seu resgate foi aprovado. −X pts. A recompensa agora custa Y pts."` (com fallback para a mensagem antiga se a recompensa não existir — caso corrompido).

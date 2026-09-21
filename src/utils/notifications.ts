@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { MEDIA_BUCKET } from '@/utils/media'
-import { QUICK_MESSAGE_CAPACITY } from '@/utils/quick-message'
+import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -240,9 +240,10 @@ function storagePathFromPublicUrl(url: string): string | null {
 }
 
 /**
- * Regra de retenção da "mensagem rápida": quando o dependente atinge 2
- * mensagens próprias JÁ lidas, apaga a mais antiga (todas as cópias que os
- * ADMINs receberam + o arquivo de imagem no storage — best-effort).
+ * Regra de retenção da "mensagem rápida": quando o dependente atinge a
+ * capacidade configurada da casa (default 2) de mensagens próprias JÁ lidas,
+ * apaga a mais antiga (todas as cópias que os ADMINs receberam + o arquivo de
+ * imagem no storage — best-effort).
  *
  * Conta MENSAGENS (`message_id`), não cópias por destinatário. Disparado ao
  * marcar uma QUICK_MESSAGE como lida.
@@ -252,6 +253,8 @@ export async function cleanupQuickMessages(
   houseId: string,
   actorId: string
 ): Promise<void> {
+  const settings = await getHouseQuickMessageSettings(houseId)
+
   const { data } = await admin
     .from('notifications')
     .select('recipient_id, message_id, created_at, image_url, read_at')
@@ -287,7 +290,7 @@ export async function cleanupQuickMessages(
   const readMessages = [...byMessage.entries()].filter(
     ([, message]) => message.read
   )
-  if (readMessages.length < QUICK_MESSAGE_CAPACITY) return
+  if (readMessages.length < settings.capacity) return
 
   readMessages.sort((a, b) => a[1].created - b[1].created)
   const [oldestId, oldest] = readMessages[0]

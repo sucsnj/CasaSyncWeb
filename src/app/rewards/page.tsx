@@ -7,6 +7,7 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
@@ -53,6 +54,10 @@ export default async function RewardsPage() {
     isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
     isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
   ])
+
+  const quickMessageSettings = !isAdmin && dependentHouse
+    ? await getHouseQuickMessageSettings(dependentHouse.id)
+    : undefined
 
   let content: React.ReactNode
 
@@ -220,6 +225,7 @@ export default async function RewardsPage() {
         userId={user.id}
         notifications={notifications}
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
+        quickMessageSettings={quickMessageSettings}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

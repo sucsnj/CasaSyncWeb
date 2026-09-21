@@ -9,6 +9,7 @@ import { SignOutButton } from '@/components/auth/sign-out-button'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Modal } from '@/components/ui/modal'
 import type { NotificationRow } from '@/types/notifications'
+import type { QuickMessageSettings } from '@/utils/settings'
 
 export type NavItem = { href: string; label: string }
 
@@ -34,6 +35,7 @@ export function DashboardNav({
   userId,
   notifications,
   role,
+  quickMessageSettings,
 }: {
   items: NavItem[]
   userName?: string | null
@@ -41,6 +43,7 @@ export function DashboardNav({
   userId?: string
   notifications?: NotificationRow[]
   role?: 'ADMIN' | 'DEPENDENT'
+  quickMessageSettings?: QuickMessageSettings
 }) {
   const pathname = usePathname()
   const [showAccount, setShowAccount] = useState(false)
@@ -91,6 +94,7 @@ export function DashboardNav({
                 userId={userId}
                 initialNotifications={notifications ?? []}
                 canSend={role === 'DEPENDENT'}
+                quickMessageSettings={quickMessageSettings}
               />
             ) : null}
             {typeof points === 'number' ? (

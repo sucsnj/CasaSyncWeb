@@ -14,6 +14,8 @@ import {
   type NotifyInput,
   type NotifyHouseInput,
 } from '@/utils/notifications'
+import { getHouseRewardPricingSettings } from '@/utils/house-settings'
+import type { RewardPricingSettings } from '@/utils/settings'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import type { ActionResult } from './types'
 
@@ -172,15 +174,21 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
 }
 
 /**
- * Novo custo de uma recompensa após um resgate aprovado. A taxa depende do
- * custo atual (faixa): abaixo de 26 pts não encarece, até 200 pts +3% e acima
- * de 200 pts +2%. Quando encarece, o aumento mínimo é de 1 pt.
+ * Novo custo de uma recompensa após um resgate aprovado, conforme a
+ * configuração da casa (ver `RewardPricingSettings`):
+ * - custo <= `noIncreaseMax` → **não encarece**;
+ * - custo <= `midMax` → `midRate`; acima → `highRate`;
+ * - quando encarece, o aumento mínimo é de `minBump` pontos.
+ * Chamada só quando `settings.enabled`; retorna `null` se não mudar.
  */
-function nextRewardCost(currentCost: number): number {
-  if (currentCost <= 25) return currentCost
-  const rate = currentCost <= 200 ? 0.03 : 0.02
+function nextRewardCost(
+  currentCost: number,
+  settings: RewardPricingSettings
+): number | null {
+  if (currentCost <= settings.noIncreaseMax) return null
+  const rate = currentCost <= settings.midMax ? settings.midRate : settings.highRate
   const bumped = Math.round(currentCost * (1 + rate))
-  return Math.max(bumped, currentCost + 1)
+  return Math.max(bumped, currentCost + settings.minBump)
 }
 
 /**
@@ -249,9 +257,11 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     return { ok: false, error: 'Falha ao debitar pontos. Resgate revertido.' }
   }
 
-  // Recompensa encarece a cada resgate aprovado. Lê o custo atual da recompensa
-  // (não o snapshot do resgate) e aplica a taxa da faixa. O `.eq('points_cost', ...)`
+  // Recompensa encarece a cada resgate aprovado SE o ADMIN da casa tiver o
+  // aumento automático ligado (configuração por casa em `house_settings`). Lê o
+  // custo atual da recompensa (não o snapshot do resgate). O `.eq('points_cost', ...)`
   // impede que duas aprovações concorrentes sobrescrevam o aumento uma da outra.
+  const rewardSettings = await getHouseRewardPricingSettings(activeHouse.id)
   const { data: reward } = await admin
     .from('rewards')
     .select('id, points_cost')
@@ -259,8 +269,11 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     .maybeSingle()
 
   let newCost: number | null = null
-  if (reward) {
-    newCost = nextRewardCost(reward.points_cost)
+  if (reward && rewardSettings.enabled) {
+    newCost = nextRewardCost(reward.points_cost, rewardSettings)
+  }
+
+  if (reward && newCost !== null && newCost !== reward.points_cost) {
     const { data: bumped, error: bumpError } = await admin
       .from('rewards')
       .update({ points_cost: newCost })

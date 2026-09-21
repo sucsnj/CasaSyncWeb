@@ -88,6 +88,38 @@ export interface Database {
           }
         ]
       }
+      house_settings: {
+        Row: {
+          house_id: string
+          key: string
+          value: Json
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          house_id: string
+          key: string
+          value: Json
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          house_id?: string
+          key?: string
+          value?: Json
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'house_settings_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: true
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       house_members: {
         Row: {
           id: string

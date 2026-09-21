@@ -117,6 +117,21 @@ todos os ADMINs membros para ações do dependente). O delete é do próprio usu
 as **lidas são apagadas após 5 dias** por limpeza lazy (`getMyNotifications`), sem
 pg_cron.
 
+### house_settings
+| coluna | tipo | notas |
+|---|---|---|
+| house_id | uuid FK → houses (PK) | casa dona da configuração; `on delete cascade` |
+| key | text (PK) | `reward_pricing` \| `quick_message` (`HouseSettingsKey` em `src/utils/settings.ts`) |
+| value | jsonb | objeto de configuração; campos ausentes caem no default via `mergeSettings` |
+| updated_by | uuid FK → profiles | nullable; ADMIN que salvou por último |
+| updated_at | timestamptz | default `now()` |
+
+Configuração por casa, escrita **exclusivamente** pela Server Action `updateHouseSettings`
+(`src/actions/settings.ts`, service role + autorização ADMIN por membresia) e lida pelos
+getters cached em `src/utils/house-settings.ts` (sem Realtime: a propagação usa
+`router.refresh()` pós-ação). Sem linha = defaults (`DEFAULT_REWARD_PRICING` /
+`DEFAULT_QUICK_MESSAGE`). **Sem publication Realtime.**
+
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
 - `member_role` = `ADMIN` \| `DEPENDENT`
@@ -129,5 +144,5 @@ aplicado** no Supabase.
 
 ## Fora do snap dos types (não verificável no código)
 - **Storage:** bucket público `casasync-media` com pastas avatars/houses/rewards/tasks/suggestions/messages. Leituras públicas + insert para `authenticated` no bucket (policies `casasync_media_select_public` / `casasync_media_insert_authenticated` — criadas com o bucket, que **não existia** e causava `Bucket not found` em uploads. Ver `PROJECT_STATUS.md`).
-- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `notifications` para `recipient_id = auth.uid()` (necessária ao Realtime do sino).
+- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `notifications` para `recipient_id = auth.uid()` (necessária ao Realtime do sino); SELECT em `house_settings` para membros da mesma casa (SQL em `PROJECT_STATUS.md` — settings são lidas pelo app via service role, a policy atende leituras futuras via cliente autenticado).
 - **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions, notifications) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos. Além disso, o hook chama `getSession()` + `realtime.setAuth(access_token)` antes de assinar: com sessão restaurada de cookies o socket conectava como `anon` e o RLS descartava os eventos em silêncio.

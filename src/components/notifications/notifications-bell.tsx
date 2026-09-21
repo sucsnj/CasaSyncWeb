@@ -24,6 +24,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { QuickMessageComposer } from '@/components/notifications/quick-message-composer'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import type { QuickMessageSettings } from '@/utils/settings'
 import {
   deleteAllNotifications,
   deleteNotification,
@@ -87,10 +88,12 @@ export function NotificationsBell({
   userId,
   initialNotifications,
   canSend = false,
+  quickMessageSettings,
 }: {
   userId: string
   initialNotifications: NotificationRow[]
   canSend?: boolean
+  quickMessageSettings?: QuickMessageSettings
 }) {
   const router = useRouter()
   const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
@@ -188,7 +191,12 @@ export function NotificationsBell({
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Notificações">
-        {canSend ? <QuickMessageComposer userId={userId} /> : null}
+        {canSend ? (
+          <QuickMessageComposer
+            userId={userId}
+            settings={quickMessageSettings}
+          />
+        ) : null}
 
         {items.length > 0 ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

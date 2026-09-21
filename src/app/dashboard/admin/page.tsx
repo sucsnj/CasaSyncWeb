@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Gift, House, ListTodo } from 'lucide-react'
+import { Gift, House, ListTodo, SlidersHorizontal } from 'lucide-react'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import {
@@ -38,6 +38,13 @@ const actions = [
     icon: Gift,
     accent: 'bg-amber-100 text-amber-700',
   },
+  {
+    href: '/dashboard/admin/settings',
+    title: 'Configurações',
+    description: 'Economia de pontos e mensagem rápida.',
+    icon: SlidersHorizontal,
+    accent: 'bg-violet-100 text-violet-700',
+  },
 ] as const
 
 export default async function AdminDashboardPage() {
@@ -58,7 +65,7 @@ export default async function AdminDashboardPage() {
         </p>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {actions.map((action) => (
           <Link key={action.href} href={action.href}>
             <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">

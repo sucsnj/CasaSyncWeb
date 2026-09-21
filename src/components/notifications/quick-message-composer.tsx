@@ -8,29 +8,36 @@ import { Modal } from '@/components/ui/modal'
 import { cn } from '@/lib/utils'
 import { uploadMedia } from '@/utils/media'
 import { sendQuickMessage } from '@/actions/notifications'
-import {
-  QUICK_MESSAGE_MAX_CHARS,
-  QUICK_MESSAGE_MAX_IMAGE_BYTES,
-  QUICK_MESSAGE_MAX_IMAGE_MB,
-} from '@/utils/quick-message'
+import { DEFAULT_QUICK_MESSAGE, type QuickMessageSettings } from '@/utils/settings'
 
 const IMAGE_TYPES = 'JPG, PNG ou WebP'
 
-function validateImageFile(file: File): string | null {
+function validateImageFile(
+  file: File,
+  maxImageBytes: number,
+  maxImageMb: number
+): string | null {
   if (!file.type.startsWith('image/')) return 'Apenas imagens são permitidas.'
-  if (file.size > QUICK_MESSAGE_MAX_IMAGE_BYTES) {
-    return `A imagem deve ter no máximo ${QUICK_MESSAGE_MAX_IMAGE_MB} MB.`
+  if (file.size > maxImageBytes) {
+    return `A imagem deve ter no máximo ${maxImageMb} MB.`
   }
   return null
 }
 
 /**
- * Compositor de "mensagem rápida" do DEPENDENT: texto curto (≤100 caracteres)
- * opcional + até 1 imagem (galeria do dispositivo ou câmera ao vivo). A
- * imagem é enviada ao bucket em `messages/<userId>/...` e a Server Action
- * entrega cópias da notificação para todos os ADMINs da casa.
+ * Compositor de "mensagem rápida" do DEPENDENT: texto curto (limite vem da
+ * configuração da casa, default 100) opcional + até 1 imagem (galeria do
+ * dispositivo ou câmera ao vivo). A imagem é enviada ao bucket em
+ * `messages/<userId>/...` e a Server Action entrega cópias da notificação
+ * para todos os ADMINs da casa.
  */
-export function QuickMessageComposer({ userId }: { userId: string }) {
+export function QuickMessageComposer({
+  userId,
+  settings = DEFAULT_QUICK_MESSAGE,
+}: {
+  userId: string
+  settings?: QuickMessageSettings
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
@@ -39,6 +46,8 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+
+  const maxImageBytes = settings.maxImageMb * 1024 * 1024
 
   const galleryRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -97,7 +106,7 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
 
   async function handleFile(file: File | undefined) {
     if (!file) return
-    const invalid = validateImageFile(file)
+    const invalid = validateImageFile(file, maxImageBytes, settings.maxImageMb)
     if (invalid) {
       setError(invalid)
       return
@@ -182,7 +191,7 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
               <span className="text-xs text-slate-500">
                 {open
                   ? 'Clique para recolher.'
-                  : `Lembrete curto para seus tutores (máx. ${QUICK_MESSAGE_MAX_CHARS} caracteres).`}
+                  : `Lembrete curto para seus tutores (máx. ${settings.maxChars} caracteres).`}
               </span>
             </span>
           </span>
@@ -199,10 +208,10 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
             <textarea
               value={text}
               onChange={(event) =>
-                setText(event.target.value.slice(0, QUICK_MESSAGE_MAX_CHARS))
+                setText(event.target.value.slice(0, settings.maxChars))
               }
               rows={2}
-              maxLength={QUICK_MESSAGE_MAX_CHARS}
+              maxLength={settings.maxChars}
               placeholder={
                 imageUrl
                   ? 'Opicional — escreva um comentário curto…'
@@ -211,7 +220,7 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
               className="min-h-20 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-shadow focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
             />
             <p className="mt-1 text-right text-xs text-slate-400">
-              {text.length}/{QUICK_MESSAGE_MAX_CHARS}
+              {text.length}/{settings.maxChars}
             </p>
 
             {imageUrl ? (
@@ -269,7 +278,7 @@ export function QuickMessageComposer({ userId }: { userId: string }) {
                   }}
                 />
                 <span className="text-xs text-slate-400">
-                  {IMAGE_TYPES} · até {QUICK_MESSAGE_MAX_IMAGE_MB} MB
+                  {IMAGE_TYPES} · até {settings.maxImageMb} MB
                 </span>
               </div>
             )}
