@@ -172,6 +172,18 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
 }
 
 /**
+ * Novo custo de uma recompensa após um resgate aprovado. A taxa depende do
+ * custo atual (faixa): abaixo de 26 pts não encarece, até 200 pts +3% e acima
+ * de 200 pts +2%. Quando encarece, o aumento mínimo é de 1 pt.
+ */
+function nextRewardCost(currentCost: number): number {
+  if (currentCost <= 25) return currentCost
+  const rate = currentCost <= 200 ? 0.03 : 0.02
+  const bumped = Math.round(currentCost * (1 + rate))
+  return Math.max(bumped, currentCost + 1)
+}
+
+/**
  * ADMIN aprova o resgate e DEBITA os pontos do dependente.
  * A escrita condicional usa `.eq('status','PENDING')` + `.gte('points', cost)`
  * para que requisições concorrentes não gastem o mesmo saldo duas vezes.
@@ -237,13 +249,52 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     return { ok: false, error: 'Falha ao debitar pontos. Resgate revertido.' }
   }
 
+  // Recompensa encarece a cada resgate aprovado. Lê o custo atual da recompensa
+  // (não o snapshot do resgate) e aplica a taxa da faixa. O `.eq('points_cost', ...)`
+  // impede que duas aprovações concorrentes sobrescrevam o aumento uma da outra.
+  const { data: reward } = await admin
+    .from('rewards')
+    .select('id, points_cost')
+    .eq('id', redemption.reward_id)
+    .maybeSingle()
+
+  let newCost: number | null = null
+  if (reward) {
+    newCost = nextRewardCost(reward.points_cost)
+    const { data: bumped, error: bumpError } = await admin
+      .from('rewards')
+      .update({ points_cost: newCost })
+      .eq('id', redemption.reward_id)
+      .eq('points_cost', reward.points_cost)
+      .select('id')
+
+    if (bumpError || !bumped || bumped.length === 0) {
+      // Aprovação encalhou antes de encarecer a recompensa: devolve o débito e
+      // reabre o resgate para reprocessar (mesmo padrão de rollback do débito).
+      await admin
+        .from('reward_redemptions')
+        .update({ status: 'PENDING', approved_by: null, resolved_at: null })
+        .eq('id', redemptionId)
+      await admin
+        .from('profiles')
+        .update({ points: dependent.points })
+        .eq('id', redemption.profile_id)
+      return {
+        ok: false,
+        error: 'Falha ao aplicar o aumento de custo. Resgate revertido.',
+      }
+    }
+  }
+
   const notifInput: NotifyInput & { recipientId: string } = {
     houseId: activeHouse.id,
     recipientId: redemption.profile_id,
     actorId: auth.adminId,
     type: 'REDEMPTION_APPROVED',
     title: 'Resgate aprovado',
-    body: `Seu resgate foi aprovado. −${redemption.points_cost} pts.`,
+    body: newCost
+      ? `Seu resgate foi aprovado. −${redemption.points_cost} pts. A recompensa agora custa ${newCost} pts.`
+      : `Seu resgate foi aprovado. −${redemption.points_cost} pts.`,
     link: '/rewards',
   }
 

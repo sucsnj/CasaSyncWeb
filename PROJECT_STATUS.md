@@ -2,6 +2,28 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Aumento automático de custo de recompensa a cada resgate aprovado (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **`approveRedemption` encarece a recompensa automaticamente:** após aprovar o resgate e debitar os pontos, lê o **custo atual** da recompensa (`rewards.points_cost`, não o snapshot do resgate) e aplica a taxa da faixa:
+  - **≤ 25 pts → não encarece** (fica fixo no custo atual)
+  - 26–200 pts → **+3%**
+  - > 200 pts → **+2%**
+- **`nextRewardCost(currentCost)`** (`src/actions/rewards.ts`, helper interno — sem `export` porque o arquivo é `'use server'`): `Math.round(custo atual × (1 + taxa))` com **piso de +1 pt** quando encarece (26 pts +3% = 27; recompensa pequena não fica parada uma vez que passou dos 25). Decisões de faixa/arredondamento/piso alinhadas com o usuário.
+- **Guard anti-race:** o update usa `.eq('id', reward_id)` + `.eq('points_cost', cost_antigo)` — se duas aprovações concorrentes tentarem encarecer a mesma recompensa, a segunda não sobrescreve o aumento da primeira.
+- **Rollback completo se o bump falhar:** caso o update retorne zero linhas (ou erro), o resgate volta a `PENDING` (limpa `approved_by`/`resolved_at`) e os pontos são devolvidos ao dependente — mesmo padrão do rollback do débito. Não há resgate aprovado "pela metade".
+- **Notificação ao dependente menciona o novo preço:** body `"Seu resgate foi aprovado. −X pts. A recompensa agora custa Y pts."` (com fallback para a mensagem antiga se a recompensa não existir — caso corrompido).
+- Catálogo se atualiza sozinho: o Realtime de `rewards` + `router.refresh()` propagam o novo custo para o ADMIN e o DEPENDENT.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Decisões
+- O percentual aplica sobre o **custo atual da recompensa no momento da aprovação** (não sobre o preço pedido no resgate) — resgates pendentes antigos continuam válidos pelo preço que o dependente solicitou.
+- Sem notificação/evento específico para o aumento em si: o novo preço entra na notificação de aprovação (é o canal que o dependente já recebe nesse fluxo).
+
+---
+
 ## Busca de recompensas no catálogo (concluída — sem mudança de schema)
 
 ### O que foi implementado
