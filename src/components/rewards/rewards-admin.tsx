@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Gift, ClipboardList, Layers, Lightbulb } from 'lucide-react'
+import { Gift, ClipboardList, Layers, Lightbulb, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -85,11 +85,21 @@ export function RewardsAdmin({
   const [rewardImageUrl, setRewardImageUrl] = useState<string | null>(null)
   const [editingReward, setEditingReward] = useState<Reward | null>(null)
   const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   const rewardById = useMemo(
     () => new Map(rewards.map((reward) => [reward.id, reward])),
     [rewards]
   )
+  const filteredRewards = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return rewards
+    return rewards.filter(
+      (reward) =>
+        reward.title.toLowerCase().includes(term) ||
+        (reward.description ?? '').toLowerCase().includes(term)
+    )
+  }, [rewards, search])
   const dependentNameById = useMemo(
     () => new Map(dependents.map((dependent) => [dependent.id, dependent.full_name])),
     [dependents]
@@ -317,98 +327,112 @@ export function RewardsAdmin({
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Nova recompensa</CardTitle>
-              <CardDescription>
-                Item resgatável pelos dependentes da casa.
-              </CardDescription>
-            </div>
-            <CardAction>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowRewardForm((value) => !value)}
-              >
-                {showRewardForm ? 'Fechar' : 'Nova recompensa'}
-              </Button>
-            </CardAction>
-          </CardHeader>
-          {showRewardForm ? (
-            <CardContent>
-              <form onSubmit={handleCreate} className="grid gap-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="reward-title">Título</Label>
-                  <Input
-                    id="reward-title"
-                    name="title"
-                    required
-                    placeholder="Ex.: 1h de videogame"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2">
-                    <Label htmlFor="reward-cost">Custo em pontos</Label>
-                    <Input
-                      id="reward-cost"
-                      name="points_cost"
-                      type="number"
-                      min={1}
-                      step={1}
-                      required
-                      placeholder="Ex.: 50"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="reward-emoji">Emoji</Label>
-                    <Input
-                      id="reward-emoji"
-                      name="emoji"
-                      defaultValue={rewardEmoji ?? ''}
-                      onChange={(event) => setRewardEmoji(event.target.value.trim().slice(0, 8) || null)}
-                      placeholder="🎮"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="reward-description">Descrição</Label>
-                  <textarea
-                    id="reward-description"
-                    name="description"
-                    rows={2}
-                    placeholder="Opcional"
-                    className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Label>Imagem (opcional)</Label>
-                  <ImageUpload
-                    folder="rewards"
-                    ownerId={houseId}
-                    value={rewardImageUrl}
-                    onChange={setRewardImageUrl}
-                  />
-                  <input type="hidden" name="image_url" value={rewardImageUrl ?? ''} />
-                </div>
-
-                {formError ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {formError}
-                  </p>
-                ) : null}
-
-                <Button type="submit" disabled={pending}>
-                  {pending ? 'Criando...' : 'Criar recompensa'}
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Nova recompensa</CardTitle>
+                <CardDescription>
+                  Item resgatável pelos dependentes da casa.
+                </CardDescription>
+              </div>
+              <CardAction>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowRewardForm((value) => !value)}
+                >
+                  {showRewardForm ? 'Fechar' : 'Nova recompensa'}
                 </Button>
-              </form>
-            </CardContent>
-          ) : null}
-        </Card>
+              </CardAction>
+            </CardHeader>
+            {showRewardForm ? (
+              <CardContent>
+                <form onSubmit={handleCreate} className="grid gap-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="reward-title">Título</Label>
+                    <Input
+                      id="reward-title"
+                      name="title"
+                      required
+                      placeholder="Ex.: 1h de videogame"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="reward-cost">Custo em pontos</Label>
+                      <Input
+                        id="reward-cost"
+                        name="points_cost"
+                        type="number"
+                        min={1}
+                        step={1}
+                        required
+                        placeholder="Ex.: 50"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="reward-emoji">Emoji</Label>
+                      <Input
+                        id="reward-emoji"
+                        name="emoji"
+                        defaultValue={rewardEmoji ?? ''}
+                        onChange={(event) => setRewardEmoji(event.target.value.trim().slice(0, 8) || null)}
+                        placeholder="🎮"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="reward-description">Descrição</Label>
+                    <textarea
+                      id="reward-description"
+                      name="description"
+                      rows={2}
+                      placeholder="Opcional"
+                      className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label>Imagem (opcional)</Label>
+                    <ImageUpload
+                      folder="rewards"
+                      ownerId={houseId}
+                      value={rewardImageUrl}
+                      onChange={setRewardImageUrl}
+                    />
+                    <input type="hidden" name="image_url" value={rewardImageUrl ?? ''} />
+                  </div>
+
+                  {formError ? (
+                    <p className="text-sm text-destructive" role="alert">
+                      {formError}
+                    </p>
+                  ) : null}
+
+                  <Button type="submit" disabled={pending}>
+                    {pending ? 'Criando...' : 'Criar recompensa'}
+                  </Button>
+                </form>
+              </CardContent>
+            ) : null}
+          </Card>
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar recompensa..."
+              aria-label="Buscar recompensa"
+              className="pl-10"
+            />
+          </div>
+        </div>
 
         <Card>
           <CardHeader>
@@ -426,9 +450,16 @@ export function RewardsAdmin({
                 title="Nenhuma recompensa criada ainda"
                 message="Crie a primeira recompensa para os dependentes. 🎁"
               />
+            ) : filteredRewards.length === 0 ? (
+              <p
+                className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
+                role="status"
+              >
+                Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
+              </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {rewards.map((reward) => (
+                {filteredRewards.map((reward) => (
                   <li
                     key={reward.id}
                     className={cn(

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Coins, Gift, Lightbulb, PartyPopper } from 'lucide-react'
+import { Coins, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useProfilePoints } from '@/hooks/use-profile-points'
@@ -73,11 +73,21 @@ export function RewardsDependent({
   const [suggestionImageUrl, setSuggestionImageUrl] = useState<string | null>(
     null
   )
+  const [search, setSearch] = useState('')
 
   const rewardById = useMemo(
     () => new Map(rewards.map((reward) => [reward.id, reward])),
     [rewards]
   )
+  const filteredRewards = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return rewards
+    return rewards.filter(
+      (reward) =>
+        reward.title.toLowerCase().includes(term) ||
+        (reward.description ?? '').toLowerCase().includes(term)
+    )
+  }, [rewards, search])
 
   // Saldo ao vivo: quando o ADMIN aprova uma tarefa ou um resgate, o
   // `profiles.points` muda e este listener atualiza o contador na hora.
@@ -245,6 +255,18 @@ export function RewardsDependent({
           </Button>
         </div>
 
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar recompensa..."
+            aria-label="Buscar recompensa"
+            className="pl-10"
+          />
+        </div>
+
         {showSuggestionModal ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col gap-3 py-4">
@@ -308,9 +330,16 @@ export function RewardsDependent({
             title="Loja vazia por enquanto"
             message="O administrador está preparando novidades para você. 🎁"
           />
+        ) : filteredRewards.length === 0 ? (
+          <p
+            className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
+            role="status"
+          >
+            Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
+          </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {rewards.map((reward) => {
+            {filteredRewards.map((reward) => {
               const inactive = !reward.active
               const disabled =
                 inactive || pendingId === reward.id || points < reward.points_cost

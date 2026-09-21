@@ -2,6 +2,20 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Busca de recompensas no catálogo (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Busca client-side sobre o catálogo de recompensas** em `/rewards`, tanto para ADMIN quanto para DEPENDENT: o termo digitado casa com **trechos do título e da descrição** (case-insensitive; descrição vazia é ignorada). Sem filtros extras — apenas busca simples e compacta.
+- **ADMIN (`rewards-admin.tsx`):** o input de busca fica **logo abaixo do card de criação de recompensas** (agora o card de criação e a busca vivem numa `flex flex-col gap-4` na primeira coluna do grid; o catálogo segue na segunda coluna). Filtra apenas a listagem do **Catálogo** (não as sugestões nem as solicitações de resgate).
+- **DEPENDENT (`rewards-dependent.tsx`):** o input de busca fica **logo abaixo do título "Loja de recompensas"** (antes do formulário de sugestão), filtrando apenas a grade da loja — resgates e sugestões não são afetados.
+- **Estado vazio da busca:** quando há recompensas mas nenhuma casa com o termo, exibe `"Nenhuma recompensa encontrada para \"{termo}\"."` (`role="status"`) em vez do EmptyState de catálogo vazio; se não há recompensas nenhuma, mantém o EmptyState original.
+- **Filtro derivado por `useMemo`:** cada componente ganhou estado `search` e `filteredRewards = useMemo(...)`, recomputando sobre o estado vivo de `rewards` — a busca permanece válida quando recompensas chegam/somem via Realtime ou `router.refresh()`.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+---
+
 ## Prevenção de duplicação de tarefas pelo ADMIN (concluída — sem mudança de schema)
 
 ### O que foi implementado
