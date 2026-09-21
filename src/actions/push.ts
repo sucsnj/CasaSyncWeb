@@ -3,31 +3,11 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getSessionProfile } from '@/utils/house'
 import type { ActionResult } from './types'
-import webPush from 'web-push'
-
-// Configura web-push com as chaves VAPID
-function initWebPush() {
-  webPush.setVapidDetails(
-    'mailto:casasync@example.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
-  )
-}
-
-type PushSubscriptionRow = {
-  endpoint: string
-  p256dh: string
-  auth: string
-  user_id: string
-  house_id: string
-}
-
-const PUSH_TABLE = 'push_subscriptions' as const
-
-function getPushTable(admin: ReturnType<typeof createAdminClient>) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (admin as any).from(PUSH_TABLE)
-}
+import {
+  getPushTable,
+  sendPushNotification,
+  type PushPayload,
+} from '@/lib/push-service'
 
 /**
  * Registra a push subscription do usuário autenticado.
@@ -139,67 +119,14 @@ export async function unregisterAllPushSubscriptions(): Promise<ActionResult> {
 /**
  * Envia push notification para TODOS os dispositivos de um usuário.
  * Usado internamente pelas actions que geram notificações.
+ * Delega ao `push-service` (validação de VAPID + envio multi-dispositivo
+ * com Promise.allSettled + limpeza de endpoints 404/410).
  */
 export async function sendPushToUser(
   targetUserId: string,
-  payload: {
-    title: string
-    body: string
-    icon?: string
-    badge?: string
-    tag?: string
-    data?: Record<string, unknown>
-    actions?: Array<{ action: string; title: string }>
-  }
+  payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
-  let admin: ReturnType<typeof createAdminClient>
-  try {
-    admin = createAdminClient()
-  } catch {
-    return { sent: 0, failed: 0 }
-  }
-
-  initWebPush()
-
-  const { data: subscriptions } = await getPushTable(admin)
-    .select('endpoint, p256dh, auth')
-    .eq('user_id', targetUserId)
-
-  const subs = (subscriptions ?? []) as PushSubscriptionRow[]
-
-  if (!subs.length) {
-    console.warn(
-      `[push] sendPushToUser: nenhuma subscription registrada para o usuário ${targetUserId}`
-    )
-    return { sent: 0, failed: 0 }
-  }
-
-  let sent = 0
-  let failed = 0
-
-  for (const sub of subs) {
-    try {
-      const pushSubscription = {
-        endpoint: sub.endpoint,
-        keys: {
-          p256dh: sub.p256dh,
-          auth: sub.auth,
-        },
-      }
-
-      await webPush.sendNotification(pushSubscription, JSON.stringify(payload))
-      sent++
-    } catch (err: unknown) {
-      failed++
-      // Se a subscription expirou/foi revogada (410 Gone), remove do banco
-      if (err instanceof webPush.WebPushError && err.statusCode === 410) {
-        await getPushTable(admin).delete().eq('endpoint', sub.endpoint)
-      }
-      console.error('Push send error:', err)
-    }
-  }
-
-  return { sent, failed }
+  return sendPushNotification(targetUserId, payload)
 }
 
 /**
@@ -217,8 +144,6 @@ export async function sendPushToHouseAdmins(
   } catch {
     return { sent: 0, failed: 0 }
   }
-
-  initWebPush()
 
   // Busca todos os ADMINs membros da casa
   const { data: adminMembers } = await admin
@@ -259,8 +184,6 @@ export async function sendPushToHouseDependents(
   } catch {
     return { sent: 0, failed: 0 }
   }
-
-  initWebPush()
 
   const { data: dependentMembers } = await admin
     .from('house_members')

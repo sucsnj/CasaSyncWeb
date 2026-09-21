@@ -4,6 +4,25 @@
 
 ---
 
+## Backend de push centralizado — validação de VAPID + envio multi-dispositivo (concluído, sem mudança de schema)
+
+### O que foi implementado
+- **Novo `src/lib/push-service.ts`** (server-only) com a lógica central de entrega de Web Push:
+  - **`initWebPush()`** valida as env vars **`NEXT_PUBLIC_VAPID_PUBLIC_KEY`**, **`VAPID_PRIVATE_KEY`** e **`VAPID_SUBJECT`** (nova, ex.: `mailto:admin@casasync.app`) e loga **claramente** no console quando faltar alguma (chaves ausentes → push desabilitado, sem falhar silenciosamente; `VAPID_SUBJECT` ausente → usa fallback `mailto:casasync@example.com` com warning). Antes, o subject era `mailto:casasync@example.com` **hardcoded** em `src/actions/push.ts`.
+  - **`sendPushNotification(targetUserId, payload)`** consulta **todas** as subscriptions do usuário (`.select('id, endpoint, p256dh, auth').eq('user_id', targetUserId)`, uma row por dispositivo) e envia com **`Promise.allSettled()`** — um dispositivo com erro NÃO derruba/rejeita os demais. Endpoints **404 e 410** (subscription morta/revogada/expirada) são **removidos automaticamente da tabela** (`delete().eq('id', ...)`), agora por `id` (antes só 410 por `endpoint`).
+- **`src/actions/push.ts` delegou ao serviço:** `sendPushToUser` virou wrapper de `sendPushNotification`; `sendPushToHouseAdmins`/`sendPushToHouseDependents` seguiram intactos na API (continuam somando `sent`/`failed` por membro). Registro (`registerPushSubscription`, delete+insert) e unregister ficaram inalterados. Nenhum import externo mudou (`src/utils/notifications.ts` segue chamando as mesmas actions).
+- **Integração já existia e foi preservada:** `notifyUser`/`notifyHouse` (`src/utils/notifications.ts`) inserem em `notifications` e **então** chamam o push no mesmo fluxo — cobrindo os cenários pedidos: criação/atribuição de tarefa (ADMIN→DEPENDENT), conclusão/pendente de aprovação (DEPENDENT→ADMINs), solicitação/aprovação de recompensa e sugestão, além do pedido de extensão de prazo (SLA). Sem duplicidade: a chamada já é única, logo após o insert.
+- **`.env.local`** ganhou `VAPID_SUBJECT=mailto:admin@casasync.app`.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Pontos de atenção
+- **Requer deploy** para valer online; a env `VAPID_SUBJECT` precisa existir também na Vercel (Project Settings → Environment Variables).
+- Com o log `[push] ...` no `initWebPush`/`sendPushNotification`, dá para confirmar no runtime da Vercel se as chaves estão configuradas e quantos dispositivos receberam (uso de `Promise.allSettled` impede que uma subscription morta contamine as demais).
+
+---
+
 ## Push real não chegava no Android — permissão pedida fora de gesto (corrigido)
 
 ### O que foi encontrado e corrigido
