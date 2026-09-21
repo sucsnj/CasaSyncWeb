@@ -15,6 +15,7 @@ import {
   type NotifyHouseInput,
 } from '@/utils/notifications'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
+import { normalizeTaskTitle } from '@/utils/task-normalize'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -117,7 +118,10 @@ function normalizeDueDate(
   }
 }
 
-export async function createTask(input: CreateTaskInput): Promise<ActionResult> {
+export async function createTask(
+  input: CreateTaskInput,
+  options?: { force?: boolean }
+): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) {
     return { ok: false, error: 'Crie ou selecione uma casa primeiro.' }
@@ -141,6 +145,33 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult> 
 
   if (!assignee) {
     return { ok: false, error: 'O dependente selecionado não pertence a esta casa.' }
+  }
+
+  // Soft block server-side (rede de segurança): impede criar uma tarefa ativa
+  // com o mesmo nome (normalizado) para o mesmo pupilo, a menos que o ADMIN
+  // confirme explicitamente (`force: true`). A comparação ignora caixa, acentos
+  // e espaços extras — alinhada ao autocomplete da UI.
+  if (!options?.force) {
+    const { data: activeTasks } = await admin
+      .from('tasks')
+      .select('id, title')
+      .eq('house_id', activeHouse.id)
+      .eq('assigned_to', input.assignedTo)
+      .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+
+    const normalized = normalizeTaskTitle(title)
+    const duplicate = activeTasks?.find(
+      (task) => normalizeTaskTitle(task.title) === normalized
+    )
+
+    if (duplicate) {
+      return {
+        ok: false,
+        code: 'DUPLICATE_TASK',
+        taskId: duplicate.id,
+        error: 'Já existe uma tarefa ativa com esse nome para este dependente.',
+      }
+    }
   }
 
   const due = normalizeDueDate(input.dueDate)

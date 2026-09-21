@@ -14,6 +14,7 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
+import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
   datetimeLocalToIso,
   isoToDateTimeLocalValue,
@@ -86,6 +87,16 @@ export function TasksAdmin({
   // DESABILITADO — estado do upload de imagem de tarefas (ver comentário na importação).
   // const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState(nowDateTimeLocalValue)
+  // Campos do form de criação (controlados p/ autocomplete + soft block).
+  const [title, setTitle] = useState('')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [points, setPoints] = useState('5')
+  const [description, setDescription] = useState('')
+  // Tarefa do catálogo escolhida no autocomplete (modo "reutilizar").
+  const [reuseTask, setReuseTask] = useState<Task | null>(null)
+  // Confirmação explícita para criar duplicata ativa do mesmo pupilo.
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
@@ -112,26 +123,119 @@ export function TasksAdmin({
   const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
 
+  // Autocomplete "Você quis dizer...": título normalizado >= 3 chars, lista até
+  // 3 tarefas da casa (catálogo todo) cujo título normalizado CONTÉM o digitado.
+  const normalizedTitle = normalizeTaskTitle(title)
+  const suggestions =
+    normalizedTitle.length >= 3 && suggestionsOpen
+      ? tasks
+          .filter(
+            (task) =>
+              task.title &&
+              normalizeTaskTitle(task.title).includes(normalizedTitle)
+          )
+          .slice(0, 3)
+      : []
+
+  // Soft block por pupilo: tarefa ATIVA (PENDING/IN_PROGRESS/NOT_DELIVERED) com
+  // o MESMO título normalizado para o MESMO assigned_to. Ignora a própria tarefa
+  // em modo "Reativar". Fora de um gesto de confirmação explícita.
+  const ACTIVE_STATUSES: Task['status'][] = [
+    'PENDING',
+    'IN_PROGRESS',
+    'NOT_DELIVERED',
+  ]
+  const duplicateActive = normalizedTitle
+    ? (tasks.find(
+        (task) =>
+          task.id !== reuseTask?.id &&
+          task.assigned_to === assignedTo &&
+          ACTIVE_STATUSES.includes(task.status) &&
+          task.title &&
+          normalizeTaskTitle(task.title) === normalizedTitle
+      ) ?? null)
+    : null
+
+  function resetForm() {
+    setTitle('')
+    setDescription('')
+    setPoints('5')
+    setAssignedTo('')
+    setDueDate(nowDateTimeLocalValue())
+    setReuseTask(null)
+    setConfirmDuplicate(false)
+    setSuggestionsOpen(false)
+  }
+
+  function applySuggestion(task: Task) {
+    // Preenche o form com TODOS os dados da tarefa do catálogo; prazo = +1 dia
+    // (o render abaixo recalcula a duplicata/Reativar conforme o novo estado).
+    setTitle(task.title)
+    setDescription(task.description ?? '')
+    setPoints(String(task.points))
+    setAssignedTo(task.assigned_to ?? '')
+    setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), 1))
+    setSuggestionsOpen(false)
+    setConfirmDuplicate(false)
+    // Somente tarefa aprovada entra em modo "Reativar" (botão + submit diferentes).
+    setReuseTask(task.status === 'APPROVED' ? task : null)
+  }
+
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    // currentTarget é nulled após o primeiro await — capturar o form agora.
-    const form = event.currentTarget
-
     setFormError(null)
-    const formData = new FormData(form)
+
+    // Reutilização de uma tarefa aprovada: reativa preservando os dados e
+    // reiniciando o prazo (+1 dia) — equivalente ao restoreTask dos cards.
+    if (reuseTask?.status === 'APPROVED') {
+      startTransition(async () => {
+        const result = await restoreTask(reuseTask.id)
+        if (!result.ok) {
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
+
+        toast.success(result.message ?? 'Tarefa reativada')
+        setFormError(null)
+        resetForm()
+        setShowTaskForm(false)
+        router.refresh()
+      })
+      return
+    }
+
+    // Soft block: criar uma tarefa ativa com o MESMO nome (normalizado) de uma
+    // já existente para o MESMO pupilo exige confirmação explícita.
+    const dup = duplicateActive
+    if (dup && !confirmDuplicate) {
+      setFormError(
+        `Já existe uma tarefa ativa "${dup.title}" para ${assigneeName(dup.assigned_to)}. Use "Criar mesmo assim" para criar a duplicata.`
+      )
+      toast.warning('Duplicata detectada: confirme para criar mesmo assim.')
+      return
+    }
+
+    const pointsValue = Number(points)
+    if (!Number.isInteger(pointsValue) || pointsValue < 0) {
+      setFormError('Pontos deve ser um inteiro >= 0.')
+      toast.error('Pontos deve ser um inteiro >= 0.')
+      return
+    }
 
     startTransition(async () => {
-      const result = await createTask({
-        title: String(formData.get('title') ?? ''),
-        description: String(formData.get('description') ?? ''),
-        dueDate: datetimeLocalToIso(String(formData.get('due_date') ?? '')),
-        points: Number(formData.get('points')),
-        assignedTo: String(formData.get('assigned_to') ?? ''),
-        // Sem campo de imagem no form (upload desabilitado), `image_url` sempre
-        // volta null — a action cria a tarefa sem imagem.
-        imageUrl: String(formData.get('image_url') ?? '') || null,
-      })
+      const result = await createTask(
+        {
+          title,
+          description,
+          dueDate: datetimeLocalToIso(dueDate),
+          points: pointsValue,
+          assignedTo,
+          imageUrl: null,
+        },
+        confirmDuplicate ? { force: true } : undefined
+      )
 
       if (!result.ok) {
         setFormError(result.error)
@@ -141,10 +245,8 @@ export function TasksAdmin({
 
       toast.success(result.message ?? 'Tarefa criada')
       setFormError(null)
-      setDueDate(nowDateTimeLocalValue())
-      form.reset()
+      resetForm()
       setShowTaskForm(false)
-      // O INSERT também chega via Realtime; o refresh é a rede de segurança.
       router.refresh()
     })
   }
@@ -393,10 +495,59 @@ export function TasksAdmin({
         </CardHeader>
         {showTaskForm ? (
           <CardContent>
-            <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2 md:items-start">
-              <div className="grid gap-2">
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-3 md:grid-cols-2 md:items-start"
+            >
+              <div className="relative grid gap-2">
                 <Label htmlFor="task-title">Título</Label>
-                <Input id="task-title" name="title" required placeholder="Ex.: Arrumar o quarto" />
+                <Input
+                  id="task-title"
+                  name="title"
+                  required
+                  value={title}
+                  onChange={(event) => {
+                    setTitle(event.target.value)
+                    setSuggestionsOpen(true)
+                    // Editar o título manualmente sai do modo "reutilizar".
+                    setReuseTask(null)
+                    setConfirmDuplicate(false)
+                  }}
+                  placeholder="Ex.: Arrumar o quarto"
+                />
+
+                {/* Autocomplete "Você quis dizer..." — catálogo da casa toda,
+                    título normalizado >= 3 chars, até 3 sugestões. */}
+                {suggestions.length > 0 ? (
+                  <ul className="absolute top-full left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                    {suggestions.map((suggestion) => (
+                      <li key={suggestion.id}>
+                        <button
+                          type="button"
+                          onClick={() => applySuggestion(suggestion)}
+                          className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
+                        >
+                          <span className="truncate text-sm font-medium text-slate-800">
+                            {suggestion.title}
+                          </span>
+                          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span
+                              className={cn(
+                                'rounded-full px-2 py-0.5 font-medium',
+                                taskChipByStatus[suggestion.status].className
+                              )}
+                            >
+                              {taskChipByStatus[suggestion.status].label}
+                            </span>
+                            {assigneeName(suggestion.assigned_to) ? (
+                              <span>· {assigneeName(suggestion.assigned_to)}</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
 
               <div className="grid gap-2">
@@ -405,7 +556,11 @@ export function TasksAdmin({
                   id="task-assignee"
                   name="assigned_to"
                   required
-                  defaultValue=""
+                  value={assignedTo}
+                  onChange={(event) => {
+                    setAssignedTo(event.target.value)
+                    setConfirmDuplicate(false)
+                  }}
                   className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 >
                   <option value="" disabled>
@@ -465,7 +620,8 @@ export function TasksAdmin({
                   type="number"
                   min={0}
                   step={1}
-                  defaultValue={5}
+                  value={points}
+                  onChange={(event) => setPoints(event.target.value)}
                   required
                 />
               </div>
@@ -477,6 +633,8 @@ export function TasksAdmin({
                   name="description"
                   rows={2}
                   placeholder="Opcional"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
                   className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 />
               </div>
@@ -506,9 +664,59 @@ export function TasksAdmin({
                 </p>
               ) : null}
 
+              {duplicateActive && !confirmDuplicate ? (
+                <div
+                  className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-2"
+                  role="alert"
+                >
+                  <p className="text-sm font-medium text-amber-800">
+                    Já existe uma tarefa ativa &quot;{duplicateActive.title}&quot; para{' '}
+                    {assigneeName(duplicateActive.assigned_to)}.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="min-h-9 border-amber-300 text-amber-700 hover:bg-amber-100"
+                      onClick={() => applySuggestion(duplicateActive)}
+                      disabled={pending}
+                    >
+                      Usar existente
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-9 bg-amber-500 hover:bg-amber-600"
+                      onClick={() => setConfirmDuplicate(true)}
+                      disabled={pending}
+                    >
+                      Criar mesmo assim
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {reuseTask ? (
+                <p
+                  className="text-sm text-sky-700 md:col-span-2"
+                  role="status"
+                >
+                  Reutilizando &quot;{reuseTask.title}&quot;: os dados foram copiados e o
+                  prazo reiniciado (+1 dia). Confirme para reativar a tarefa
+                  existente.
+                </p>
+              ) : null}
+
               <div className="md:col-span-2">
                 <Button type="submit" disabled={pending}>
-                  {pending ? 'Criando...' : 'Criar tarefa'}
+                  {pending
+                    ? reuseTask
+                      ? 'Reativando...'
+                      : 'Criando...'
+                    : reuseTask
+                      ? 'Reativar tarefa existente'
+                      : 'Criar tarefa'}
                 </Button>
               </div>
             </form>

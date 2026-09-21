@@ -2,7 +2,20 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
-## Push disparado explicitamente nas Server Actions dos fluxos-chave (concluída)
+## Prevenção de duplicação de tarefas pelo ADMIN (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Autocomplete "Você quis dizer..." no form de nova tarefa (`tasks-admin.tsx`):** com o título normalizado **≥ 3 chars**, exibe um dropdown com **até 3** tarefas da casa ativa (catálogo todo, qualquer status) cujo título normalizado **contém** o digitado — cada item mostra título + chip de status + nome do pupilo. Clicar preenche o form com **todos** os dados da tarefa (título, descrição, pontos, atribuição) e **prazo = agora + 1 dia**.
+- **Reativar tarefa aprovada:** se a sugestão escolhida for `APPROVED`, o modo vira **"Reativar tarefa existente"** — o submit chama `restoreTask` (preserva title/description/points/assigned_to, prazo +1 dia, limpa conclusão/adio). Para qualquer outro status, "não muda nada": só preenche os campos e o tutor edita manualmente como se tivesse aberto a tarefa.
+- **Soft block por pupilo (UI):** ao detectar tarefa **ativa** (`PENDING`/`IN_PROGRESS`/`NOT_DELIVERED`) com o **mesmo nome normalizado para o mesmo `assigned_to`**, exibe aviso âmbar com **"Usar existente"** (preenche o form com a tarefa do catálogo) e **"Criar mesmo assim"** (confirma explícita). Sem essa confirmação, o `handleCreate` bloqueia o submit com aviso.
+- **Guard server-side (`createTask` ganhou `options?: { force?: boolean }`):** consulta tarefas ativas do mesmo pupilo na casa e compara `normalizeTaskTitle`; duplicata encontrada sem `force: true` → `{ ok: false, code: 'DUPLICATE_TASK', taskId, error }` (rede de segurança — o cliente nunca confia na própria UI). `ActionResult` estendido com `code`/`taskId` opcionais.
+- **Novo `src/utils/task-normalize.ts`** (`normalizeTaskTitle`): lowercase + remove acentos (NFD) + colapsa espaços + trim — módulo puro usado no client E no servidor.
+- Campos do form de criação viraram **controlados** (título, descrição, pontos, atribuição) para viabilizar o autocomplete/soft block e o prefill.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+---
 
 ### O que foi implementado
 - **Invocações diretas de push nos fluxos pedidos**, após a criação da notificação interna em `notifications` (o banner Realtime/sino continua servido pelo insert; o push sai explicitamente da própria action):

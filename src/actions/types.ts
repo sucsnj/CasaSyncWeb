@@ -1,6 +1,6 @@
 export type ActionResult =
   | { ok: true; message?: string; redirectTo?: string }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: 'DUPLICATE_TASK'; taskId?: string }
 
 export const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/
 
