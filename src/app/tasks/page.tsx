@@ -10,7 +10,11 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
-import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import {
+  getHouseExtensionRulesSettings,
+  getHouseQuickMessageSettings,
+  getHouseTaskSlaSettings,
+} from '@/utils/house-settings'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
@@ -91,6 +95,16 @@ export default async function TasksPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
+  // Settings de prazos/SLA e de adiamento da casa, aplicadas nos cards de
+  // tarefas (prazo padrão, chip "Prazo próximo" e botões de adiamento).
+  const houseIdForSettings = isAdmin ? activeHouse?.id : dependentHouse?.id
+  const taskSlaSettings = houseIdForSettings
+    ? await getHouseTaskSlaSettings(houseIdForSettings)
+    : undefined
+  const extensionRulesSettings = isAdmin && houseIdForSettings
+    ? await getHouseExtensionRulesSettings(houseIdForSettings)
+    : undefined
+
   let content: React.ReactNode
 
   if (isAdmin) {
@@ -112,6 +126,9 @@ export default async function TasksPage() {
           houseId={activeHouse.id}
           initialTasks={tasks ?? []}
           assignees={assignees}
+          defaultDueDays={taskSlaSettings?.defaultDueDays}
+          dueSoonRatio={taskSlaSettings?.dueSoonRatio}
+          extensionDayOptions={extensionRulesSettings?.dayOptions}
         />
       )
     }
@@ -137,6 +154,7 @@ export default async function TasksPage() {
           houseId={dependentHouse.id}
           initialTasks={taskList}
           creatorNames={creatorNames}
+          dueSoonRatio={taskSlaSettings?.dueSoonRatio}
         />
       )
     }

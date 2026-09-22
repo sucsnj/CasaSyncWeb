@@ -1,12 +1,18 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
+  DEFAULT_EXTENSION_RULES,
+  DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
   DEFAULT_REWARD_PRICING,
+  DEFAULT_TASK_SLA,
   mergeSettings,
+  type ExtensionRulesSettings,
   type HouseSettingsKey,
+  type NotificationRetentionSettings,
   type QuickMessageSettings,
   type RewardPricingSettings,
+  type TaskSlaSettings,
 } from '@/utils/settings'
 
 type SettingsRow = { value: Record<string, unknown> | null }
@@ -46,5 +52,29 @@ export const getHouseQuickMessageSettings = cache(
   async (houseId: string): Promise<QuickMessageSettings> => {
     const value = await getHouseSettingsValue(houseId, 'quick_message')
     return mergeSettings(value, DEFAULT_QUICK_MESSAGE)
+  }
+)
+
+/** Configuração de prazos/SLA de tarefas da casa. */
+export const getHouseTaskSlaSettings = cache(
+  async (houseId: string): Promise<TaskSlaSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'task_sla')
+    return mergeSettings(value, DEFAULT_TASK_SLA)
+  }
+)
+
+/** Regras de adiamento de tarefas da casa. */
+export const getHouseExtensionRulesSettings = cache(
+  async (houseId: string): Promise<ExtensionRulesSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'extension_rules')
+    return mergeSettings(value, DEFAULT_EXTENSION_RULES)
+  }
+)
+
+/** Retenção das notificações comuns da casa. */
+export const getHouseNotificationRetentionSettings = cache(
+  async (houseId: string): Promise<NotificationRetentionSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'notification_retention')
+    return mergeSettings(value, DEFAULT_NOTIFICATION_RETENTION)
   }
 )

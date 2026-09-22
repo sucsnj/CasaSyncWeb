@@ -11,7 +11,7 @@
 - **Economia de pontos:** `approveRedemption` lê as settings da casa e só encarece com `enabled`; `nextRewardCost(currentCost, settings)` usa `noIncreaseMax`/`midMax`/`midRate`/`highRate`/`minBump` configuráveis (defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt). Guard anti-race e rollback preservados. Com `enabled=false`, o body da notificação volta ao texto sem o novo preço.
 - **Mensagem rápida:** `sendQuickMessage` valida `maxChars` e bloqueia na capacidade `capacity`; `cleanupQuickMessages` apaga a mais antiga quando `lidas >= capacity`; o compositor usa `QuickMessageSettings` para o contador/límite de caracteres e o tamanho da imagem; a plumbagem bell→nav carrega as settings nos call sites DEPENDENT (`getHouseQuickMessageSettings(house.id)` no layout dependente, `/tasks` e `/rewards`).
 - **UI:** nova rota **`/dashboard/admin/settings`** (`settings-admin.tsx`, cliente) com os cards **Economia de pontos** (toggle de aumento + faixas/taxas/piso) e **Mensagem rápida** (maxChars, maxImageMb, capacity); card **Configurações** (`SlidersHorizontal`) adicionado à Visão geral (grid passou de 3 para 4 colunas em `lg:`). Feedback inline + toast + `router.refresh()`.
-- **Fase 2 planejada (não feita):** configurações de SLA/prazos de tarefas e retenção de notificações comuns — mesma mecânica de `house_settings`, novas chaves em `HouseSettingsKey`.
+- **Fase 2 (concluída) — SLA/prazos de tarefas, adiamento e retenção de notificações comuns** na mesma mecânica de `house_settings`, novas chaves em `HouseSettingsKey` (ver seção dedicada abaixo).
 
 ### SQL aplicado no Supabase
 ```sql
@@ -32,6 +32,27 @@ create policy "house_settings_select_members" on public.house_settings
       and hm.profile_id = auth.uid()
   ));
 ```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
+## Fase 2 das configurações da casa — SLA/prazos, adiamento e retenção de notificações (concluída)
+
+### O que foi implementado
+Mesma mecânica da fase 1 (`house_settings` jsonb por `(house_id, key)`, escrita exclusiva por `updateHouseSettings`, leitura por getters cached, sem Realtime). **Sem mudança de schema** — as chaves novas são só mais valores jsonb na tabela existente:
+
+- **`task_sla`** — `defaultDueDays` (default 1) e `dueSoonRatio` (default 0.2):
+  - `restoreTask` agora reinicia o prazo para **agora + `defaultDueDays` dias** (antes +1 dia fixo) e a mensagem de sucesso acusa o prazo.
+  - O form de nova tarefa (`TasksAdmin`) preenche o campo de data com agora + `defaultDueDays` (inicialização, reset do form e prefill do autocomplete); `handleRestore` otimista usa o mesmo valor.
+  - O chip "Prazo próximo" (SLA) passou a usar `dueSoonRatio` (frações 0..1; 0 desliga o aviso), repassado das páginas a `TasksAdmin` e `TasksDependent` — `getTaskSlaStatus` ganhou 4º parâmetro opcional (default 0.2, retrocompatível).
+- **`extension_rules`** — `dayOptions: number[]` (default `[1, 3]`):
+  - Os botões "Aprovar (+N dias)" no card pendente do ADMIN são renderizados a partir de `dayOptions` (de 1 a 5 opções, cada 1–90 dias).
+  - `resolveTaskExtension` **rejeita dias fora da lista** (fail-closed): o servidor lê a settings da casa e valida `days ∈ dayOptions`.
+- **`notification_retention`** — `readRetentionDays` (default 5):
+  - `cleanupReadNotifications` passou a apagar lidas **por casa da notificação** (cada casa aplica seu próprio prazo — cobre ADMIN multi-casa) e **exclui `QUICK_MESSAGE`** (as mensagens rápidas seguem só a regra de capacidade "2 lidas → apaga a mais antiga").
+- **UI (`settings-admin.tsx`):** novos cards **Prazos de tarefas** (`CalendarClock`, prazo padrão em dias + percentual do SLA) e **Notificações** (`BellRing`, retenção de lidas em dias), e o card **Adiamento de tarefas** (`Clock3`) com lista dinâmica de opções de dias (adicionar/remover, min 1/máx 5). Revalidações: `task_sla`/`extension_rules` revalidam também `/tasks`.
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).

@@ -16,6 +16,10 @@ import {
 } from '@/utils/notifications'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
+import {
+  getHouseExtensionRulesSettings,
+  getHouseTaskSlaSettings,
+} from '@/utils/house-settings'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -681,7 +685,11 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'Somente tarefas aprovadas podem ser restauradas.' }
   }
 
-  const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  // Prazo padrão de restauro derivado das settings da casa (agora + N dias).
+  const slaSettings = await getHouseTaskSlaSettings(activeHouse.id)
+  const nextDue = new Date(
+    Date.now() + slaSettings.defaultDueDays * 24 * 60 * 60 * 1000
+  ).toISOString()
 
   const { data: restored, error } = await admin
     .from('tasks')
@@ -716,7 +724,7 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
-  return { ok: true, message: 'Tarefa restaurada: prazo reiniciado para +1 dia.' }
+  return { ok: true, message: `Tarefa restaurada: prazo reiniciado para +${slaSettings.defaultDueDays} dia(s).` }
 }
 
 /**
@@ -925,8 +933,13 @@ export async function resolveTaskExtension(
   if (!task.extension_requested) {
     return { ok: false, error: 'Esta tarefa não tem um pedido de adiamento pendente.' }
   }
-  if (approve && days < 1) {
-    return { ok: false, error: 'Dias de adiamento inválidos.' }
+
+  // Dias validados contra as opções configuradas da casa (fail-closed: o cliente
+  // renderiza os botões a partir de `dayOptions`, e o servidor não aceita valor
+  // fora deles).
+  const extensionSettings = await getHouseExtensionRulesSettings(activeHouse.id)
+  if (approve && (days < 1 || !extensionSettings.dayOptions.includes(days))) {
+    return { ok: false, error: 'Dias de adiamento fora das opções permitidas.' }
   }
 
   const isNotDelivered = task.status === 'NOT_DELIVERED'

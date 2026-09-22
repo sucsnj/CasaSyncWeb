@@ -74,10 +74,19 @@ export function TasksAdmin({
   houseId,
   initialTasks,
   assignees,
+  defaultDueDays = 1,
+  dueSoonRatio = 0.2,
+  extensionDayOptions = [1, 3],
 }: {
   houseId: string
   initialTasks: Task[]
   assignees: Assignee[]
+  /** Prazo padrão de criação/restauro (dias a partir de agora) — settings.casa. */
+  defaultDueDays?: number
+  /** Fração do tempo total que liga o chip "Prazo próximo" — settings.casa. */
+  dueSoonRatio?: number
+  /** Dias disponíveis nos botões de aprovação de adiamento — settings.casa. */
+  extensionDayOptions?: number[]
 }) {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -86,7 +95,9 @@ export function TasksAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   // DESABILITADO — estado do upload de imagem de tarefas (ver comentário na importação).
   // const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
-  const [dueDate, setDueDate] = useState(nowDateTimeLocalValue)
+  const [dueDate, setDueDate] = useState(() =>
+    modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays)
+  )
   // Campos do form de criação (controlados p/ autocomplete + soft block).
   const [title, setTitle] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
@@ -161,20 +172,21 @@ export function TasksAdmin({
     setDescription('')
     setPoints('5')
     setAssignedTo('')
-    setDueDate(nowDateTimeLocalValue())
+    setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
     setReuseTask(null)
     setConfirmDuplicate(false)
     setSuggestionsOpen(false)
   }
 
   function applySuggestion(task: Task) {
-    // Preenche o form com TODOS os dados da tarefa do catálogo; prazo = +1 dia
-    // (o render abaixo recalcula a duplicata/Reativar conforme o novo estado).
+    // Preenche o form com TODOS os dados da tarefa do catálogo; prazo = prazo
+    // padrão da casa (settings) a partir de agora (o render abaixo recalcula a
+    // duplicata/Reativar conforme o novo estado).
     setTitle(task.title)
     setDescription(task.description ?? '')
     setPoints(String(task.points))
     setAssignedTo(task.assigned_to ?? '')
-    setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), 1))
+    setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
     setSuggestionsOpen(false)
     setConfirmDuplicate(false)
     // Somente tarefa aprovada entra em modo "Reativar" (botão + submit diferentes).
@@ -342,9 +354,12 @@ export function TasksAdmin({
       }
 
       toast.success(result.message ?? 'Tarefa restaurada')
-      // Otimista: volta para Pendentes com o prazo reiniciado (+1 dia). Os
-      // pontos já creditados são mantidos e a tarefa reaparece para o dependente.
-      const nextDue = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      // Otimista: volta para Pendentes com o prazo reiniciado (prazo padrão da
+      // casa). Os pontos já creditados são mantidos e a tarefa reaparece para
+      // o dependente.
+      const nextDue = new Date(
+        Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+      ).toISOString()
       setTasks((prev) =>
         upsertTask(prev, {
           ...task,
@@ -738,7 +753,12 @@ export function TasksAdmin({
           />
         ) : (
           pendingTasks.map((task) => {
-            const sla = getTaskSlaStatus(task.created_at, task.due_date)
+            const sla = getTaskSlaStatus(
+              task.created_at,
+              task.due_date,
+              new Date(),
+              dueSoonRatio
+            )
             const slaInfo = taskSlaBadge[sla]
             const cardClass =
               sla === 'normal'
@@ -853,24 +873,18 @@ export function TasksAdmin({
                             </p>
                           ) : null}
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={pending}
-                              className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                              onClick={() => handleResolveExtension(task, true, 1)}
-                            >
-                              Aprovar (+1 dia)
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={pending}
-                              className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                              onClick={() => handleResolveExtension(task, true, 3)}
-                            >
-                              Aprovar (+3 dias)
-                            </Button>
+                            {extensionDayOptions.map((days) => (
+                              <Button
+                                key={days}
+                                type="button"
+                                size="sm"
+                                disabled={pending}
+                                className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                                onClick={() => handleResolveExtension(task, true, days)}
+                              >
+                                Aprovar (+{days} {days === 1 ? 'dia' : 'dias'})
+                              </Button>
+                            ))}
                             <Button
                               type="button"
                               variant="outline"

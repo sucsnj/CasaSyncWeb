@@ -121,7 +121,7 @@ pg_cron.
 | coluna | tipo | notas |
 |---|---|---|
 | house_id | uuid FK → houses (PK) | casa dona da configuração; `on delete cascade` |
-| key | text (PK) | `reward_pricing` \| `quick_message` (`HouseSettingsKey` em `src/utils/settings.ts`) |
+| key | text (PK) | `reward_pricing` \| `quick_message` \| `task_sla` \| `extension_rules` \| `notification_retention` (`HouseSettingsKey` em `src/utils/settings.ts`) |
 | value | jsonb | objeto de configuração; campos ausentes caem no default via `mergeSettings` |
 | updated_by | uuid FK → profiles | nullable; ADMIN que salvou por último |
 | updated_at | timestamptz | default `now()` |
@@ -130,7 +130,15 @@ Configuração por casa, escrita **exclusivamente** pela Server Action `updateHo
 (`src/actions/settings.ts`, service role + autorização ADMIN por membresia) e lida pelos
 getters cached em `src/utils/house-settings.ts` (sem Realtime: a propagação usa
 `router.refresh()` pós-ação). Sem linha = defaults (`DEFAULT_REWARD_PRICING` /
-`DEFAULT_QUICK_MESSAGE`). **Sem publication Realtime.**
+`DEFAULT_QUICK_MESSAGE` / `DEFAULT_TASK_SLA` / `DEFAULT_EXTENSION_RULES` /
+`DEFAULT_NOTIFICATION_RETENTION`). **Sem publication Realtime.**
+
+Chaves e efeitos:
+- `reward_pricing`: `enabled`, `noIncreaseMax`, `midMax`, `midRate`, `highRate`, `minBump` — encarecimento automático em `approveRedemption` (`nextRewardCost`). Defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt.
+- `quick_message`: `maxChars` (100), `maxImageMb` (5), `capacity` (2) — validação de `sendQuickMessage` e retenção por capacidade em `cleanupQuickMessages`.
+- `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonRatio` (0.2, chip "Prazo próximo"; 0 desliga).
+- `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista).
+- `notification_retention`: `readRetentionDays` (5, lidas comuns apagadas por casa da notificação, excluindo `QUICK_MESSAGE`).
 
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`

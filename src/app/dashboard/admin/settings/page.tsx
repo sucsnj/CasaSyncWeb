@@ -2,8 +2,11 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
+  getHouseExtensionRulesSettings,
+  getHouseNotificationRetentionSettings,
   getHouseQuickMessageSettings,
   getHouseRewardPricingSettings,
+  getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
 import {
@@ -52,9 +55,13 @@ export default async function AdminSettingsPage() {
     )
   }
 
-  const [rewardPricing, quickMessage] = await Promise.all([
+  const [rewardPricing, quickMessage, taskSla, extensionRules, notificationRetention] =
+  await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
+    getHouseTaskSlaSettings(activeHouse.id),
+    getHouseExtensionRulesSettings(activeHouse.id),
+    getHouseNotificationRetentionSettings(activeHouse.id),
   ])
 
   return (
@@ -62,6 +69,9 @@ export default async function AdminSettingsPage() {
       <SettingsAdmin
         rewardPricing={rewardPricing}
         quickMessage={quickMessage}
+        taskSla={taskSla}
+        extensionRules={extensionRules}
+        notificationRetention={notificationRetention}
       />
     </div>
   )

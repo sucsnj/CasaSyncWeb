@@ -4,11 +4,17 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
+  DEFAULT_EXTENSION_RULES,
+  DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
   DEFAULT_REWARD_PRICING,
+  DEFAULT_TASK_SLA,
+  type ExtensionRulesSettings,
   type HouseSettingsKey,
+  type NotificationRetentionSettings,
   type QuickMessageSettings,
   type RewardPricingSettings,
+  type TaskSlaSettings,
 } from '@/utils/settings'
 import type { ActionResult } from './types'
 
@@ -73,6 +79,9 @@ export async function updateHouseSettings(
     revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
   }
+  if (key === 'task_sla' || key === 'extension_rules') {
+    revalidatePath('/tasks')
+  }
 
   return { ok: true, message: 'Configurações salvas.' }
 }
@@ -86,14 +95,23 @@ function validateSettings(
   key: HouseSettingsKey,
   patch: Record<string, unknown>
 ): SettingsResult {
-  if (key === 'reward_pricing') {
-    return validateRewardPricing(patch)
-  }
-  return validateQuickMessage(patch)
+  if (key === 'reward_pricing') return validateRewardPricing(patch)
+  if (key === 'quick_message') return validateQuickMessage(patch)
+  if (key === 'task_sla') return validateTaskSla(patch)
+  if (key === 'extension_rules') return validateExtensionRules(patch)
+  return validateNotificationRetention(patch)
 }
 
 type SettingsResult =
-  | { ok: true; value: RewardPricingSettings | QuickMessageSettings }
+  | {
+      ok: true
+      value:
+        | RewardPricingSettings
+        | QuickMessageSettings
+        | TaskSlaSettings
+        | ExtensionRulesSettings
+        | NotificationRetentionSettings
+    }
   | { ok: false; error: string }
 
 function validateRewardPricing(patch: Record<string, unknown>): SettingsResult {
@@ -160,6 +178,60 @@ function validateQuickMessage(patch: Record<string, unknown>): SettingsResult {
   base.maxChars = maxChars
   base.maxImageMb = maxImageMb
   base.capacity = capacity
+
+  return { ok: true, value: base }
+}
+
+function validateTaskSla(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_TASK_SLA }
+
+  const defaultDueDays = patch.defaultDueDays ?? base.defaultDueDays
+  if (!isFiniteNumber(defaultDueDays) || !Number.isInteger(defaultDueDays) || defaultDueDays < 0 || defaultDueDays > 365) {
+    return { ok: false, error: 'O prazo padrão deve ser um inteiro entre 0 e 365 dias.' }
+  }
+
+  const dueSoonRatio = patch.dueSoonRatio ?? base.dueSoonRatio
+  if (!isFiniteNumber(dueSoonRatio) || dueSoonRatio < 0 || dueSoonRatio > 1) {
+    return { ok: false, error: 'O percentual do prazo próximo deve estar entre 0 e 1 (ex.: 0.2 = 20%).' }
+  }
+
+  base.defaultDueDays = defaultDueDays
+  base.dueSoonRatio = dueSoonRatio
+
+  return { ok: true, value: base }
+}
+
+function validateExtensionRules(patch: Record<string, unknown>): SettingsResult {
+  const raw = patch.dayOptions ?? DEFAULT_EXTENSION_RULES.dayOptions
+
+  if (
+    !Array.isArray(raw) ||
+    raw.length < 1 ||
+    raw.length > 5 ||
+    raw.some(
+      (d) => !isFiniteNumber(d) || !Number.isInteger(d) || (d as number) < 1 || (d as number) > 90
+    )
+  ) {
+    return { ok: false, error: 'Informe de 1 a 5 opções de dias (inteiros entre 1 e 90).' }
+  }
+
+  const dayOptions = [...new Set(raw as number[])].sort((a, b) => a - b)
+  if (dayOptions.length !== (raw as number[]).length) {
+    return { ok: false, error: 'As opções de dias devem ser todas diferentes entre si.' }
+  }
+
+  return { ok: true, value: { dayOptions } }
+}
+
+function validateNotificationRetention(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_NOTIFICATION_RETENTION }
+
+  const readRetentionDays = patch.readRetentionDays ?? base.readRetentionDays
+  if (!isFiniteNumber(readRetentionDays) || !Number.isInteger(readRetentionDays) || readRetentionDays < 1 || readRetentionDays > 365) {
+    return { ok: false, error: 'A retenção deve ser um inteiro entre 1 e 365 dias.' }
+  }
+
+  base.readRetentionDays = readRetentionDays
 
   return { ok: true, value: base }
 }

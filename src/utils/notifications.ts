@@ -1,6 +1,9 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { MEDIA_BUCKET } from '@/utils/media'
-import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import {
+  getHouseNotificationRetentionSettings,
+  getHouseQuickMessageSettings,
+} from '@/utils/house-settings'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -10,10 +13,8 @@ import type { NotificationRow, NotificationType } from '@/types/notifications'
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-/** Notificações lidas são apagadas automaticamente após 5 dias. */
+/** Default histórico da retenção — a fonte real é a settings da casa. */
 export const READ_RETENTION_DAYS = 5
-
-const RETENTION_MS = READ_RETENTION_DAYS * 24 * 60 * 60 * 1000
 
 export type NotifyInput = {
   houseId: string
@@ -178,21 +179,42 @@ export async function notifyHouse(
 }
 
 /**
- * Apaga as notificações lidas do usuário com mais de 5 dias. Executado
+ * Apaga as notificações COMUNS lidas do usuário após o prazo de retenção da
+ * casa de cada notificação (settings `notification_retention`). Executado
  * "lazy" a cada carregamento — sem depender de pg_cron.
+ *
+ * A QUICK_MESSAGE fica de fora: tem regra própria (capacidade → 2 lidas apaga
+ * a mais antiga em `cleanupQuickMessages`), não o cutoff por dias.
  */
 export async function cleanupReadNotifications(
   admin: AdminClient,
   recipientId: string
 ): Promise<void> {
-  const cutoff = new Date(Date.now() - RETENTION_MS).toISOString()
-
-  await admin
+  // Casas das notificações não-rápidas deste usuário — cada uma aplica o seu
+  // próprio prazo de retenção (cobrindo ADMIN multi-casa).
+  const { data: houseRows } = await admin
     .from('notifications')
-    .delete()
+    .select('house_id')
     .eq('recipient_id', recipientId)
-    .not('read_at', 'is', null)
-    .lt('read_at', cutoff)
+    .neq('type', 'QUICK_MESSAGE')
+
+  const houseIds = [...new Set((houseRows ?? []).map((row) => row.house_id))]
+
+  for (const houseId of houseIds) {
+    const settings = await getHouseNotificationRetentionSettings(houseId)
+    const cutoff = new Date(
+      Date.now() - settings.readRetentionDays * 24 * 60 * 60 * 1000
+    ).toISOString()
+
+    await admin
+      .from('notifications')
+      .delete()
+      .eq('recipient_id', recipientId)
+      .eq('house_id', houseId)
+      .neq('type', 'QUICK_MESSAGE')
+      .not('read_at', 'is', null)
+      .lt('read_at', cutoff)
+  }
 }
 
 /**
