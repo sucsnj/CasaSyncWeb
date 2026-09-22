@@ -144,4 +144,5 @@ Enums (valores em **caixa alta**, regra de negócio):
 - Imagens do Storage: `<img>` direto (não `next/image`); warnings `no-img-element` são esperados.
 - `next.config.ts` usa `module.exports` E `export default` (legado `allowedDevOrigins`) — não "consertar".
 - `tsc` depende de `.next/types` gerado: apagou `.next`, rode `npm run build` antes.
+- **Service worker (`public/sw.js`):** cache-first **somente** para assets estáveis — `STATIC_ASSETS` (manifest/ícones) e chunks sob `/_next/static/` (hasheados). Qualquer outro GET same-origin (inclusive payloads RSC de `router.refresh()`/prefetch/Realtime, com header `RSC:1`) vai **direto à rede, sem cache** — cachear RSC gravava 200s obsoletos e a UI "piscava" de volta ao dado antigo / demorava a fixar (ver topo do `PROJECT_STATUS.md`). Não re-ampliar cache-first; bump `CACHE_NAME` ao alterar o SW.
 - Mensagens de commit em português, curtas; commitar apenas quando solicitado.

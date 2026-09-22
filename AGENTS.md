@@ -15,6 +15,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Ordem antes de entregar: **lint → typecheck → build**. Todos devem passar.
 - `npm run lint` emite warnings `no-img-element` **esperados** (uso deliberado de `<img>` para URLs públicas do Storage) — não "consertar" trocando por `next/image`.
 - `tsc` depende do gerado `.next/types` (ex: `LayoutProps<"/">` em `src/app/layout.tsx`). Se `.next/` for apagado, rode `npm run build` (ou `next dev`) antes do `tsc` puro.
+- **Service worker (`public/sw.js`):** o `fetch` handler faz **cache-first somente para assets estáveis** — `STATIC_ASSETS` (manifest + ícones) e chunks de build sob `/_next/static/` (JS/CSS nomedos por hash). **Qualquer outro GET same-origin passa direto à rede, sem cache** — incluindo os payloads RSC das páginas (o `router.refresh()` pós-ação e o Realtime buscam `/tasks`, `/rewards` etc. com header `RSC:1`). Cachear RSC gravava respostas 200 obsoletas e a UI "piscava" de volta ao dado antigo, demorando a fixar mudanças já gravadas no banco (ver topo do `PROJECT_STATUS.md`). Não re-ampliar o cache-first para navegação nem GETs genéricos; ao trocar o conteúdo do SW, bumpear o `CACHE_NAME` (ex.: `casasync-v4`) para o `activate` limpar caches antigos.
 - Rodar `npm run build` antes de `npm run dev` para evitar geração conflitante de `.next`.
 
 ## 2. Estrutura e convenções

@@ -1,5 +1,5 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-const CACHE_NAME = 'casasync-v2';
+const CACHE_NAME = 'casasync-v3';
 // Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
 // é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
 const STATIC_ASSETS = [
@@ -45,6 +45,20 @@ self.addEventListener('fetch', (event) => {
 
   // Skip Supabase API calls and auth endpoints
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+    return;
+  }
+
+  // Cache-first SOMENTE para assets estáveis e imutáveis:
+  //   - STATIC_ASSETS (manifest + ícones do PWA)
+  //   - chunks de build do Next.js sob /_next/static/ (JS/CSS nomedos por hash)
+  // Qualquer outro GET same-origin NÃO é cacheado: inclui os payloads RSC das
+  // páginas (router.refresh()/prefetch buscam '/tasks' etc. com header RSC:1).
+  // Cachear isso gravava respostas 200 obsoletas e o SW as devolvia depois do
+  // F5 (que vai à rede), fazendo a UI "piscar" de volta para a info antiga e
+  // demorar para fixar mudanças já no banco. Fora dos assets acima, sempre rede.
+  const isStaticAsset = STATIC_ASSETS.includes(url.pathname);
+  const isNextStaticChunk = url.pathname.startsWith('/_next/static/');
+  if (!isStaticAsset && !isNextStaticChunk) {
     return;
   }
 

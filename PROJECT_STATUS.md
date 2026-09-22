@@ -2,6 +2,25 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## UI não fixava mudanças e "piscava" de volta ao dado antigo — service worker cacheava payloads RSC (corrigido)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** após o usuário alterar algo no app (servidor action já tinha gravado no banco, confirmado na linha), a UI demorava para fixar a nova informação; em outros momentos um F5 mostrava o novo dado e, logo depois, a tela "piscava" de volta ao valor antigo. Mais frequente com o app fechado/reaberto.
+- **Causa raiz (`public/sw.js`):** o handler `fetch` aplicava **cache-first para todo GET same-origin** que não fosse navegação (`mode/destination`) nem `/api/`/`/auth/`. Isso incluía os **payloads RSC das páginas** — o `router.refresh()` pós-ação e o prefetch/navegação client-side do Next buscam `/tasks`, `/rewards` etc. como GET com header `RSC:1`, que passavam pelo SW. A resposta 200 era gravada no `caches` e **reentregue para sempre**, mesmo com o banco já diferente.
+  - **F5 mostra novo e "pisca" para o antigo:** F5 é navegação → vai à rede (dado novo). Ao hidratar, `router.refresh()`/Realtime disparam GETs RSC → SW responde com o **RSC obsoleto do cache** → a UI reverte ao valor antigo.
+  - **Demora para "fixar":** o dado só aparece quando um refresh vence o cache (ou o Realtime entrega o evento e outro refresh passa).
+  - **Pior com o app fechado:** o Cache Storage persiste entre sessões; ao reabrir, os primeiros refreshes vêm do cache velho. Risco já anotado no changelog do SW antigo (a evolução prevista era restringir o cache-first a `STATIC_ASSETS` explícitos).
+- **Fix (`public/sw.js`):** cache-first restrito a **assets estáveis e imutáveis** — `STATIC_ASSETS` (manifest + ícones) e os chunks de build sob `/_next/static/` (JS/CSS nomedos por hash). **Qualquer outro GET same-origin passa direto à rede, sem cache** — incluindo payloads RSC das páginas. O `CACHE_NAME` foi bumpeado para **`casasync-v3`**, fazendo o `activate` apagar os caches antigos (que já continham RSC obsoletos).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (rotas idênticas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer online. Após subir, usuários antigos recebem o `sw.js` novo automaticamente (bump do `CACHE_NAME` força reinstalação e o `activate` limpa o cache velho); uma recarga extra pode ser necessária enquanto o SW não ativa.
+- Comportamento esperado após o fix: mudanças gravadas no banco refletem na UI no 1º `router.refresh()` (sem esperar o Realtime), e o "piscar" de volta ao dado antigo deixa de existir.
+
+---
+
 ## "Prazo próximo" por horas restantes, configurável pelo ADMIN (concluída — sem mudança de schema)
 
 ### O que foi implementado
