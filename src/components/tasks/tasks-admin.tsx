@@ -75,7 +75,7 @@ export function TasksAdmin({
   initialTasks,
   assignees,
   defaultDueDays = 1,
-  dueSoonRatio = 0.2,
+  dueSoonHours = 4,
   extensionDayOptions = [1, 3],
 }: {
   houseId: string
@@ -83,8 +83,8 @@ export function TasksAdmin({
   assignees: Assignee[]
   /** Prazo padrão de criação/restauro (dias a partir de agora) — settings.casa. */
   defaultDueDays?: number
-  /** Fração do tempo total que liga o chip "Prazo próximo" — settings.casa. */
-  dueSoonRatio?: number
+  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
+  dueSoonHours?: number
   /** Dias disponíveis nos botões de aprovação de adiamento — settings.casa. */
   extensionDayOptions?: number[]
 }) {
@@ -754,10 +754,9 @@ export function TasksAdmin({
         ) : (
           pendingTasks.map((task) => {
             const sla = getTaskSlaStatus(
-              task.created_at,
               task.due_date,
               new Date(),
-              dueSoonRatio
+              dueSoonHours
             )
             const slaInfo = taskSlaBadge[sla]
             const cardClass =

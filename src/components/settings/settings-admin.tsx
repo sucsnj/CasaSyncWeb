@@ -443,8 +443,8 @@ export function SettingsAdmin({
           </CardAction>
           <CardTitle>Prazos de tarefas</CardTitle>
           <CardDescription>
-            Prazo padrão ao criar/restaurar tarefas e o percentual que acende o
-            chip &quot;Prazo próximo&quot; (SLA).
+            Prazo padrão ao criar/restaurar tarefas e quanto tempo antes do
+            prazo acende o chip &quot;Prazo próximo&quot; (SLA).
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -461,19 +461,19 @@ export function SettingsAdmin({
               hint="Dias a partir de agora preenchidos no campo de data ao criar uma tarefa e aplicados ao restaurar uma aprovada. 0 = sem prazo padrão."
             />
             <Field
-              label="Percentual do 'Prazo próximo'"
-              value={Math.round(sla.dueSoonRatio * 100)}
-              onChange={(ratioPercent) => {
-                const dueSoonRatio = Number.isNaN(ratioPercent)
-                  ? 0
-                  : ratioPercent / 100
-                setSla((prev) => ({ ...prev, dueSoonRatio }))
-              }}
+              label="'Prazo próximo' faltando"
+              value={sla.dueSoonHours}
+              onChange={(dueSoonHours) =>
+                setSla((prev) => ({
+                  ...prev,
+                  dueSoonHours: Math.round(dueSoonHours),
+                }))
+              }
               min={0}
-              max={100}
-              step={5}
-              suffix="%"
-              hint="Quando o tempo restante fica abaixo dessa fração do prazo total, o chip âmbar avisa. 0 desliga o aviso."
+              max={8760}
+              step={1}
+              suffix="h"
+              hint="Quando faltam menos que essa quantidade de horas para o prazo, o chip âmbar avisa (independe da duração total). 0 desliga o aviso."
             />
           </div>
 

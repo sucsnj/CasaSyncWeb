@@ -36,13 +36,13 @@ export function TasksDependent({
   houseId,
   initialTasks,
   creatorNames,
-  dueSoonRatio = 0.2,
+  dueSoonHours = 4,
 }: {
   houseId: string
   initialTasks: Task[]
   creatorNames: Record<string, string>
-  /** Fração do tempo total que liga o chip "Prazo próximo" — settings.casa. */
-  dueSoonRatio?: number
+  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
+  dueSoonHours?: number
 }) {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -177,10 +177,9 @@ export function TasksDependent({
         ) : (
           openTasks.map((task) => {
             const sla = getTaskSlaStatus(
-              task.created_at,
               task.due_date,
               new Date(),
-              dueSoonRatio
+              dueSoonHours
             )
             const slaInfo = taskSlaBadge[sla]
             // "Não entregue" tem card próprio (borda vermelha) e some o badge

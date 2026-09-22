@@ -127,7 +127,7 @@ export default async function TasksPage() {
           initialTasks={tasks ?? []}
           assignees={assignees}
           defaultDueDays={taskSlaSettings?.defaultDueDays}
-          dueSoonRatio={taskSlaSettings?.dueSoonRatio}
+          dueSoonHours={taskSlaSettings?.dueSoonHours}
           extensionDayOptions={extensionRulesSettings?.dayOptions}
         />
       )
@@ -154,7 +154,7 @@ export default async function TasksPage() {
           houseId={dependentHouse.id}
           initialTasks={taskList}
           creatorNames={creatorNames}
-          dueSoonRatio={taskSlaSettings?.dueSoonRatio}
+          dueSoonHours={taskSlaSettings?.dueSoonHours}
         />
       )
     }

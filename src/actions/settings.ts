@@ -190,13 +190,13 @@ function validateTaskSla(patch: Record<string, unknown>): SettingsResult {
     return { ok: false, error: 'O prazo padrão deve ser um inteiro entre 0 e 365 dias.' }
   }
 
-  const dueSoonRatio = patch.dueSoonRatio ?? base.dueSoonRatio
-  if (!isFiniteNumber(dueSoonRatio) || dueSoonRatio < 0 || dueSoonRatio > 1) {
-    return { ok: false, error: 'O percentual do prazo próximo deve estar entre 0 e 1 (ex.: 0.2 = 20%).' }
+  const dueSoonHours = patch.dueSoonHours ?? base.dueSoonHours
+  if (!isFiniteNumber(dueSoonHours) || !Number.isInteger(dueSoonHours) || dueSoonHours < 0 || dueSoonHours > 8760) {
+    return { ok: false, error: 'As horas do "Prazo próximo" devem ser um inteiro entre 0 e 8760 (0 = desliga o aviso).' }
   }
 
   base.defaultDueDays = defaultDueDays
-  base.dueSoonRatio = dueSoonRatio
+  base.dueSoonHours = dueSoonHours
 
   return { ok: true, value: base }
 }

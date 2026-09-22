@@ -136,7 +136,7 @@ getters cached em `src/utils/house-settings.ts` (sem Realtime: a propagação us
 Chaves e efeitos:
 - `reward_pricing`: `enabled`, `noIncreaseMax`, `midMax`, `midRate`, `highRate`, `minBump` — encarecimento automático em `approveRedemption` (`nextRewardCost`). Defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt.
 - `quick_message`: `maxChars` (100), `maxImageMb` (5), `capacity` (2) — validação de `sendQuickMessage` e retenção por capacidade em `cleanupQuickMessages`.
-- `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonRatio` (0.2, chip "Prazo próximo"; 0 desliga).
+- `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonHours` (4, chip "Prazo próximo" quando faltam menos de N horas para o prazo — limiar absoluto, independente da duração; 0 desliga).
 - `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista).
 - `notification_retention`: `readRetentionDays` (5, lidas comuns apagadas por casa da notificação, excluindo `QUICK_MESSAGE`).
 

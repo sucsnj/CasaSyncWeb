@@ -62,10 +62,11 @@ export type TaskSlaSettings = {
   /** Prazo padrão de criação/restauro da tarefa (dias a partir de agora). */
   defaultDueDays: number
   /**
-   * Fração do tempo total restante que acende o chip "Prazo próximo"
-   * (ex.: 0.2 = últimos 20% do prazo). 0 desliga o aviso.
+   * Horas restantes até o prazo que acendem o chip "Prazo próximo"
+   * (ex.: 4 = faltando menos de 4h para o prazo). Sempre em horas, absoluto
+   * (independe do tamanho total da tarefa). 0 desliga o aviso.
    */
-  dueSoonRatio: number
+  dueSoonHours: number
 }
 
 /**
@@ -86,7 +87,7 @@ export type NotificationRetentionSettings = {
 
 export const DEFAULT_TASK_SLA: TaskSlaSettings = {
   defaultDueDays: 1,
-  dueSoonRatio: 0.2,
+  dueSoonHours: 4,
 }
 
 export const DEFAULT_EXTENSION_RULES: ExtensionRulesSettings = {

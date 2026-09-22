@@ -2,6 +2,19 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## "Prazo próximo" por horas restantes, configurável pelo ADMIN (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **O chip "Prazo próximo" (SLA) trocou a base de cálculo:** deixou de ser uma **fração do tempo total** da tarefa (`dueSoonRatio`, ex.: últimos 20%) e passou a ser um **limiar absoluto em horas** — `dueSoonHours` (default **4h**). A tarefa é "Prazo próximo" quando **faltam menos que N horas para o prazo**, independentemente de a tarefa ter sido criada hoje ou há uma semana para o mesmo prazo.
+- **Configurável pelo ADMIN:** no card **Prazos de tarefas** (`/dashboard/admin/settings`) o campo virou **"'Prazo próximo' faltando"** (inteiro 0–8760, step 1, sufixo `h` — sempre em **hora(s)**) com hint explicando que independe da duração total; `0` desliga o aviso. Arredonda no cliente para inteiro (servidor exige inteiro). Novo nome/limite: `validateTaskSla` aceita 0–8760 (fail-closed, `Number.isInteger`).
+- **Simplificação do utilitário:** `getTaskSlaStatus(dueDate, now = new Date(), dueSoonHours = 4)` — o 1º parâmetro `createdAt` (usado para calcular o total) **foi removido**, junto com o cálculo de `total`/`created`. Agora: `overdue` (agora > prazo) → `dueSoon` (restante ≤ `dueSoonHours` horas) → `normal`. Assinatura atualizada nos 2 call sites (`TasksAdmin`/`TasksDependent`), que ganharam a prop **`dueSoonHours`** no lugar de `dueSoonRatio`; `/tasks` repassa de `getHouseTaskSlaSettings().dueSoonHours`.
+- **Sem mudança de schema/no banco:** `house_settings.value` é jsonb — uma linha `task_sla` existente com `dueSoonRatio` vira valor **morto** (ignorado via `mergeSettings`), e o default passa a ser `dueSoonHours: 4`.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
 ## Menu de configurações da casa (ADMIN) — economia de pontos e mensagem rápida (concluída)
 
 ### O que foi implementado
