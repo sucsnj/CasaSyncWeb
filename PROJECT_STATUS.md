@@ -56,7 +56,7 @@ create policy "house_settings_select_members" on public.house_settings
 ### O que foi implementado
 Mesma mecânica da fase 1 (`house_settings` jsonb por `(house_id, key)`, escrita exclusiva por `updateHouseSettings`, leitura por getters cached, sem Realtime). **Sem mudança de schema** — as chaves novas são só mais valores jsonb na tabela existente:
 
-- **`task_sla`** — `defaultDueDays` (default 1) e `dueSoonRatio` (default 0.2):
+- **`task_sla`** — `defaultDueDays` (default 1) e `dueSoonRatio` (default 0.2) *(o `dueSoonRatio` foi **substituído** por `dueSoonHours` — limiar absoluto em horas — ver seção '"Prazo próximo" por horas restantes' no topo; em linhas antigas o valor já gravado vira morto via `mergeSettings`)*:
   - `restoreTask` agora reinicia o prazo para **agora + `defaultDueDays` dias** (antes +1 dia fixo) e a mensagem de sucesso acusa o prazo.
   - O form de nova tarefa (`TasksAdmin`) preenche o campo de data com agora + `defaultDueDays` (inicialização, reset do form e prefill do autocomplete); `handleRestore` otimista usa o mesmo valor.
   - O chip "Prazo próximo" (SLA) passou a usar `dueSoonRatio` (frações 0..1; 0 desliga o aviso), repassado das páginas a `TasksAdmin` e `TasksDependent` — `getTaskSlaStatus` ganhou 4º parâmetro opcional (default 0.2, retrocompatível).
