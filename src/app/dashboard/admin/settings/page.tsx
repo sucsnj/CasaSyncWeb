@@ -6,6 +6,7 @@ import {
   getHouseNotificationRetentionSettings,
   getHouseQuickMessageSettings,
   getHouseRewardPricingSettings,
+  getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
@@ -55,13 +56,14 @@ export default async function AdminSettingsPage() {
     )
   }
 
-  const [rewardPricing, quickMessage, taskSla, extensionRules, notificationRetention] =
+  const [rewardPricing, quickMessage, taskSla, extensionRules, notificationRetention, taskDecay] =
   await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
     getHouseTaskSlaSettings(activeHouse.id),
     getHouseExtensionRulesSettings(activeHouse.id),
     getHouseNotificationRetentionSettings(activeHouse.id),
+    getHouseTaskDecaySettings(activeHouse.id),
   ])
 
   return (
@@ -72,6 +74,7 @@ export default async function AdminSettingsPage() {
         taskSla={taskSla}
         extensionRules={extensionRules}
         notificationRetention={notificationRetention}
+        taskDecay={taskDecay}
       />
     </div>
   )

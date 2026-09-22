@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Clock3,
   Coins,
+  Hourglass,
   MessageSquare,
   Plus,
   Save,
@@ -30,6 +31,7 @@ import type {
   NotificationRetentionSettings,
   QuickMessageSettings,
   RewardPricingSettings,
+  TaskDecaySettings,
   TaskSlaSettings,
 } from '@/utils/settings'
 
@@ -39,6 +41,7 @@ type SettingsAdminProps = {
   taskSla: TaskSlaSettings
   extensionRules: ExtensionRulesSettings
   notificationRetention: NotificationRetentionSettings
+  taskDecay: TaskDecaySettings
 }
 
 function Toggle({
@@ -122,6 +125,7 @@ export function SettingsAdmin({
   taskSla,
   extensionRules,
   notificationRetention,
+  taskDecay,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -147,6 +151,10 @@ export function SettingsAdmin({
     useState<NotificationRetentionSettings>(notificationRetention)
   const [retentionError, setRetentionError] = useState<string | null>(null)
   const [retentionSuccess, setRetentionSuccess] = useState<string | null>(null)
+
+  const [decay, setDecay] = useState<TaskDecaySettings>(taskDecay)
+  const [decayError, setDecayError] = useState<string | null>(null)
+  const [decaySuccess, setDecaySuccess] = useState<string | null>(null)
 
   function savePricing() {
     setPricingError(null)
@@ -239,13 +247,30 @@ export function SettingsAdmin({
     })
   }
 
+  function saveDecay() {
+    setDecayError(null)
+    setDecaySuccess(null)
+
+    startTransition(async () => {
+      const result = await updateHouseSettings('task_decay', { ...decay })
+      if (!result.ok) {
+        setDecayError(result.error)
+        toast.error(result.error)
+        return
+      }
+      setDecaySuccess(result.message ?? 'Configurações salvas.')
+      toast.success(result.message ?? 'Configurações salvas.')
+      router.refresh()
+    })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-white/85">
-          Ajuste a economia de pontos, a mensagem rápida, os prazos de tarefas e
-          a retenção de notificações da casa.
+          Ajuste a economia de pontos, a mensagem rápida, os prazos de tarefas,
+          o decaimento de pontos e a retenção de notificações da casa.
         </p>
       </header>
 
@@ -662,6 +687,94 @@ export function SettingsAdmin({
             >
               <Save className="size-4" />
               Salvar notificações
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardAction>
+            <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+              <Hourglass className="size-5" />
+            </span>
+          </CardAction>
+          <CardTitle>Decaimento de pontos</CardTitle>
+          <CardDescription>
+            Tarefas perdem pontos com o tempo: a cada período completo desde a
+            criação, o valor cai até o prazo (depois de vencida não perde mais).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm font-semibold text-slate-700">
+                Decaimento ativo
+              </span>
+              <span className="text-xs text-slate-500">
+                O valor exibido e creditado na aprovação já considera a perda; a
+                base salva na tarefa não muda.
+              </span>
+            </div>
+            <Toggle
+              checked={decay.enabled}
+              onChange={(enabled) => setDecay((prev) => ({ ...prev, enabled }))}
+              label="Decaimento de pontos"
+            />
+          </div>
+
+          <div
+            className={cn(
+              'grid gap-4 sm:grid-cols-2',
+              !decay.enabled && 'pointer-events-none opacity-40'
+            )}
+          >
+            <Field
+              label="Período"
+              value={decay.periodHours}
+              onChange={(periodHours) =>
+                setDecay((prev) => ({ ...prev, periodHours }))
+              }
+              min={1}
+              max={8760}
+              step={1}
+              suffix="horas"
+              hint="A cada período completo desde a criação a tarefa perde pontos. Janela limitada ao prazo: uma tarefa com menos de um período até o vencimento não perde nada."
+            />
+            <Field
+              label="Pontos perdidos"
+              value={decay.pointsPerPeriod}
+              onChange={(pointsPerPeriod) =>
+                setDecay((prev) => ({ ...prev, pointsPerPeriod }))
+              }
+              min={1}
+              max={1000}
+              step={1}
+              suffix="por período"
+              hint="Descontados por período; o valor nunca fica negativo (piso em 0)."
+            />
+          </div>
+
+          {decayError ? (
+            <p role="alert" className="text-sm text-red-600">
+              {decayError}
+            </p>
+          ) : null}
+          {decaySuccess ? (
+            <p role="status" className="text-sm text-emerald-700">
+              {decaySuccess}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void saveDecay()}
+              disabled={pending}
+            >
+              <Save className="size-4" />
+              Salvar decaimento
             </Button>
           </div>
         </CardContent>

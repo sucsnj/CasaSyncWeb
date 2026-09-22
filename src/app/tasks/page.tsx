@@ -13,6 +13,7 @@ import { getMyNotifications } from '@/utils/notifications'
 import {
   getHouseExtensionRulesSettings,
   getHouseQuickMessageSettings,
+  getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -104,6 +105,9 @@ export default async function TasksPage() {
   const extensionRulesSettings = isAdmin && houseIdForSettings
     ? await getHouseExtensionRulesSettings(houseIdForSettings)
     : undefined
+  const taskDecaySettings = houseIdForSettings
+    ? await getHouseTaskDecaySettings(houseIdForSettings)
+    : undefined
 
   let content: React.ReactNode
 
@@ -129,6 +133,7 @@ export default async function TasksPage() {
           defaultDueDays={taskSlaSettings?.defaultDueDays}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           extensionDayOptions={extensionRulesSettings?.dayOptions}
+          taskDecay={taskDecaySettings}
         />
       )
     }
@@ -155,6 +160,7 @@ export default async function TasksPage() {
           initialTasks={taskList}
           creatorNames={creatorNames}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
+          taskDecay={taskDecaySettings}
         />
       )
     }

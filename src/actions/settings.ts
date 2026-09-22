@@ -8,12 +8,14 @@ import {
   DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
   DEFAULT_REWARD_PRICING,
+  DEFAULT_TASK_DECAY,
   DEFAULT_TASK_SLA,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type NotificationRetentionSettings,
   type QuickMessageSettings,
   type RewardPricingSettings,
+  type TaskDecaySettings,
   type TaskSlaSettings,
 } from '@/utils/settings'
 import type { ActionResult } from './types'
@@ -79,7 +81,7 @@ export async function updateHouseSettings(
     revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
   }
-  if (key === 'task_sla' || key === 'extension_rules') {
+  if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay') {
     revalidatePath('/tasks')
   }
 
@@ -99,6 +101,7 @@ function validateSettings(
   if (key === 'quick_message') return validateQuickMessage(patch)
   if (key === 'task_sla') return validateTaskSla(patch)
   if (key === 'extension_rules') return validateExtensionRules(patch)
+  if (key === 'task_decay') return validateTaskDecay(patch)
   return validateNotificationRetention(patch)
 }
 
@@ -111,6 +114,7 @@ type SettingsResult =
         | TaskSlaSettings
         | ExtensionRulesSettings
         | NotificationRetentionSettings
+        | TaskDecaySettings
     }
   | { ok: false; error: string }
 
@@ -232,6 +236,31 @@ function validateNotificationRetention(patch: Record<string, unknown>): Settings
   }
 
   base.readRetentionDays = readRetentionDays
+
+  return { ok: true, value: base }
+}
+
+function validateTaskDecay(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_TASK_DECAY }
+
+  const enabled = patch.enabled ?? base.enabled
+  if (typeof enabled !== 'boolean') {
+    return { ok: false, error: 'O toggle de decaimento deve ser ligado ou desligado.' }
+  }
+  base.enabled = enabled
+
+  const periodHours = patch.periodHours ?? base.periodHours
+  if (!isFiniteNumber(periodHours) || !Number.isInteger(periodHours) || periodHours < 1 || periodHours > 8760) {
+    return { ok: false, error: 'O período deve ser um inteiro entre 1 e 8760 horas (1 ano).' }
+  }
+
+  const pointsPerPeriod = patch.pointsPerPeriod ?? base.pointsPerPeriod
+  if (!isFiniteNumber(pointsPerPeriod) || !Number.isInteger(pointsPerPeriod) || pointsPerPeriod < 1 || pointsPerPeriod > 1000) {
+    return { ok: false, error: 'Os pontos por período devem ser um inteiro entre 1 e 1000.' }
+  }
+
+  base.periodHours = periodHours
+  base.pointsPerPeriod = pointsPerPeriod
 
   return { ok: true, value: base }
 }

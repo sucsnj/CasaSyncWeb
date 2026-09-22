@@ -2,6 +2,25 @@
 
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
 
+## Tarefas perdem pontos com o tempo — decaimento configurável (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Nova mecânica de "decrescimento" de pontos de tarefas:** a cada **`periodHours` completas desde a criação** (default **24h**), a tarefa perde **`pointsPerPeriod`** pontos (default **1 pt**), com **piso em 0** (nunca fica negativo por essa mecânica). A janela de perda é **capada no `due_date`** — depois que o prazo vence a perda não cresce mais; uma tarefa com menos de um período até o vencimento não perde nada. `tasks.points` continua guardando o **valor-base** intocado; o valor corrente é **calculado em runtime** por `getTaskCurrentPoints` (`src/utils/task-decay.ts`).
+- **Onde o valor corrente é aplicado:** o **crédito da aprovação** (`approveTask` e `adminCompleteTask`) e o **débito de "não entregue"** (`markTaskNotDelivered`) usam o valor corrente no momento da ação. As **devoluções** de uma tarefa `NOT_DELIVERED` (`resolveTaskExtension` aprovado e `updateTask` alterando o prazo) restauram o **mesmo valor decrescido** debitado — para tarefa atrasada a janela está capada no prazo, então o valor é estável (nenhuma inflação de saldo).
+- **Configurável pelo ADMIN:** novo card **Decaimento de pontos** (`Hourglass`) em `/dashboard/admin/settings` — toggle liga/desliga + **Período** (horas, inteiro 1–8760) + **Pontos por período** (inteiro 1–1000). Chave `task_decay` em `HouseSettingsKey`, defaults em `DEFAULT_TASK_DECAY` (`enabled: true`, `periodHours: 24`, `pointsPerPeriod: 1`); leitura por `getHouseTaskDecaySettings` (getter cached em `src/utils/house-settings.ts`); validação fail-closed `validateTaskDecay` em `src/actions/settings.ts` (+ revalidação de `/tasks`).
+- **UI:** o pill de pontos nos cards exibe o **valor corrente** e, quando decrescido, o valor-base ao lado em **line-through** (pendentes e concluídos de ADMIN e dependente; "aprovadas" seguem mostrando o valor-base, histórico). Avisos de `NOT_DELIVERED` usam o valor debitado real.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Sem mudança de schema/no banco:** a chave `task_decay` é só mais um valor jsonb em `house_settings`; linhas ausentes caem no default.
+- **Default `enabled: true`:** logo após o deploy, todas as casas passam a ter o decaimento ativo (24h/1pt) — tarefas abertas criadas há mais de 24h já exibem o valor reduzido. O ADMIN pode desligar no menu.
+- **Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — a janela capada no prazo mantém a divergência pequena/nula no caso comum; corrigir exigiria guardar o valor debitado numa coluna (fora de escopo).
+- **Não requer deploy urgente,** mas só vale online depois de subir.
+
+---
+
 ## UI não fixava mudanças e "piscava" de volta ao dado antigo — service worker cacheava payloads RSC (corrigido)
 
 ### O que foi encontrado e corrigido

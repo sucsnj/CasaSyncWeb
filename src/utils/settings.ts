@@ -17,6 +17,7 @@ export type HouseSettingsKey =
   | 'task_sla'
   | 'extension_rules'
   | 'notification_retention'
+  | 'task_decay'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -85,6 +86,22 @@ export type NotificationRetentionSettings = {
   readRetentionDays: number
 }
 
+/**
+ * Decaimento de pontos de tarefas: a cada `periodHours` completas desde a
+ * criação (janela capada no `due_date` — depois de vencida não perde mais) a
+ * tarefa perde `pointsPerPeriod` pontos, com piso em 0. O valor corrente é
+ * calculado em runtime (`getTaskCurrentPoints` em `src/utils/task-decay.ts`);
+ * `tasks.points` guarda o valor-base intocado.
+ */
+export type TaskDecaySettings = {
+  /** ON/OFF do decaimento para toda a casa. */
+  enabled: boolean
+  /** Período base em horas (ex.: 24 = perde a cada 24h desde a criação). */
+  periodHours: number
+  /** Pontos perdidos a cada período completo. */
+  pointsPerPeriod: number
+}
+
 export const DEFAULT_TASK_SLA: TaskSlaSettings = {
   defaultDueDays: 1,
   dueSoonHours: 4,
@@ -96,6 +113,12 @@ export const DEFAULT_EXTENSION_RULES: ExtensionRulesSettings = {
 
 export const DEFAULT_NOTIFICATION_RETENTION: NotificationRetentionSettings = {
   readRetentionDays: 5,
+}
+
+export const DEFAULT_TASK_DECAY: TaskDecaySettings = {
+  enabled: true,
+  periodHours: 24,
+  pointsPerPeriod: 1,
 }
 
 export function mergeSettings<T extends Record<string, unknown>>(

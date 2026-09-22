@@ -18,8 +18,10 @@ import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
   getHouseExtensionRulesSettings,
+  getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
+import { getTaskCurrentPoints } from '@/utils/task-decay'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -245,7 +247,7 @@ export async function updateTask(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, created_at'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -305,9 +307,16 @@ export async function updateTask(
 
       // Tarefa não entregue: alterar o prazo tem o mesmo efeito de um adiamento
       // aprovado — devolve os pontos debitados e zera a tarefa. O status passa a
-      // ser o equivalente ao novo prazo.
+      // ser o equivalente ao novo prazo. Devolve o VALOR CORRENTE (decrescido),
+      // que para uma tarefa atrasada é estável (janela capada no prazo).
       if (isNotDelivered) {
-        pointsToRestore = task.points
+        const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+        pointsToRestore = getTaskCurrentPoints(
+          task.points,
+          task.created_at,
+          task.due_date,
+          decaySettings
+        )
         updates.points = 0
         updates.status =
           nextDue && new Date(nextDue).getTime() < Date.now()
@@ -462,7 +471,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, title')
+    .select('house_id, status, points, assigned_to, title, created_at, due_date')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -475,6 +484,16 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   if (!task.assigned_to) {
     return { ok: false, error: 'Tarefa sem dependente atribuído.' }
   }
+
+  // Decaimento: credita o VALOR CORRENTE da tarefa (base − perdas até agora,
+  // janela capada no prazo), não o valor-base gravado em `tasks.points`.
+  const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+  const currentPoints = getTaskCurrentPoints(
+    task.points,
+    task.created_at,
+    task.due_date,
+    decaySettings
+  )
 
   const { data: awarded, error: taskError } = await admin
     .from('tasks')
@@ -500,7 +519,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   const { error: pointsError } = await admin
     .from('profiles')
-    .update({ points: dependent.points + task.points })
+    .update({ points: dependent.points + currentPoints })
     .eq('id', task.assigned_to)
 
   if (pointsError) {
@@ -515,7 +534,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
     actorId: auth.adminId,
     type: 'TASK_APPROVED',
     title: 'Tarefa aprovada',
-    body: `"${task.title}" foi aprovada. +${task.points} pts.`,
+    body: `"${task.title}" foi aprovada. +${currentPoints} pts.`,
     link: '/tasks',
   })
 
@@ -525,7 +544,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   return {
     ok: true,
-    message: `Tarefa aprovada: ${task.points} ponto(s) creditado(s).`,
+    message: `Tarefa aprovada: ${currentPoints} ponto(s) creditado(s).`,
   }
 }
 
@@ -601,7 +620,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, due_date, title')
+    .select('house_id, status, points, assigned_to, due_date, title, created_at')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -618,6 +637,16 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     return { ok: false, error: 'Tarefa sem dependente atribuído.' }
   }
 
+  // Decaimento: a janela está capada no prazo (tarefa atrasada), então o valor
+  // corrente já é o "valor de vencimento" — estável. O débito usa esse valor.
+  const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+  const currentPoints = getTaskCurrentPoints(
+    task.points,
+    task.created_at,
+    task.due_date,
+    decaySettings
+  )
+
   const previousStatus = task.status
 
   // Guard: a transição PENDING/IN_PROGRESS -> NOT_DELIVERED acontece uma única
@@ -633,7 +662,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     return { ok: false, error: 'A tarefa já foi finalizada por outra pessoa.' }
   }
 
-  const debited = await adjustPoints(admin, task.assigned_to, -task.points)
+  const debited = await adjustPoints(admin, task.assigned_to, -currentPoints)
   if (!debited) {
     await admin.from('tasks').update({ status: previousStatus }).eq('id', taskId)
     return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
@@ -645,7 +674,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     actorId: auth.adminId,
     type: 'TASK_NOT_DELIVERED',
     title: 'Tarefa não entregue',
-    body: `"${task.title}" foi marcada como não entregue (−${task.points} pts). Peça mais tempo para reabrir.`,
+    body: `"${task.title}" foi marcada como não entregue (−${currentPoints} pts). Peça mais tempo para reabrir.`,
     link: '/tasks',
   })
 
@@ -655,7 +684,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 
   return {
     ok: true,
-    message: `Tarefa marcada como não entregue (−${task.points} pts).`,
+    message: `Tarefa marcada como não entregue (−${currentPoints} pts).`,
   }
 }
 
@@ -743,7 +772,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, title')
+    .select('house_id, status, points, assigned_to, title, created_at, due_date')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -756,6 +785,15 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   if (!task.assigned_to) {
     return { ok: false, error: 'Tarefa sem dependente atribuído.' }
   }
+
+  // Decaimento: credita o VALOR CORRENTE da tarefa (janela capada no prazo).
+  const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+  const currentPoints = getTaskCurrentPoints(
+    task.points,
+    task.created_at,
+    task.due_date,
+    decaySettings
+  )
 
   const { data: awarded, error: taskError } = await admin
     .from('tasks')
@@ -792,7 +830,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
 
   const { error: pointsError } = await admin
     .from('profiles')
-    .update({ points: dependent.points + task.points })
+    .update({ points: dependent.points + currentPoints })
     .eq('id', task.assigned_to)
 
   if (pointsError) {
@@ -814,7 +852,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
     actorId: auth.adminId,
     type: 'TASK_APPROVED',
     title: 'Tarefa concluída',
-    body: `"${task.title}" foi concluída pelo administrador. +${task.points} pts.`,
+    body: `"${task.title}" foi concluída pelo administrador. +${currentPoints} pts.`,
     link: '/tasks',
   })
 
@@ -824,7 +862,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
 
   return {
     ok: true,
-    message: `Tarefa concluída: ${task.points} ponto(s) creditado(s).`,
+    message: `Tarefa concluída: ${currentPoints} ponto(s) creditado(s).`,
   }
 }
 
@@ -922,7 +960,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title, created_at'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -973,7 +1011,16 @@ export async function resolveTaskExtension(
   if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
 
   if (approve && isNotDelivered && task.assigned_to) {
-    const restored = await adjustPoints(admin, task.assigned_to, task.points)
+    // Devolve o VALOR CORRENTE (decrescido) — o mesmo debitado em
+    // `markTaskNotDelivered`, estável porque a janela está capada no prazo.
+    const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+    const currentPoints = getTaskCurrentPoints(
+      task.points,
+      task.created_at,
+      task.due_date,
+      decaySettings
+    )
+    const restored = await adjustPoints(admin, task.assigned_to, currentPoints)
     if (!restored) {
       // Rollback: devolve a tarefa ao estado "não entregue" com o pedido pendente.
       await admin

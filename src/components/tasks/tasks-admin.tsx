@@ -14,6 +14,8 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
+import { getTaskCurrentPoints } from '@/utils/task-decay'
+import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
   datetimeLocalToIso,
@@ -77,6 +79,7 @@ export function TasksAdmin({
   defaultDueDays = 1,
   dueSoonHours = 4,
   extensionDayOptions = [1, 3],
+  taskDecay,
 }: {
   houseId: string
   initialTasks: Task[]
@@ -87,7 +90,10 @@ export function TasksAdmin({
   dueSoonHours?: number
   /** Dias disponíveis nos botões de aprovação de adiamento — settings.casa. */
   extensionDayOptions?: number[]
+  /** Decaimento de pontos de tarefas — settings.casa. */
+  taskDecay?: TaskDecaySettings
 }) {
+  const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [pending, startTransition] = useTransition()
@@ -765,6 +771,13 @@ export function TasksAdmin({
                 : taskSlaCardClass[sla]
             const isExpanded = expandedIds.has(task.id)
             const isNotDelivered = task.status === 'NOT_DELIVERED'
+            // Valor corrente sob o decaimento (base − perdas até agora/prazo).
+            const currentPoints = getTaskCurrentPoints(
+              task.points,
+              task.created_at,
+              task.due_date,
+              decay
+            )
 
             return (
               <Card key={task.id} className={cardClass}>
@@ -804,7 +817,16 @@ export function TasksAdmin({
                         POINTS_PILL_CLASS
                       )}
                     >
-                      {task.points} pts
+                      {currentPoints < task.points ? (
+                        <>
+                          {currentPoints} pts{' '}
+                          <span className="font-normal line-through opacity-60">
+                            {task.points}
+                          </span>
+                        </>
+                      ) : (
+                        `${task.points} pts`
+                      )}
                     </span>
                     <ChevronDown
                       className={cn(
@@ -928,7 +950,7 @@ export function TasksAdmin({
 
                       {isNotDelivered ? (
                         <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                          Tarefa marcada como não entregue — {task.points} pt(s) já
+                          Tarefa marcada como não entregue — {currentPoints} pt(s) já
                           debitado(s) do dependente. Aprovar um adiamento (ou
                           alterar o prazo) devolve os pontos e zera a tarefa.
                         </p>
@@ -981,6 +1003,13 @@ export function TasksAdmin({
         ) : (
           completedTasks.map((task) => {
             const isExpanded = expandedIds.has(task.id)
+            // Valor corrente sob o decaimento (o que será creditado na aprovação).
+            const currentPoints = getTaskCurrentPoints(
+              task.points,
+              task.created_at,
+              task.due_date,
+              decay
+            )
 
             return (
               <Card
@@ -1049,7 +1078,16 @@ export function TasksAdmin({
                             POINTS_PILL_CLASS
                           )}
                         >
-                          {task.points} pts
+                          {currentPoints < task.points ? (
+                            <>
+                              {currentPoints} pts{' '}
+                              <span className="font-normal line-through opacity-60">
+                                {task.points}
+                              </span>
+                            </>
+                          ) : (
+                            `${task.points} pts`
+                          )}
                         </span>
                         {task.completed_at
                           ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`

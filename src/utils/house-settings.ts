@@ -5,6 +5,7 @@ import {
   DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
   DEFAULT_REWARD_PRICING,
+  DEFAULT_TASK_DECAY,
   DEFAULT_TASK_SLA,
   mergeSettings,
   type ExtensionRulesSettings,
@@ -12,6 +13,7 @@ import {
   type NotificationRetentionSettings,
   type QuickMessageSettings,
   type RewardPricingSettings,
+  type TaskDecaySettings,
   type TaskSlaSettings,
 } from '@/utils/settings'
 
@@ -76,5 +78,13 @@ export const getHouseNotificationRetentionSettings = cache(
   async (houseId: string): Promise<NotificationRetentionSettings> => {
     const value = await getHouseSettingsValue(houseId, 'notification_retention')
     return mergeSettings(value, DEFAULT_NOTIFICATION_RETENTION)
+  }
+)
+
+/** Decaimento de pontos de tarefas da casa. */
+export const getHouseTaskDecaySettings = cache(
+  async (houseId: string): Promise<TaskDecaySettings> => {
+    const value = await getHouseSettingsValue(houseId, 'task_decay')
+    return mergeSettings(value, DEFAULT_TASK_DECAY)
   }
 )

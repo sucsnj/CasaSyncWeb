@@ -6,6 +6,8 @@ import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
+import { getTaskCurrentPoints } from '@/utils/task-decay'
+import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -37,13 +39,17 @@ export function TasksDependent({
   initialTasks,
   creatorNames,
   dueSoonHours = 4,
+  taskDecay,
 }: {
   houseId: string
   initialTasks: Task[]
   creatorNames: Record<string, string>
   /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
   dueSoonHours?: number
+  /** Decaimento de pontos de tarefas — settings.casa. */
+  taskDecay?: TaskDecaySettings
 }) {
+  const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [error, setError] = useState<string | null>(null)
@@ -185,6 +191,13 @@ export function TasksDependent({
             // "Não entregue" tem card próprio (borda vermelha) e some o badge
             // de SLA — o chip vermelho já comunica o estado.
             const isNotDelivered = task.status === 'NOT_DELIVERED'
+            // Valor corrente sob o decaimento (o que o dependente recebe ao concluir).
+            const currentPoints = getTaskCurrentPoints(
+              task.points,
+              task.created_at,
+              task.due_date,
+              decay
+            )
             const cardClass =
               isNotDelivered || sla === 'normal'
                 ? cn('border-l-4', taskAccentByStatus[task.status])
@@ -233,7 +246,16 @@ export function TasksDependent({
                           POINTS_PILL_CLASS
                         )}
                       >
-                        {task.points} pts
+                        {currentPoints < task.points ? (
+                          <>
+                            {currentPoints} pts{' '}
+                            <span className="font-normal line-through opacity-60">
+                              {task.points}
+                            </span>
+                          </>
+                        ) : (
+                          `${task.points} pts`
+                        )}
                       </span>
                       {task.due_date ? (
                         <span className="text-sm text-slate-500">
@@ -298,6 +320,13 @@ export function TasksDependent({
           </h2>
           {awaitingTasks.map((task) => {
             const isExpanded = expandedIds.has(task.id)
+            // Valor corrente sob o decaimento (o que será aprovado/creditado).
+            const currentPoints = getTaskCurrentPoints(
+              task.points,
+              task.created_at,
+              task.due_date,
+              decay
+            )
             return (
               <Card
                 key={task.id}
@@ -331,7 +360,22 @@ export function TasksDependent({
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    {task.points} pts · o administrador precisa aprovar
+                    {currentPoints < task.points ? (
+                      <>
+                        <span className="font-semibold text-slate-600">
+                          {currentPoints} pts
+                        </span>{' '}
+                        <span className="line-through opacity-60">
+                          {task.points}
+                        </span>{' '}
+                        · o administrador precisa aprovar
+                      </>
+                    ) : (
+                      <>
+                        {task.points} pts · o administrador precisa
+                        aprovar
+                      </>
+                    )}
                   </p>
                   {creatorNames[task.created_by] ? (
                     <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
