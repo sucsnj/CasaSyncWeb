@@ -95,6 +95,8 @@ export function TasksAdmin({
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
+  // Casas com um único dependente: ele é sempre pré-selecionado na criação.
+  const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
@@ -106,7 +108,7 @@ export function TasksAdmin({
   )
   // Campos do form de criação (controlados p/ autocomplete + soft block).
   const [title, setTitle] = useState('')
-  const [assignedTo, setAssignedTo] = useState('')
+  const [assignedTo, setAssignedTo] = useState(defaultAssignee)
   const [points, setPoints] = useState('5')
   const [description, setDescription] = useState('')
   // Tarefa do catálogo escolhida no autocomplete (modo "reutilizar").
@@ -177,7 +179,7 @@ export function TasksAdmin({
     setTitle('')
     setDescription('')
     setPoints('5')
-    setAssignedTo('')
+    setAssignedTo(defaultAssignee)
     setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
     setReuseTask(null)
     setConfirmDuplicate(false)
@@ -191,7 +193,7 @@ export function TasksAdmin({
     setTitle(task.title)
     setDescription(task.description ?? '')
     setPoints(String(task.points))
-    setAssignedTo(task.assigned_to ?? '')
+    setAssignedTo(task.assigned_to ?? defaultAssignee)
     setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
     setSuggestionsOpen(false)
     setConfirmDuplicate(false)

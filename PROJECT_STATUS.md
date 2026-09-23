@@ -1,5 +1,15 @@
 # CasaSync Web — PROJECT STATUS
 
+## Dependente pré-selecionado na criação de tarefa quando a casa tem 1 só dependente (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Em `tasks-admin.tsx`, o select "Dependente" do form de nova tarefa pré-seleciona o único dependente** quando a casa tem exatamente 1: `defaultAssignee = assignees.length === 1 ? assignees[0].id : ''` (constante derivada antes dos hooks). Aplicado no estado inicial (`useState(defaultAssignee)`), no `resetForm` e no fallback do autocomplete (`applySuggestion` usa `task.assigned_to ?? defaultAssignee` — tarefa sugerida sem atribuição volta ao único dependente). Com 2+ dependentes, o comportamento continua "Selecionar...".
+
+### Verificação
+`npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
 > **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Única exceção pendente no banco:** a coluna `tasks.decay_started_at` da seção no topo (**SQL abaixo** — sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra).
 
 ## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — requer 1 coluna nova)
