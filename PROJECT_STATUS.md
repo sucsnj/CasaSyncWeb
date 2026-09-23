@@ -1,5 +1,21 @@
 # CasaSync Web — PROJECT STATUS
 
+## Tarefa criada/reativada não aparecia na UI até refresh manual (corrigido — sem mudança de schema)
+
+### O que foi implementado
+- **Causa:** criar tarefa (`handleCreate` novo) e reativar via form ("Reativar tarefa existente") **não tinham atualização otimista** — só `router.refresh()` + Realtime faziam a tarefa aparecer. Se o Realtime não entregasse (RLS/publication) ou o browser estivesse com o Service Worker antigo servindo payload RSC obsoleto, a UI ficava sem o card até um refresh manual. Todos os demais handlers (aprovar, reativar/card, não entregue) já usavam otimismo.
+- **Actions devolvem a linha:** `createTask` agora faz `.select('*').single()` e retorna `data: { task }`; `restoreTask` faz `.select('*').single()` (guarda `.eq('status','APPROVED')` preservada) e retorna `data: { task }` com o estado real (inclui `due_date` + `decay_started_at` do servidor). `ActionResult` virou genérico (`ActionResult<T>`) com `data?: T` no ramo `ok`.
+- **`tasks-admin.tsx` otimista nos 3 fluxos:** criação nova, reativação via form e o botão Restaurar do card inserem/substituem a tarefa no estado local via `upsertTask` **(dedup por id** — se o Realtime entregar o mesmo evento depois, não duplica) usando a linha devolvida pela action. O `router.refresh()` continua como confirmação/refinamento; `resetForm()`/toast inalterados.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + os `'House' unused` pré-existentes nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy.** No browser com SW antigo (v1/v2, que cacheia RSC), a UI continua a precisar de uma recarga extra até o `sw.js` v3 ativar e purgar o cache — este fix elimina a dependência disso para o ADMIN que age: o card aparece na hora.
+- Sem mudança de schema: só retorno das actions + estado otimista no cliente.
+
+---
+
 ## Dependente pré-selecionado na criação de tarefa quando a casa tem 1 só dependente (concluída — sem mudança de schema)
 
 ### O que foi implementado

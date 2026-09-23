@@ -23,6 +23,9 @@ import {
 } from '@/utils/house-settings'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import type { ActionResult } from './types'
+import type { Tables } from '@/types/database'
+
+type Task = Tables<'tasks'>
 
 type TaskPatch = {
   title?: string
@@ -127,7 +130,7 @@ function normalizeDueDate(
 export async function createTask(
   input: CreateTaskInput,
   options?: { force?: boolean }
-): Promise<ActionResult> {
+): Promise<ActionResult<{ task: Task }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) {
     return { ok: false, error: 'Crie ou selecione uma casa primeiro.' }
@@ -183,20 +186,24 @@ export async function createTask(
   const due = normalizeDueDate(input.dueDate)
   if (!due.ok) return due
 
-  const { error } = await admin.from('tasks').insert({
-    house_id: activeHouse.id,
-    title,
-    description: input.description?.trim() ? input.description.trim() : null,
-    due_date: due.dueDate,
-    points: input.points,
-    assigned_to: input.assignedTo,
-    created_by: auth.adminId,
-    status: 'PENDING',
-    image_url: input.imageUrl,
-    decay_started_at: new Date().toISOString(),
-  })
+  const { data: taskRow, error } = await admin
+    .from('tasks')
+    .insert({
+      house_id: activeHouse.id,
+      title,
+      description: input.description?.trim() ? input.description.trim() : null,
+      due_date: due.dueDate,
+      points: input.points,
+      assigned_to: input.assignedTo,
+      created_by: auth.adminId,
+      status: 'PENDING',
+      image_url: input.imageUrl,
+      decay_started_at: new Date().toISOString(),
+    })
+    .select('*')
+    .single()
 
-  if (error) return { ok: false, error: 'Falha ao criar a tarefa.' }
+  if (error || !taskRow) return { ok: false, error: 'Falha ao criar a tarefa.' }
 
   const notifInput: NotifyInput & { recipientId: string } = {
     houseId: activeHouse.id,
@@ -218,7 +225,11 @@ export async function createTask(
   }
 
   revalidatePath('/tasks')
-  return { ok: true, message: `Tarefa "${title}" criada.` }
+  return {
+    ok: true,
+    data: { task: taskRow },
+    message: `Tarefa "${title}" criada.`,
+  }
 }
 
 /** Compara dois prazos (timestamptz do banco vs valor `datetime-local`). */
@@ -711,7 +722,9 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
  * os pontos já creditados NÃO são alterados, os demais dados são mantidos e o
  * prazo reinicia (agora + 1 dia). A tarefa volta para PENDING.
  */
-export async function restoreTask(taskId: string): Promise<ActionResult> {
+export async function restoreTask(
+  taskId: string
+): Promise<ActionResult<{ task: Task }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -753,9 +766,10 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
     })
     .eq('id', taskId)
     .eq('status', 'APPROVED') // guard: impede restaurar duas vezes
-    .select('id')
+    .select('*')
+    .single()
 
-  if (error || !restored || restored.length === 0) {
+  if (error || !restored) {
     return { ok: false, error: 'A tarefa já foi restaurada por outra pessoa.' }
   }
 
@@ -774,7 +788,11 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
-  return { ok: true, message: `Tarefa restaurada: prazo reiniciado para +${slaSettings.defaultDueDays} dia(s).` }
+  return {
+    ok: true,
+    data: { task: restored },
+    message: `Tarefa restaurada: prazo reiniciado para +${slaSettings.defaultDueDays} dia(s).`,
+  }
 }
 
 /**

@@ -218,6 +218,11 @@ export function TasksAdmin({
         }
 
         toast.success(result.message ?? 'Tarefa reativada')
+        // Otimista: reabre o card na seção de pendentes na hora, mesmo que o
+        // router.refresh() ou o Realtime estejam atrasados/indisponíveis.
+        if (result.data?.task) {
+          setTasks((prev) => upsertTask(prev, result.data!.task))
+        }
         setFormError(null)
         resetForm()
         setShowTaskForm(false)
@@ -264,6 +269,12 @@ export function TasksAdmin({
       }
 
       toast.success(result.message ?? 'Tarefa criada')
+      // Otimista: exibe a nova tarefa na seção de pendentes na hora, mesmo que
+      // o router.refresh() ou o Realtime estejam atrasados/indisponíveis.
+      // Se o Realtime entregar o mesmo INSERT depois, o upsert deduplica por id.
+      if (result.data?.task) {
+        setTasks((prev) => upsertTask(prev, result.data!.task))
+      }
       setFormError(null)
       resetForm()
       setShowTaskForm(false)
@@ -364,7 +375,8 @@ export function TasksAdmin({
       toast.success(result.message ?? 'Tarefa restaurada')
       // Otimista: volta para Pendentes com o prazo reiniciado (prazo padrão da
       // casa). Os pontos já creditados são mantidos e a tarefa reaparece para
-      // o dependente.
+      // o dependente. Prefere a linha autoritativa devolvida pela action (com o
+      // `due_date`/`decay_started_at` reais); cai no otimista apenas se faltar.
       const nextDue = new Date(
         Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
       ).toISOString()
@@ -379,6 +391,9 @@ export function TasksAdmin({
           extension_reason: null,
         })
       )
+      if (result.data?.task) {
+        setTasks((prev) => upsertTask(prev, result.data!.task))
+      }
       router.refresh()
     })
   }
