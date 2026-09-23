@@ -21,7 +21,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
-import { getTaskCurrentPoints } from '@/utils/task-decay'
+import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import type { ActionResult } from './types'
 
 type TaskPatch = {
@@ -193,6 +193,7 @@ export async function createTask(
     created_by: auth.adminId,
     status: 'PENDING',
     image_url: input.imageUrl,
+    decay_started_at: new Date().toISOString(),
   })
 
   if (error) return { ok: false, error: 'Falha ao criar a tarefa.' }
@@ -247,7 +248,7 @@ export async function updateTask(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, created_at'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, created_at, decay_started_at'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -268,6 +269,7 @@ export async function updateTask(
     extension_requested?: boolean
     extension_reason?: string | null
     status?: 'PENDING' | 'NOT_DELIVERED'
+    decay_started_at?: string
   } = {}
   let pointsToRestore = 0
   if ('title' in patch) {
@@ -313,7 +315,7 @@ export async function updateTask(
         const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
         pointsToRestore = getTaskCurrentPoints(
           task.points,
-          task.created_at,
+          getTaskDecayStart(task.created_at, task.decay_started_at),
           task.due_date,
           decaySettings
         )
@@ -347,6 +349,20 @@ export async function updateTask(
   }
   if ('image_url' in patch) {
     updates.image_url = patch.image_url?.trim() ? patch.image_url.trim() : null
+  }
+
+  // Decaimento: o relógio reinicia a cada EDIÇÃO (momento da edição vira o novo
+  // ponto de partida). Exceto quando o prazo mudou por um ADIAMENTO — o
+  // auto-aceite do pedido pendente ou a reversão direta de uma "não entregue" —
+  // que não deve afetar o decaimento.
+  const isAdiamento =
+    'due_date' in updates &&
+    updates.due_date !== undefined &&
+    dueDateChanged(task.due_date, updates.due_date) &&
+    (task.extension_requested || isNotDelivered)
+
+  if (!isAdiamento) {
+    updates.decay_started_at = new Date().toISOString()
   }
 
   if (Object.keys(updates).length === 0) return { ok: true }
@@ -471,7 +487,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, title, created_at, due_date')
+    .select('house_id, status, points, assigned_to, title, created_at, due_date, decay_started_at')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -490,7 +506,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
   const currentPoints = getTaskCurrentPoints(
     task.points,
-    task.created_at,
+    getTaskDecayStart(task.created_at, task.decay_started_at),
     task.due_date,
     decaySettings
   )
@@ -620,7 +636,9 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, due_date, title, created_at')
+    .select(
+      'house_id, status, points, assigned_to, due_date, title, created_at, decay_started_at'
+    )
     .eq('id', taskId)
     .maybeSingle()
 
@@ -642,7 +660,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
   const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
   const currentPoints = getTaskCurrentPoints(
     task.points,
-    task.created_at,
+    getTaskDecayStart(task.created_at, task.decay_started_at),
     task.due_date,
     decaySettings
   )
@@ -729,6 +747,9 @@ export async function restoreTask(taskId: string): Promise<ActionResult> {
       completed_at: null,
       extension_requested: false,
       extension_reason: null,
+      // O relógio do decaimento reinicia no restauro: a tarefa reaberta nasce
+      // com os pontos cheios (base), como um novo ciclo.
+      decay_started_at: new Date().toISOString(),
     })
     .eq('id', taskId)
     .eq('status', 'APPROVED') // guard: impede restaurar duas vezes
@@ -772,7 +793,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, status, points, assigned_to, title, created_at, due_date')
+    .select('house_id, status, points, assigned_to, title, created_at, due_date, decay_started_at')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -790,7 +811,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
   const currentPoints = getTaskCurrentPoints(
     task.points,
-    task.created_at,
+    getTaskDecayStart(task.created_at, task.decay_started_at),
     task.due_date,
     decaySettings
   )
@@ -960,7 +981,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title, created_at'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title, created_at, decay_started_at'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -1013,10 +1034,11 @@ export async function resolveTaskExtension(
   if (approve && isNotDelivered && task.assigned_to) {
     // Devolve o VALOR CORRENTE (decrescido) — o mesmo debitado em
     // `markTaskNotDelivered`, estável porque a janela está capada no prazo.
+    // O relógio do decaimento NÃO reinicia: adiamento não afeta o decaimento.
     const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
     const currentPoints = getTaskCurrentPoints(
       task.points,
-      task.created_at,
+      getTaskDecayStart(task.created_at, task.decay_started_at),
       task.due_date,
       decaySettings
     )

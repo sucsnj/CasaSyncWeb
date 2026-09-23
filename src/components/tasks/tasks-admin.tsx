@@ -14,7 +14,7 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
-import { getTaskCurrentPoints } from '@/utils/task-decay'
+import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
@@ -771,10 +771,11 @@ export function TasksAdmin({
                 : taskSlaCardClass[sla]
             const isExpanded = expandedIds.has(task.id)
             const isNotDelivered = task.status === 'NOT_DELIVERED'
-            // Valor corrente sob o decaimento (base − perdas até agora/prazo).
+            // Valor corrente sob o decaimento (base − perdas desde o start do
+            // decaimento até agora/prazo).
             const currentPoints = getTaskCurrentPoints(
               task.points,
-              task.created_at,
+              getTaskDecayStart(task.created_at, task.decay_started_at),
               task.due_date,
               decay
             )
@@ -1006,7 +1007,7 @@ export function TasksAdmin({
             // Valor corrente sob o decaimento (o que será creditado na aprovação).
             const currentPoints = getTaskCurrentPoints(
               task.points,
-              task.created_at,
+              getTaskDecayStart(task.created_at, task.decay_started_at),
               task.due_date,
               decay
             )

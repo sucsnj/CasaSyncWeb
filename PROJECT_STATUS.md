@@ -1,6 +1,30 @@
 # CasaSync Web — PROJECT STATUS
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas (nada está pendente no banco).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Única exceção pendente no banco:** a coluna `tasks.decay_started_at` da seção no topo (**SQL abaixo** — sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra).
+
+## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — requer 1 coluna nova)
+
+### O que foi implementado
+- **O ponto de partida do decaimento deixou de ser a criação e passou a ser dinâmico:** o relógio agora começa no `decay_started_at` da tarefa — definido na **criação** e atualizado para o **momento de cada edição** (`updateTask`). **Adiamentos NÃO reiniciam o relógio:** aprovar adiamento (`resolveTaskExtension`), o auto-aceite via edição de `due_date` de tarefa com pedido pendente e a reversão de uma `NOT_DELIVERED` via prazo são situações de adiamento e não afetam o decaimento.
+- **`restoreTask` reinicia o relógio:** a tarefa aprovada restaurada nasce com o `decay_started_at` = momento do restauro (novo ciclo, pontos cheios na base).
+- **Nova coluna `tasks.decay_started_at timestamptz` (nullable):** tarefas antigas (coluna vazia) caem no fallback `created_at` até a primeira edição/restauro — comportamento antigo preservado. **SQL abaixo — única pendência no banco.**
+- **Aplicações:** `getTaskDecayStart(createdAt, decayStartedAt)` (`src/utils/task-decay.ts`) resolve o start (`decay_started_at ?? created_at`); crédito (`approveTask`/`adminCompleteTask`), débito (`markTaskNotDelivered`), devoluções (`resolveTaskExtension`/`updateTask`) e a exibição nos cards ADMIN/dependente passam a usar o start resolvido. `tasks.points` (base) continua intocada.
+- `getTaskCurrentPoints` teve o parâmetro `createdAt` renomeado/documented como **startAt** (ponto de partida do relógio).
+
+### SQL a aplicar no dashboard do Supabase (aplicar ANTES de subir)
+```sql
+-- Relógio do decaimento por tarefa: null = usa created_at (tarefas antigas).
+alter table public.tasks add column if not exists decay_started_at timestamptz;
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer a coluna para o comportamento novo:** sem ela, o decaimento ignora o reset de edição/restauro e continua usando `created_at` (nada quebra, só não reseta). Aplicar o SQL acima e, para as tarefas já criadas, opcionalmente `update tasks set decay_started_at = created_at;`.
+- **Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — correção exigiria guardar o valor debitado numa coluna (fora de escopo).
+
+---
 
 ## Tarefas perdem pontos com o tempo — decaimento configurável (concluída — sem mudança de schema)
 

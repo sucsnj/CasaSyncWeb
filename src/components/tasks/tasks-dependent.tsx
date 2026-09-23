@@ -6,7 +6,7 @@ import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
-import { getTaskCurrentPoints } from '@/utils/task-decay'
+import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
@@ -191,10 +191,10 @@ export function TasksDependent({
             // "Não entregue" tem card próprio (borda vermelha) e some o badge
             // de SLA — o chip vermelho já comunica o estado.
             const isNotDelivered = task.status === 'NOT_DELIVERED'
-            // Valor corrente sob o decaimento (o que o dependente recebe ao concluir).
+            // Valor corrente sob o decaimento (o que o dependente recebe se concluir).
             const currentPoints = getTaskCurrentPoints(
               task.points,
-              task.created_at,
+              getTaskDecayStart(task.created_at, task.decay_started_at),
               task.due_date,
               decay
             )
@@ -323,7 +323,7 @@ export function TasksDependent({
             // Valor corrente sob o decaimento (o que será aprovado/creditado).
             const currentPoints = getTaskCurrentPoints(
               task.points,
-              task.created_at,
+              getTaskDecayStart(task.created_at, task.decay_started_at),
               task.due_date,
               decay
             )

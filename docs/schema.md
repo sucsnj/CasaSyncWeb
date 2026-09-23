@@ -55,6 +55,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | image_url | text | |
 | extension_requested | bool | pedido de adiamento |
 | extension_reason | text | justificativa obrigatória |
+| decay_started_at | timestamptz | nullable; ponto de partida do relógio do **decaimento** (criação ou última edição; null em tarefas antigas → fallback `created_at`). **Coluna pendente de aplicação no Supabase** (SQL no topo do `PROJECT_STATUS.md`) |
 | created_at / updated_at | timestamptz | |
 
 ### rewards
@@ -139,7 +140,7 @@ Chaves e efeitos:
 - `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonHours` (4, chip "Prazo próximo" quando faltam menos de N horas para o prazo — limiar absoluto, independente da duração; 0 desliga).
 - `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista).
 - `notification_retention`: `readRetentionDays` (5, lidas comuns apagadas por casa da notificação, excluindo `QUICK_MESSAGE`).
-- `task_decay`: `enabled` (true), `periodHours` (24), `pointsPerPeriod` (1) — decaimento de pontos de tarefas. A cada `periodHours` completas desde a criação a tarefa perde `pointsPerPeriod` (janela capada no `due_date` — após o vencimento a perda não cresce —, piso 0); `tasks.points` é a base intocada e o valor corrente é calculado por `getTaskCurrentPoints` (`src/utils/task-decay.ts`), usado no crédito da aprovação e no débito de `NOT_DELIVERED` (ver topo do `PROJECT_STATUS.md`).
+- `task_decay`: `enabled` (true), `periodHours` (24), `pointsPerPeriod` (1) — decaimento de pontos de tarefas. A cada `periodHours` completas desde o **ponto de partida do relógio** — `tasks.decay_started_at` (criação ou última edição; fallback `created_at`) — a tarefa perde `pointsPerPeriod` (janela capada no `due_date` — após o vencimento a perda não cresce —, piso 0); `tasks.points` é a base intocada e o valor corrente é calculado por `getTaskCurrentPoints` (`src/utils/task-decay.ts`), usado no crédito da aprovação e no débito de `NOT_DELIVERED`. Adiamentos não reiniciam o relógio; `restoreTask` reinicia (ver topo do `PROJECT_STATUS.md`).
 
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
