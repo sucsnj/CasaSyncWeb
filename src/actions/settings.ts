@@ -179,9 +179,15 @@ function validateQuickMessage(patch: Record<string, unknown>): SettingsResult {
     return { ok: false, error: 'A capacidade acumulada deve estar entre 1 e 50.' }
   }
 
+  const readRetentionDays = patch.readRetentionDays ?? base.readRetentionDays
+  if (!isFiniteNumber(readRetentionDays) || !Number.isInteger(readRetentionDays) || readRetentionDays < 1 || readRetentionDays > 365) {
+    return { ok: false, error: 'A retenção (dias) deve ser um inteiro entre 1 e 365.' }
+  }
+
   base.maxChars = maxChars
   base.maxImageMb = maxImageMb
   base.capacity = capacity
+  base.readRetentionDays = readRetentionDays
 
   return { ok: true, value: base }
 }

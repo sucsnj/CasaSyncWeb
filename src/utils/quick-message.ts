@@ -8,3 +8,4 @@ export const QUICK_MESSAGE_MAX_IMAGE_BYTES =
   QUICK_MESSAGE_MAX_IMAGE_MB * 1024 * 1024
 /** Máximo de mensagens próprias acumuladas (lidas ou não) para poder enviar. */
 export const QUICK_MESSAGE_CAPACITY = 2
+export const QUICK_MESSAGE_READ_RETENTION_DAYS = 5

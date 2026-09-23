@@ -43,7 +43,8 @@ export async function markNotificationRead(
   if (error) return { ok: false, error: 'Falha ao marcar como lida.' }
 
   if (row.type === 'QUICK_MESSAGE' && row.actor_id) {
-    await cleanupQuickMessages(admin, row.house_id, row.actor_id)
+    const settings = await getHouseQuickMessageSettings(row.house_id)
+    await cleanupQuickMessages(admin, row.house_id, row.actor_id, settings.readRetentionDays)
   }
 
   return { ok: true }
@@ -82,7 +83,8 @@ export async function markAllNotificationsRead(): Promise<ActionResult> {
     })
   }
   for (const pair of pairs.values()) {
-    await cleanupQuickMessages(admin, pair.houseId, pair.actorId)
+    const settings = await getHouseQuickMessageSettings(pair.houseId)
+    await cleanupQuickMessages(admin, pair.houseId, pair.actorId, settings.readRetentionDays)
   }
 
   return { ok: true }

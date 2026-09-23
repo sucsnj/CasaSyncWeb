@@ -234,6 +234,36 @@ export async function getMyNotifications(
     // Best-effort: falha na limpeza não impede a listagem.
   }
 
+  // Limpeza lazy de mensagens rápidas expiradas (tempo).
+  try {
+    const { data: quickRows } = await admin
+      .from('notifications')
+      .select('house_id, actor_id')
+      .eq('recipient_id', userId)
+      .eq('type', 'QUICK_MESSAGE')
+      .not('actor_id', 'is', null)
+
+    const pairs = new Map<string, { houseId: string; actorId: string }>()
+    for (const row of (quickRows ?? [])) {
+      if (!row.actor_id) continue
+      pairs.set(`${row.house_id}:${row.actor_id}`, {
+        houseId: row.house_id,
+        actorId: row.actor_id,
+      })
+    }
+    for (const pair of pairs.values()) {
+      const settings = await getHouseQuickMessageSettings(pair.houseId)
+      await cleanupQuickMessages(
+        admin,
+        pair.houseId,
+        pair.actorId,
+        settings.readRetentionDays
+      )
+    }
+  } catch {
+    // Best-effort: falha na limpeza não impede a listagem.
+  }
+
   const { data } = await admin
     .from('notifications')
     .select('*')
@@ -262,21 +292,21 @@ function storagePathFromPublicUrl(url: string): string | null {
 }
 
 /**
- * Regra de retenção da "mensagem rápida": quando o dependente atinge a
- * capacidade configurada da casa (default 2) de mensagens próprias JÁ lidas,
- * apaga a mais antiga (todas as cópias que os ADMINs receberam + o arquivo de
- * imagem no storage — best-effort).
+ * Regra de retenção da "mensagem rápida" (tempo): assim que ao menos um
+ * tutor (admin) abriu a mensagem (qualquer cópia com read_at != null), o
+ * grupo inteiro (todas as cópias dos admins + do dependente + image no
+ * storage) é apagado após `readRetentionDays` dias. Mensagens nunca
+ * lidas por nenhum tutor ficam armazenadas (não expiram).
  *
- * Conta MENSAGENS (`message_id`), não cópias por destinatário. Disparado ao
- * marcar uma QUICK_MESSAGE como lida.
+ * Disparado ao marcar como lida e de forma lazy no carregamento de
+ * notificações.
  */
 export async function cleanupQuickMessages(
   admin: AdminClient,
   houseId: string,
-  actorId: string
+  actorId: string,
+  readRetentionDays: number
 ): Promise<void> {
-  const settings = await getHouseQuickMessageSettings(houseId)
-
   const { data } = await admin
     .from('notifications')
     .select('recipient_id, message_id, created_at, image_url, read_at')
@@ -287,50 +317,62 @@ export async function cleanupQuickMessages(
 
   if (!data || data.length === 0) return
 
-  const byMessage = new Map<
-    string,
-    { created: number; image_url: string | null; read: boolean }
-  >()
+  type GroupInfo = {
+    created: number
+    image_url: string | null
+    firstAdminReadTs: number | null
+  }
+
+  const byMessage = new Map<string, GroupInfo>()
 
   for (const row of data) {
     const messageId = row.message_id
     if (!messageId) continue
-    const current = byMessage.get(messageId)
     const created = new Date(row.created_at).getTime()
-    // A cópia do próprio remetente é apenas comprovante — só o destinatário
-    // (outro membro, ex.: ADMIN) que abriu conta como "lida" na retenção.
+    // A cópia do próprio remetente (dependente) é apenas comprovante —
+    // só a leitura de um admin conta para a retenção.
     const isSenderCopy = row.recipient_id === actorId
+    const adminReadTs =
+      !isSenderCopy && row.read_at !== null
+        ? new Date(row.read_at).getTime()
+        : null
+    const current = byMessage.get(messageId)
+    const currentFirstAdminReadTs = current?.firstAdminReadTs ?? null
+    const firstAdminReadTs =
+      adminReadTs !== null
+        ? currentFirstAdminReadTs !== null && adminReadTs > currentFirstAdminReadTs
+          ? currentFirstAdminReadTs
+          : adminReadTs
+        : currentFirstAdminReadTs
     byMessage.set(messageId, {
       created: current ? Math.min(current.created, created) : created,
-      image_url: current ? current.image_url : row.image_url,
-      read: current
-        ? current.read || (!isSenderCopy && row.read_at !== null)
-        : !isSenderCopy && row.read_at !== null,
+      image_url: current?.image_url ?? row.image_url,
+      firstAdminReadTs,
     })
   }
 
-  const readMessages = [...byMessage.entries()].filter(
-    ([, message]) => message.read
-  )
-  if (readMessages.length < settings.capacity) return
+  const cutoff = new Date(
+    Date.now() - readRetentionDays * 24 * 60 * 60 * 1000
+  ).getTime()
 
-  readMessages.sort((a, b) => a[1].created - b[1].created)
-  const [oldestId, oldest] = readMessages[0]
+  for (const [messageId, info] of byMessage) {
+    if (info.firstAdminReadTs === null) continue // nenhum tutor leu → fica para sempre
+    if (info.firstAdminReadTs > cutoff) continue // ainda dentro do prazo
 
-  await admin
-    .from('notifications')
-    .delete()
-    .eq('house_id', houseId)
-    .eq('actor_id', actorId)
-    .eq('message_id', oldestId)
+    await admin
+      .from('notifications')
+      .delete()
+      .eq('house_id', houseId)
+      .eq('message_id', messageId)
 
-  if (oldest.image_url) {
-    const path = storagePathFromPublicUrl(oldest.image_url)
-    if (path) {
-      try {
-        await admin.storage.from(MEDIA_BUCKET).remove([path])
-      } catch {
-        // Best-effort: sobra de imagem no storage não derruba a limpeza.
+    if (info.image_url) {
+      const path = storagePathFromPublicUrl(info.image_url)
+      if (path) {
+        try {
+          await admin.storage.from(MEDIA_BUCKET).remove([path])
+        } catch {
+          // Best-effort: sobra de imagem no storage não derruba a limpeza.
+        }
       }
     }
   }

@@ -432,6 +432,17 @@ export function SettingsAdmin({
               max={50}
               hint="Depois desse número de mensagens próprias não lidas, o envio fica bloqueado até que algum tutor abra (e a mais antiga seja apagada)."
             />
+            <Field
+              label="Expira após leitura"
+              value={quick.readRetentionDays}
+              onChange={(readRetentionDays) =>
+                setQuick((prev) => ({ ...prev, readRetentionDays }))
+              }
+              min={1}
+              max={365}
+              suffix="dias"
+              hint="Se ao menos um tutor abrir a mensagem, ela é apagada para todos (adm e dependente) após este prazo. Mensagens nunca lidas ficam armazenadas."
+            />
           </div>
 
           {quickError ? (

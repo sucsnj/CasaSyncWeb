@@ -9,6 +9,7 @@ import {
   QUICK_MESSAGE_CAPACITY,
   QUICK_MESSAGE_MAX_CHARS,
   QUICK_MESSAGE_MAX_IMAGE_MB,
+  QUICK_MESSAGE_READ_RETENTION_DAYS,
 } from '@/utils/quick-message'
 
 export type HouseSettingsKey =
@@ -41,6 +42,8 @@ export type QuickMessageSettings = {
   maxImageMb: number
   /** Máximo de mensagens próprias acumuladas para poder enviar. */
   capacity: number
+  /** Dias após a primeira leitura por um tutor até apagar o grupo inteiro. */
+  readRetentionDays: number
 }
 
 export const DEFAULT_REWARD_PRICING: RewardPricingSettings = {
@@ -56,6 +59,7 @@ export const DEFAULT_QUICK_MESSAGE: QuickMessageSettings = {
   maxChars: QUICK_MESSAGE_MAX_CHARS,
   maxImageMb: QUICK_MESSAGE_MAX_IMAGE_MB,
   capacity: QUICK_MESSAGE_CAPACITY,
+  readRetentionDays: QUICK_MESSAGE_READ_RETENTION_DAYS,
 }
 
 /** Prazos/SLA de tarefas. */

@@ -1,5 +1,24 @@
 # CasaSync Web — PROJECT STATUS
 
+## Mensagem rápida: retenção por tempo após leitura (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Regra antiga removida:** "2 lidas → apaga a mais antiga" (capacity-based). A regra era: quando o dependente atingia `capacity` (default 2) mensagens **já lidas**, a mais antiga era apagada.
+- **Nova regra (tempo):** assim que **ao menos um tutor (admin)** visualiza a mensagem rápida (qualquer cópia com `read_at != null`), o grupo inteiro (todas as cópias dos admins + cópia do dependente + imagem no storage) é apagado **após `readRetentionDays` dias**. Mensagens **nunca lidas** por nenhum tutor ficam armazenadas indefinidamente (não expiram).
+- **Configurável pelo ADMIN:** novo campo **"Expira após leitura"** (dias, 1–365) no card **Mensagem rápida** em `/dashboard/admin/settings`. Default `5` dias (mesmo padrão de `notification_retention`).
+- **Código:** 
+  - `QuickMessageSettings` ganha `readRetentionDays` (`src/utils/settings.ts`).
+  - `validateQuickMessage` valida 1–365 (`src/actions/settings.ts`).
+  - `cleanupQuickMessages` reescrita para regra de tempo (`src/utils/notifications.ts`).
+  - Chamadas atualizadas em `markNotificationRead`, `markAllNotificationsRead` (`src/actions/notifications.ts`).
+  - Limpeza lazy em `getMyNotifications` para pegar mensagens que venceram o prazo mesmo sem nova leitura.
+- **Capacity** continua só como limite de envio (dependente só envia enquanto tem < capacity mensagens acumuladas).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
 ## Tarefa criada/reativada não aparecia na UI até refresh manual (corrigido — sem mudança de schema)
 
 ### O que foi implementado
