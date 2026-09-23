@@ -1,5 +1,19 @@
 # CasaSync Web — PROJECT STATUS
 
+## Botão "Concluir e creditar" oculto durante edição de campos (corrigido — sem mudança de schema)
+
+### O que foi implementado
+- **Problema:** durante a edição dos campos de uma tarefa (título, descrição, pontos, prazo), o botão verde **"Aprovar Tarefa e Creditar"** permanecia visível no card expandido. O admin podia clicar achando que era o botão "Salvar", quando na verdade ele credita pontos e aprova a tarefa.
+- **Solução:** o `DebouncedField` já expunha `onSavingStatusChange('saving' | 'saved' | 'idle')`. Faltava ligar esse callback nos campos **Título** e **Descrição** (já existia em Pontos e Prazo).
+- **Mudanças:**
+  - `tasks-admin.tsx`: adicionado `onSavingStatusChange` nos `DebouncedField` de título e descrição, atualizando `savingStatuses[task.id]`.
+  - O JSX condicional (já existente) oculta o botão "Aprovar Tarefa e Creditar" e "Marcar como não entregue" enquanto o status for `'saving'` ou `'saved'`, exibindo "⏳ Salvando alterações..." / "✓ Alterações salvas" no lugar.
+
+### Verificação
+`npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
 ## Mensagem rápida: retenção por tempo após leitura (concluída — sem mudança de schema)
 
 ### O que foi implementado

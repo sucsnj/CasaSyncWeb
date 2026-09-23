@@ -119,6 +119,9 @@ export function TasksAdmin({
   // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
+  // Estado para rastrear status de salvamento de cada card.
+  const [savingStatuses, setSavingStatuses] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
+
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
   // (UPDATE), o payload chega aqui instantaneamente e a lista do ADMIN é
   // atualizada sem refresh manual. O inverso também vale.
@@ -148,12 +151,12 @@ export function TasksAdmin({
   const suggestions =
     normalizedTitle.length >= 3 && suggestionsOpen
       ? tasks
-          .filter(
-            (task) =>
-              task.title &&
-              normalizeTaskTitle(task.title).includes(normalizedTitle)
-          )
-          .slice(0, 3)
+        .filter(
+          (task) =>
+            task.title &&
+            normalizeTaskTitle(task.title).includes(normalizedTitle)
+        )
+        .slice(0, 3)
       : []
 
   // Soft block por pupilo: tarefa ATIVA (PENDING/IN_PROGRESS/NOT_DELIVERED) com
@@ -166,13 +169,13 @@ export function TasksAdmin({
   ]
   const duplicateActive = normalizedTitle
     ? (tasks.find(
-        (task) =>
-          task.id !== reuseTask?.id &&
-          task.assigned_to === assignedTo &&
-          ACTIVE_STATUSES.includes(task.status) &&
-          task.title &&
-          normalizeTaskTitle(task.title) === normalizedTitle
-      ) ?? null)
+      (task) =>
+        task.id !== reuseTask?.id &&
+        task.assigned_to === assignedTo &&
+        ACTIVE_STATUSES.includes(task.status) &&
+        task.title &&
+        normalizeTaskTitle(task.title) === normalizedTitle
+    ) ?? null)
     : null
 
   function resetForm() {
@@ -870,6 +873,9 @@ export function TasksAdmin({
                           value={task.title}
                           onSave={saveTitle(task.id)}
                           placeholder="Título da tarefa"
+                          onSavingStatusChange={(status) => {
+                            setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                          }}
                         />
 
                         <label className="flex items-center gap-2 text-sm">
@@ -894,6 +900,9 @@ export function TasksAdmin({
                         onSave={saveDescription(task.id)}
                         textarea
                         placeholder="Descrição (opcional)"
+                        onSavingStatusChange={(status) => {
+                          setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                        }}
                       />
 
                       {task.extension_requested ? (
@@ -951,6 +960,9 @@ export function TasksAdmin({
                               value={String(task.points)}
                               onSave={savePoints(task.id)}
                               type="number"
+                              onSavingStatusChange={(status) => {
+                                setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                              }}
                             />
                           </div>
                         ) : null}
@@ -962,6 +974,9 @@ export function TasksAdmin({
                             value={isoToDateTimeLocalValue(task.due_date)}
                             onSave={saveDueDate(task.id)}
                             type="datetime-local"
+                            onSavingStatusChange={(status) => {
+                              setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                            }}
                           />
                         </div>
                       </div>
@@ -969,22 +984,36 @@ export function TasksAdmin({
                       {isNotDelivered ? (
                         <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
                           Tarefa marcada como não entregue — {currentPoints} pt(s) já
-                          debitado(s) do dependente. Aprovar um adiamento (ou
+                          debitado(s) do dependente. Aprovar um adiamento (or
                           alterar o prazo) devolve os pontos e zera a tarefa.
                         </p>
                       ) : (
                         <div className="flex flex-col gap-2 sm:flex-row">
-                          <Button
-                            type="button"
-                            onClick={() => handleAdminComplete(task)}
-                            disabled={pending}
-                            className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
-                          >
-                            {pending
-                              ? 'Concluindo...'
-                              : 'Concluir e creditar pontos'}
-                          </Button>
-                          {sla === 'overdue' ? (
+                          {/* Se estiver salvando/salvo, oculta o botão verde e exibe a mensagem de feedback */}
+                          {(savingStatuses[task.id] ?? 'idle') !== 'idle' ? (
+                            <div className="flex w-full items-center justify-center rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-medium sm:flex-1">
+                              {savingStatuses[task.id] === 'saving' && (
+                                <span className="text-slate-500 animate-pulse">⏳ Salvando alterações...</span>
+                              )}
+                              {savingStatuses[task.id] === 'saved' && (
+                                <span className="text-emerald-600 font-semibold">✓ Alterações salvas</span>
+                              )}
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              onClick={() => handleAdminComplete(task)}
+                              disabled={pending}
+                              className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
+                            >
+                              {pending
+                                ? 'Concluindo...'
+                                : 'Aprovar Tarefa e Creditar'}
+                            </Button>
+                          )}
+
+                          {/* O botão 'Marcar como não entregue' também só aparece se não estiver editando */}
+                          {sla === 'overdue' && (savingStatuses[task.id] ?? 'idle') === 'idle' ? (
                             <Button
                               type="button"
                               variant="outline"

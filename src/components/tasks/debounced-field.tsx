@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/actions/types'
 
+/**
+ * Ele deve expor o callback de estado de salvamento
+ * onSavingStatusChange('saving' | 'saved' | 'idle')
+ * para notificar o componente pai quando o usuário estiver digitando ou focando no campo.
+ */
+
 type DebouncedFieldProps = {
   value: string
   onSave: (value: string) => Promise<ActionResult>
@@ -11,6 +17,7 @@ type DebouncedFieldProps = {
   type?: string
   placeholder?: string
   className?: string
+  onSavingStatusChange?: (status: 'saving' | 'saved' | 'idle') => void
 }
 
 /**
@@ -29,6 +36,7 @@ export function DebouncedField({
   type = 'text',
   placeholder,
   className,
+  onSavingStatusChange,
 }: DebouncedFieldProps) {
   const [local, setLocal] = useState(value)
   const [saving, setSaving] = useState(false)
@@ -36,6 +44,10 @@ export function DebouncedField({
   const focusedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
+
+  function handleSavingStatusChange(status: 'saving' | 'saved' | 'idle') {
+    onSavingStatusChange?.(status)
+  }
 
   // Sincroniza quando a fonte externa muda (Realtime / revalidação) e o
   // campo NÃO está em foco — evita sobrescrever o que o usuário digita.
@@ -55,14 +67,26 @@ export function DebouncedField({
   }, [])
 
   async function runSave(next: string) {
+    handleSavingStatusChange('saving')
     setSaving(true)
     const result = await onSave(next)
     if (!mountedRef.current) return
     setSaving(false)
-    if (!result.ok) setError(result.error)
+    if (!result.ok) {
+      setError(result.error)
+      handleSavingStatusChange('idle')
+      return
+    }
+    handleSavingStatusChange('saved')
+
+    // Intencionalmente longo para dar tempo do usuário ler a mensagem "Alterações salvas"
+    setTimeout(() => {
+      handleSavingStatusChange('idle')
+    }, 30000)
   }
 
   function schedule(next: string) {
+    handleSavingStatusChange('idle')
     setError(null)
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
