@@ -102,7 +102,7 @@ export function PenaltyDialog({ userId, initialNotifications = [] }: PenaltyDial
         <Button
           onClick={handleAcknowledge}
           disabled={pending}
-          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold"
+          className="w-full"
         >
           {pending ? 'Confirmando...' : 'Entendi'}
         </Button>

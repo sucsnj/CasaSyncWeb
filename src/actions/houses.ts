@@ -670,6 +670,14 @@ export async function updateDependentPoints(
     return { ok: false, error: 'Dependente não pertence a uma casa sua.' }
   }
 
+  // Reajuste para valor MENOR que o atual é penalização: exige motivo ANTES de gravar.
+  // Valores iguais ou maiores podem ignorar o motivo (não há débito).
+  const pointsDeducted = currentPoints - newPoints
+  const trimmedReason = reason?.trim()
+  if (pointsDeducted > 0 && !trimmedReason) {
+    return { ok: false, error: 'Informe o motivo da penalização.' }
+  }
+
   const { error } = await admin
     .from('profiles')
     .update({ points: newPoints })
@@ -679,13 +687,8 @@ export async function updateDependentPoints(
     return { ok: false, error: 'Falha ao atualizar os pontos.' }
   }
 
-  // Se houve DÉBITO de pontos (penalização), EXIGE motivo e envia notificação
-  const pointsDeducted = currentPoints - newPoints
-  const trimmedReason = reason?.trim()
+  // Se houve DÉBITO de pontos (penalização), envia notificação
   if (pointsDeducted > 0) {
-    if (!trimmedReason) {
-      return { ok: false, error: 'Informe o motivo da penalização.' }
-    }
     await notifyUser(admin, {
       houseId: member.house_id,
       recipientId: dependentId,
