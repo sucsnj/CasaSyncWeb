@@ -7,6 +7,7 @@ import { PushNotificationsSetup } from '@/components/notifications/push-notifica
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { PenaltyDialog } from '@/components/notifications/penalty-dialog'
 import { NotificationItem } from '@/types/notifications'
+import { RealtimePointsListener } from '@/components/dashboard/realtime-points-listener'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -46,6 +47,7 @@ export default async function DependentDashboardLayout({
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}
       {user && <PushPermissionPrompt userId={user.id} />}
+      {user && <RealtimePointsListener userId={user.id} />}
       <PenaltyDialog
         userId={user.id}
         initialNotifications={notifications as NotificationItem[]}
