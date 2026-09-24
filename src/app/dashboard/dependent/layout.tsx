@@ -2,12 +2,12 @@ import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { getMyNotifications } from '@/utils/notifications'
+import { RealtimePointsListener } from '@/components/dashboard/realtime-points-listener'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { PenaltyDialog } from '@/components/notifications/penalty-dialog'
 import { NotificationItem } from '@/types/notifications'
-import { RealtimePointsListener } from '@/components/dashboard/realtime-points-listener'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },

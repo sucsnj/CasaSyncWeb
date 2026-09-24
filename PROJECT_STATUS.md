@@ -1,5 +1,22 @@
 # CasaSync Web — PROJECT STATUS
 
+## Ajuste de pontos em tempo real no dependente — listener alinhado ao ADR-0010 (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Novo `RealtimePointsListener`** (`src/components/dashboard/realtime-points-listener.tsx`): componente cliente que mantém a tela do DEPENDENT sincronizada quando o ADMIN mexe em `profiles.points` (`updateDependentPoints`/PIN_PTS, penalidade, reajuste). Assina UPDATE na própria linha do perfil (`table: 'profiles'`, `filter: id=eq.<userId>`) e, a cada evento, chama `router.refresh()` para regenerar os Server Components com o novo saldo (badge de pontos do `DashboardNav` e cards).
+- **Alinhamento obrigatório com ADR-0010:** o listener usa o hook compartilhado **`usePostgresChanges`** — NÃO abre um `supabase.channel()` cru. Sem `getSession()` + `realtime.setAuth(access_token)` antes de assinar, com a sessão restaurada de cookies/storage o socket conecta como `anon`, o RLS descarta os eventos em silêncio e o saldo nunca atualizaria sozinho. O hook cuida disso, do nome único de canal e do cleanup.
+- **Wiring no layout dependente** (`src/app/dashboard/dependent/layout.tsx`): `<RealtimePointsListener userId={user.id} />` adicionado junto dos demais listeners (`RealtimeToastListener`, `PushNotificationsSetup`, `PushPermissionPrompt`); import reordenado com os componentes (o commit anterior o deixava após o import de tipo). O saldo do `DashboardNav` (que já chega do servidor via `points={profile?.points}`) passa a atualizar em tempo real.
+- **Estilo alinhado:** `penalty-dialog.tsx` e o listener refatorados para a indentação de 2 espaços do projeto (o dialog do commit de origem usava 4). Sem mudança de schema — feature client-side pura.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer online (arquivo novo + layout). O listener só vive no layout dependente (`/dashboard/dependent`) — nas páginas `/tasks` e `/rewards` o dependente segue atualizando via `router.refresh()` pós-ação/Realtime dos próprios fluxos.
+- O `useProfilePoints` existente (`rewards-dependent.tsx`) continua cobrindo o saldo local do card da loja; o `RealtimePointsListener` complementa cobrindo o resto da tela do dashboard.
+
+---
+
 ## Penalização de dependente pelo ADMIN (concluída — sem mudança de schema)
 
 ### O que foi implementado
