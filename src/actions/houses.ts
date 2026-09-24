@@ -44,6 +44,27 @@ async function generateUniqueCode(
   throw new Error('Não foi possível gerar um código de casa único.')
 }
 
+/**
+ * Carrega a casa quando o ator é o AUTOR (criador) dela (`houses.owner_id`).
+ * Diferente do controle por membresia ADMIN (dono ou co-gerente via PIN), o
+ * autor tem poderes exclusivos: expulsar membros, trocar o PIN e excluir a
+ * casa (se vazia). Retorna `null` quando não é o autor.
+ */
+async function getOwnedHouse(
+  admin: ReturnType<typeof createAdminClient>,
+  houseId: string,
+  userId: string
+): Promise<{ id: string; name: string } | null> {
+  const { data: house } = await admin
+    .from('houses')
+    .select('id, name, owner_id')
+    .eq('id', houseId)
+    .maybeSingle()
+
+  if (!house || house.owner_id !== userId) return null
+  return { id: house.id, name: house.name }
+}
+
 export async function createHouse(name: string): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
 
@@ -572,7 +593,7 @@ export async function updateMemberPassword(
   // O alvo precisa ser membro de uma dessas casas (dependente ou co-ADMIN).
   const { data: targetMembership } = await admin
     .from('house_members')
-    .select('id')
+    .select('house_id')
     .eq('profile_id', targetUserId)
     .in('house_id', houseIds)
     .limit(1)
@@ -582,6 +603,24 @@ export async function updateMemberPassword(
     return {
       ok: false,
       error: 'Membro não pertence a uma casa que você controla.',
+    }
+  }
+
+  // Autor = criador da casa (`owner_id`). Só o autor altera a senha de OUTROS
+  // membros; um co-ADMIN (que entrou via PIN) altera apenas a própria senha.
+  if (targetUserId !== user.id) {
+    const { data: ownedHouse } = await admin
+      .from('houses')
+      .select('id')
+      .eq('id', targetMembership.house_id)
+      .eq('owner_id', user.id)
+      .maybeSingle()
+
+    if (!ownedHouse) {
+      return {
+        ok: false,
+        error: 'Apenas o autor da casa pode alterar a senha de outros membros.',
+      }
     }
   }
 
@@ -604,15 +643,16 @@ export async function updateMemberPassword(
 
 /**
  * ADMIN altera o saldo de pontos acumulados de um dependente, protegido pelo
- * PIN_PTS (env server-only, mesma mecânica do MASTER_PIN). O valor é um SET
- * absoluto do acumulado (pode ser negativo). Autorização derivada da sessão:
- * o alvo precisa ser membro DEPENDENT de uma casa que o ator controla como
- * ADMIN; a escrita de `profiles.points` usa service role.
+ * PIN da casa (`houses.code`) — o mesmo PIN de convite exibido em "Suas casas"
+ * (case-insensitive). O valor é um SET absoluto do acumulado (pode ser
+ * negativo). Autorização derivada da sessão: o alvo precisa ser membro
+ * DEPENDENT de uma casa que o ator controla como ADMIN; a escrita de
+ * `profiles.points` usa service role.
  * 
  * ADMIN penaliza um dependente subtraindo uma quantia fixa de seus pontos
- * acumulados. Protegido por PIN e lógica de membresia (o dependente precisa
- * pertencer a uma casa controlada pelo admin). Implementado como SET negativo
- * no banco (não é cumulativo).
+ * acumulados. Protegido pelo PIN da casa e lógica de membresia (o dependente
+ * precisa pertencer a uma casa controlada pelo admin). Implementado como SET
+ * negativo no banco (não é cumulativo).
  */
 export async function updateDependentPoints(
   dependentId: string,
@@ -629,10 +669,6 @@ export async function updateDependentPoints(
   const pointsError = validatePoints(newPoints)
   if (pointsError) {
     return { ok: false, error: pointsError }
-  }
-
-  if (pinPts !== process.env.PIN_PTS) {
-    return { ok: false, error: 'PIN de pontos inválido.' }
   }
 
   let admin: ReturnType<typeof createAdminClient>
@@ -655,9 +691,6 @@ export async function updateDependentPoints(
     return { ok: false, error: 'Dependente não encontrado.' }
   }
 
-  // Traz os pontos atuais do dependente
-  const currentPoints = member.profiles?.points ?? 0
-
   const { data: isAdmin } = await admin
     .from('house_members')
     .select('id')
@@ -669,6 +702,22 @@ export async function updateDependentPoints(
   if (!isAdmin) {
     return { ok: false, error: 'Dependente não pertence a uma casa sua.' }
   }
+
+  // O PIN que autoriza a alteração é o próprio PIN da casa (`houses.code`) —
+  // comparado como `joinHouseByPin` (trim + uppercase, tolerante a espaços).
+  const { data: house } = await admin
+    .from('houses')
+    .select('code')
+    .eq('id', member.house_id)
+    .maybeSingle()
+
+  const normalizedPin = pinPts.trim().toUpperCase()
+  if (!house || normalizedPin !== house.code) {
+    return { ok: false, error: 'PIN de pontos inválido.' }
+  }
+
+  // Traz os pontos atuais do dependente
+  const currentPoints = member.profiles?.points ?? 0
 
   // Reajuste para valor MENOR que o atual é penalização: exige motivo ANTES de gravar.
   // Valores iguais ou maiores podem ignorar o motivo (não há débito).
@@ -707,4 +756,262 @@ export async function updateDependentPoints(
   revalidatePath('/rewards')
 
   return { ok: true, message: `Pontos atualizados para ${newPoints}.` }
+}
+
+/**
+ * SÓ o AUTOR (criador) da casa expulsa um membro (co-ADMIN ou dependente).
+ * Autorização derivada da sessão: `houses.owner_id === user.id`. Apaga os
+ * dados ATIVOS do expulso na casa — tarefas pendentes/ativas, resgates
+ * pendentes e sugestões — e mantém o histórico (tarefas concluídas/aprovadas
+ * e resgates resolvidos). Pontos do perfil (globais) são preservados.
+ */
+export async function expelMember(
+  houseId: string,
+  targetUserId: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem expulsar membros.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const house = await getOwnedHouse(admin, houseId, user.id)
+  if (!house) {
+    return { ok: false, error: 'Casa não encontrada ou você não é o autor dela.' }
+  }
+
+  if (targetUserId === user.id) {
+    return { ok: false, error: 'Você não pode se expulsar da própria casa.' }
+  }
+
+  const { data: membership } = await admin
+    .from('house_members')
+    .select('role')
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+    .maybeSingle()
+
+  if (!membership) {
+    return { ok: false, error: 'Membro não encontrado na casa.' }
+  }
+
+  const { error: tasksError } = await admin
+    .from('tasks')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('assigned_to', targetUserId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+  if (tasksError) {
+    return { ok: false, error: 'Falha ao remover as tarefas ativas do membro.' }
+  }
+
+  const { error: redemptionsError } = await admin
+    .from('reward_redemptions')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+    .eq('status', 'PENDING')
+  if (redemptionsError) {
+    return { ok: false, error: 'Falha ao remover os resgates pendentes.' }
+  }
+
+  const { error: suggestionsError } = await admin
+    .from('reward_suggestions')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (suggestionsError) {
+    return { ok: false, error: 'Falha ao remover as sugestões do membro.' }
+  }
+
+  const { error: membershipError } = await admin
+    .from('house_members')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (membershipError) {
+    return { ok: false, error: 'Falha ao remover o vínculo do membro.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/dashboard/dependent')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  const roleLabel = membership.role === 'ADMIN' ? 'Administrador' : 'Dependente'
+  return {
+    ok: true,
+    message: `${roleLabel} removido da casa "${house.name}".`,
+  }
+}
+
+/**
+ * SÓ o AUTOR troca o PIN (houses.code) de convite da casa. Um novo código
+ * único de 6 caracteres é gerado; o PIN antigo deixa de funcionar para novos
+ * ingressos via `joinHouseByPin` — as membresias existentes não são afetadas.
+ */
+export async function rotateHousePin(
+  houseId: string
+): Promise<ActionResult<{ code: string }>> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem trocar o PIN.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const house = await getOwnedHouse(admin, houseId, user.id)
+  if (!house) {
+    return { ok: false, error: 'Casa não encontrada ou você não é o autor dela.' }
+  }
+
+  let code: string
+  try {
+    code = await generateUniqueCode(admin)
+  } catch {
+    return { ok: false, error: 'Falha ao gerar um novo PIN.' }
+  }
+
+  const { error } = await admin.from('houses').update({ code }).eq('id', houseId)
+  if (error) {
+    return { ok: false, error: 'Falha ao trocar o PIN da casa.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+
+  return { ok: true, message: `Novo PIN da casa: ${code}`, data: { code } }
+}
+
+/**
+ * SÓ o AUTOR exclui a própria casa, e apenas quando ela está "vazia" — ele é
+ * o ÚNICO membro restante. Os dados da casa (tarefas, recompensas, resgates,
+ * sugestões, notificações, configurações, assinaturas de push e membresias)
+ * são removidos em ordem explícita, sem depender de cascade no banco. Perfis e
+ * pontos dos antigos membros são globais e permanecem intactos.
+ */
+export async function deleteHouse(houseId: string): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem excluir casas.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const house = await getOwnedHouse(admin, houseId, user.id)
+  if (!house) {
+    return { ok: false, error: 'Casa não encontrada ou você não é o autor dela.' }
+  }
+
+  const { count } = await admin
+    .from('house_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('house_id', houseId)
+
+  if ((count ?? 0) > 1) {
+    return {
+      ok: false,
+      error: 'Expulse os demais membros antes de excluir a casa.',
+    }
+  }
+
+  const { error: tasksError } = await admin
+    .from('tasks')
+    .delete()
+    .eq('house_id', houseId)
+  if (tasksError) {
+    return { ok: false, error: 'Falha ao excluir as tarefas da casa.' }
+  }
+
+  const { error: redemptionsError } = await admin
+    .from('reward_redemptions')
+    .delete()
+    .eq('house_id', houseId)
+  if (redemptionsError) {
+    return { ok: false, error: 'Falha ao excluir os resgates da casa.' }
+  }
+
+  const { error: suggestionsError } = await admin
+    .from('reward_suggestions')
+    .delete()
+    .eq('house_id', houseId)
+  if (suggestionsError) {
+    return { ok: false, error: 'Falha ao excluir as sugestões da casa.' }
+  }
+
+  const { error: rewardsError } = await admin
+    .from('rewards')
+    .delete()
+    .eq('house_id', houseId)
+  if (rewardsError) {
+    return { ok: false, error: 'Falha ao excluir as recompensas da casa.' }
+  }
+
+  const { error: notificationsError } = await admin
+    .from('notifications')
+    .delete()
+    .eq('house_id', houseId)
+  if (notificationsError) {
+    return { ok: false, error: 'Falha ao excluir as notificações da casa.' }
+  }
+
+  const { error: settingsError } = await admin
+    .from('house_settings')
+    .delete()
+    .eq('house_id', houseId)
+  if (settingsError) {
+    return { ok: false, error: 'Falha ao excluir as configurações da casa.' }
+  }
+
+  // `push_subscriptions.house_id` é `on delete cascade` (docs/sql) — as
+  // assinaturas de push da casa são removidas junto com a linha da casa.
+
+  const { error: membersError } = await admin
+    .from('house_members')
+    .delete()
+    .eq('house_id', houseId)
+  if (membersError) {
+    return { ok: false, error: 'Falha ao excluir os membros da casa.' }
+  }
+
+  const { error: houseError } = await admin
+    .from('houses')
+    .delete()
+    .eq('id', houseId)
+  if (houseError) {
+    return { ok: false, error: 'Falha ao excluir a casa.' }
+  }
+
+  // Se a casa excluída era a ativa, desfaz o cookie para o fallback valer.
+  const cookieStore = await cookies()
+  if (cookieStore.get(ACTIVE_HOUSE_COOKIE)?.value === houseId) {
+    cookieStore.set(ACTIVE_HOUSE_COOKIE, '', { maxAge: 0, path: '/' })
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return { ok: true, message: `Casa "${house.name}" excluída.` }
 }

@@ -1,9 +1,54 @@
 # CasaSync Web — PROJECT STATUS
 
+## ADMIN autor da casa — chip "A", expulsar membros, trocar PIN e excluir a casa (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Autor = criador (`houses.owner_id`), diferenciado do co-ADMIN** que entrou via PIN. Novas verificações exclusivas do autor usam o helper **`getOwnedHouse`** (`src/actions/houses.ts`): carrega a casa apenas quando `houses.owner_id === user.id` — nunca por parâmetro público.
+- **Novas Server Actions** (todas exigem sessão ADMIN + ser o autor):
+  - **`expelMember(houseId, targetUserId)`** — o autor expulsa um co-ADMIN ou dependente. Apaga os dados **ativos** do expulso na casa (tarefas `PENDING`/`IN_PROGRESS`/`NOT_DELIVERED` atribuídas, resgates `PENDING` e sugestões) e mantém o **histórico** (tarefas concluídas/aprovadas e resgates resolvidos). `profiles.points` é global e fica intacto. Guardas: não pode se expulsar; alvo precisa ser membro da casa.
+  - **`rotateHousePin(houseId)`** — gera um novo `houses.code` único (mesmo `generateUniqueCode` da criação) e devolve `data: { code }`; o PIN antigo deixa de valer para novos ingressos via `joinHouseByPin`, membresias existentes não são afetadas.
+  - **`deleteHouse(houseId)`** — só quando o autor é o **único membro restante** (`count` em `house_members` ≤ 1, casa "vazia"). Exclui os dados da casa em ordem explícita (tarefas, resgates, sugestões, recompensas, notificações, `house_settings`, `house_members`, casa) **sem depender de cascade** no banco; `push_subscriptions` é deixado ao cascade documentado (`house_id on delete cascade`). Se a casa excluída era a ativa, o cookie `ACTIVE_HOUSE_COOKIE` é zerado (fallback do `getActiveAdminHouse`).
+- **`src/utils/house.ts`:** `ActiveHouse` e `getAdminHouses` passaram a incluir `owner_id` (select `houses ( id, name, image_url, code, owner_id )`); `getDependentHouse` também traz `owner_id` para casar com o tipo.
+- **Página `/dashboard/admin/houses`:** passa `currentUserId` e `activeHouseOwnerId` ao `HousesManager`.
+- **UI (`houses-manager.tsx`):**
+  - **Chip discreto "A"** (âmbar, `title="Autor da casa"`) ao lado do nome no card da casa **e** no membro que é o autor da casa ativa.
+  - As opções exclusivas do autor vivem **dentro do menu "Editar casa"** (seção "Ações do autor", abaixo do formulário): **"Alterar PIN da casa"** (`RefreshCw` — troca o PIN, toast mostra o novo código) e **"Excluir casa"** (`Trash2`, vermelho). Nos cards, casas próprias e co-geridas têm apenas copiar PIN + editar.
+  - Na lista de membros, quando o usuário é o autor da casa ativa, cada membro que **não** é o autor ganha o botão **"Expulsar"** (`UserMinus`, vermelho).
+  - Novo `Modal` de confirmação (estado `ConfirmAction` + `dialog` "Excluir casa" / "Expulsar — {nome}") com aviso do efeito (excluir remove a casa toda; expulsar apaga dados ativos e mantém histórico), feedback **inline** + toast e `router.refresh()` pós-ação. **"Não pode abandonar a casa"** não foi implementado como ação nova: o autor simplesmente não tem botão de saída (decisão do usuário — não adicionar "sair" agora).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer online.
+- **Co-ADMIN (pela PIN) não enxerga as ações de autor:** chip "A" apenas nas casas em que é `owner_id`; sem expulsar/trocar PIN/excluir fora da própria casa.
+- Exclusão exige **expulsar os demais membros primeiro** (a action devolve erro claro se ainda houver membros). Dependências de dados são removidas em ordem explícita — as FKs de `tasks`/`rewards`/`reward_redemptions`/`reward_suggestions`/`notifications`/`house_settings`/`house_members` são cobertas manualmente; apenas `push_subscriptions` conta com o cascade.
+
+---
+
+## PIN de pontos = PIN da casa (o "PIN_PTS" de env foi removido — concluída, sem mudança de schema)
+
+### O que foi implementado
+- **A env server-only `PIN_PTS` deixou de existir:** a autorização da alteração manual de pontos passou a ser o **próprio PIN da casa** (`houses.code`) — o mesmo código de convite exibido em "Suas casas" (que o autor pode trocar em `/dashboard/admin/houses`). Nada de env nova; menos estado de configuração.
+- **`updateDependentPoints` (`src/actions/houses.ts`):** após validar sessão ADMIN, `validatePoints` e as membresias (alvo `DEPENDENT` de casa que o ator controla), busca o `houses.code` da casa do dependente e compara com o PIN digitado **normalizado como `joinHouseByPin`** (trim + uppercase, fail closed) — `"PIN de pontos inválido."` quando não confere. Reajuste para valor menor (penalização) continua exigindo motivo e notifica via `PENALTY`.
+- **UI (`houses-manager.tsx`):** o modal "Alterar pontos" mudou o campo para **"PIN da casa"** (hint: "o mesmo código exibido em 'Suas casas'"); input continua password, **uncontrolled**, lido via `FormData` (ADR-0003).
+- **Docs sincronizadas:** `AGENTS.md`, `README.md`, `.opencode/command/context.md` e `ADR-0012` atualizados (a env `PIN_PTS` some das listas; o `MASTER_PIN` continua existindo, validando apenas o cadastro de ADMIN).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer online.
+- Quem controla a casa já conhece o PIN — a confiança passa a ser o código único da casa; **trocar o PIN (`rotateHousePin`) também invalida o "PIN de pontos"**.
+- A seção histórica "Alteração de pontos de dependente pelo ADMIN via PIN_PTS" abaixo descreve o comportamento **anterior**; este bloco é o estado atual.
+- Sem mudança de schema/banco: `houses.code` sempre existiu.
+
+---
+
 ## Ajuste de pontos em tempo real no dependente — listener alinhado ao ADR-0010 (concluída — sem mudança de schema)
 
 ### O que foi implementado
-- **Novo `RealtimePointsListener`** (`src/components/dashboard/realtime-points-listener.tsx`): componente cliente que mantém a tela do DEPENDENT sincronizada quando o ADMIN mexe em `profiles.points` (`updateDependentPoints`/PIN_PTS, penalidade, reajuste). Assina UPDATE na própria linha do perfil (`table: 'profiles'`, `filter: id=eq.<userId>`) e, a cada evento, chama `router.refresh()` para regenerar os Server Components com o novo saldo (badge de pontos do `DashboardNav` e cards).
+- **Novo `RealtimePointsListener`** (`src/components/dashboard/realtime-points-listener.tsx`): componente cliente que mantém a tela do DEPENDENT sincronizada quando o ADMIN mexe em `profiles.points` (`updateDependentPoints` com o PIN da casa, penalidade, reajuste). Assina UPDATE na própria linha do perfil (`table: 'profiles'`, `filter: id=eq.<userId>`) e, a cada evento, chama `router.refresh()` para regenerar os Server Components com o novo saldo (badge de pontos do `DashboardNav` e cards).
 - **Alinhamento obrigatório com ADR-0010:** o listener usa o hook compartilhado **`usePostgresChanges`** — NÃO abre um `supabase.channel()` cru. Sem `getSession()` + `realtime.setAuth(access_token)` antes de assinar, com a sessão restaurada de cookies/storage o socket conecta como `anon`, o RLS descarta os eventos em silêncio e o saldo nunca atualizaria sozinho. O hook cuida disso, do nome único de canal e do cleanup.
 - **Wiring no layout dependente** (`src/app/dashboard/dependent/layout.tsx`): `<RealtimePointsListener userId={user.id} />` adicionado junto dos demais listeners (`RealtimeToastListener`, `PushNotificationsSetup`, `PushPermissionPrompt`); import reordenado com os componentes (o commit anterior o deixava após o import de tipo). O saldo do `DashboardNav` (que já chega do servidor via `points={profile?.points}`) passa a atualizar em tempo real.
 - **Estilo alinhado:** `penalty-dialog.tsx` e o listener refatorados para a indentação de 2 espaços do projeto (o dialog do commit de origem usava 4). Sem mudança de schema — feature client-side pura.
@@ -22,7 +67,7 @@
 ### O que foi implementado
 - **Nova funcionalidade:** ADMIN pode penalizar um dependente subtraindo pontos do saldo acumulado via `updateDependentPoints`. A penalização **só ocorre em reajuste negativo** (SET para valor menor que o atual) e **exige motivo/descrição**.
 - **Server Action `updateDependentPoints`** (`src/actions/houses.ts:617`):
-  - Valida PIN_PTS (server-only, fail-closed).
+  - Valida o **PIN da casa** (`houses.code`) da casa do dependente (fail-closed; ver seção "PIN de pontos = PIN da casa" no topo).
   - Calcula `pointsDeducted = currentPoints - newPoints`.
   - Se `pointsDeducted > 0` **exige `reason` não-vazio** (retorna erro se omitido).
   - Envia notificação `type='PENALTY'` via `notifyUser` para o dependente: título "Penalidade Aplicada", body "`-X pt(s) · Motivo: Y`", link `/dashboard/dependent`.
@@ -705,6 +750,9 @@ alter table public.rewards add column if not exists active boolean not null defa
 - **Validação:** reutiliza `validatePassword` (**>= 6**), igual ao cadastro/login.
 - **UI (`houses-manager.tsx`):** botão **"Senha"** (ícone `Key`) em cada membro abre um `Modal` com input de senha **uncontrolled** (`name="newPassword"`, lido via `FormData` no submit — ADR-0003) e feedback **inline** (erro `role="alert"` / sucesso `role="status"`); a linha de membros passou a `flex-wrap` para não espremer em telas estreitas.
 - **Efeito:** a senha muda imediatamente; o próximo login já usa a nova. Sessões ativas do alvo **não** são revogadas (comportamento padrão do Supabase).
+
+### Ajuste posterior — senha de outros membros só pelo autor
+- Qualquer ADMIN altera a **própria** senha; alterar a senha de **outros** membros da casa (dependentes ou co-ADMINs) ficou restrito ao **autor da casa** (`houses.owner_id`): além da membresia, a action valida que o ator é `owner_id` do `houses` do membro (novo guard dentro de `updateMemberPassword`). Co-ADMINs (que entraram via PIN) não alteram a senha de ninguém além da própria — mesmo comportamento refletido na UI, onde o botão "Senha" só aparece na própria linha ou quando o usuário é o autor da casa ativa (`houses-manager.tsx`). Sem mudança de schema.
 
 ### Verificação
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npx tsc --noEmit` ✓ · `npm run build` ✓ (12 workers, `ƒ Proxy` ativo).

@@ -6,7 +6,7 @@ import type { Tables } from '@/types/database'
 
 /**
  * Mantém a tela do DEPENDENT sincronizada quando o ADMIN ajusta
- * `profiles.points` (updateDependentPoints/PIN_PTS, penalidade etc.): ouvindo
+ * `profiles.points` (updateDependentPoints com o PIN da casa, penalidade etc.): ouvindo
  * UPDATEs na própria linha do perfil, dispara `router.refresh()` para os
  * Server Components refletirem o novo saldo no badge/nav e nos cards.
  *

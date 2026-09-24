@@ -88,6 +88,8 @@ export default async function AdminHousesPage() {
       activeHouseId={activeHouse?.id ?? null}
       activeHouseName={activeHouse?.name ?? null}
       activeHouseImageUrl={activeHouse?.image_url ?? null}
+      activeHouseOwnerId={activeHouse?.owner_id ?? null}
+      currentUserId={user.id}
       members={members}
     />
   )

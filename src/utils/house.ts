@@ -16,6 +16,7 @@ export type ActiveHouse = {
   id: string
   name: string
   image_url: string | null
+  owner_id: string
 }
 
 export const ACTIVE_HOUSE_COOKIE = 'casasync_active_house'
@@ -69,13 +70,19 @@ export const getSessionProfile = cache(
  */
 export const getAdminHouses = cache(
   async (userId: string): Promise<
-    { id: string; name: string; image_url: string | null; code: string }[]
+    {
+      id: string
+      name: string
+      image_url: string | null
+      code: string
+      owner_id: string
+    }[]
   > => {
     const admin = createAdminClient()
 
     const { data: memberships } = await admin
       .from('house_members')
-      .select('house_id, houses ( id, name, image_url, code )')
+      .select('house_id, houses ( id, name, image_url, code, owner_id )')
       .eq('profile_id', userId)
       .eq('role', 'ADMIN')
       .order('created_at', { ascending: true })
@@ -101,7 +108,12 @@ export async function getActiveAdminHouse(): Promise<ActiveHouse | null> {
 
   const active = houses.find((house) => house.id === cookieHouseId) ?? houses[0]
 
-  return { id: active.id, name: active.name, image_url: active.image_url }
+  return {
+    id: active.id,
+    name: active.name,
+    image_url: active.image_url,
+    owner_id: active.owner_id,
+  }
 }
 
 /**
@@ -116,7 +128,7 @@ export async function getDependentHouse(userId: string): Promise<ActiveHouse | n
 
   const { data: membership } = await admin
     .from('house_members')
-    .select('house_id, houses ( id, name, image_url )')
+    .select('house_id, houses ( id, name, image_url, owner_id )')
     .eq('profile_id', userId)
     .limit(1)
     .maybeSingle()

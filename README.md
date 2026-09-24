@@ -8,7 +8,7 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 
 ## Funcionalidades
 - **Auth por username:** ADMIN cadastra-se com o PIN do sistema (`MASTER_PIN`); DEPENDENT é criado pelo ADMIN (nunca se cadastra sozinho). Sem e-mails reais — `${username}@admin.casasync` / `${username}@dependente.casasync`, criados já confirmados.
-- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes, **reset de senha** de qualquer membro pelo ADMIN sem e-mail (ver ADR-0011) e **alteração manual do saldo de pontos** de um dependente protegida por `PIN_PTS` (ver ADR-0012).
+- **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes, **reset de senha** pelos ADMINs (só o autor da casa redefine a senha de outros membros) sem e-mail (ver ADR-0011) e **alteração manual do saldo de pontos** de um dependente protegida pelo **PIN da casa** (`houses.code`; ver ADR-0012).
 - **Tarefas:** ciclo `PENDING → COMPLETED → APPROVED` (aprovação credita pontos), desaprovação, **"não entregue"** com penalidade (o saldo pode ficar negativo), **restauração** de tarefas aprovadas, SLA de prazo e **pedido de adiamento** (+1/+3 dias).
 - **Recompensas:** catálogo, resgate com validação de saldo, aprovação/rejeição de resgates, **sugestões** enviadas pelo dependente e **desativação** pelo ADMIN (a recompensa fica "indisponível" para o dependente — nunca excluída; só o ADMIN reativa).
 - **Notificações:** sino no cabeçalho azul para "o outro lado" da ação (dependente ↔ ADMINs), marcar como lida/todas, apagar uma/todas; lidas são apagadas após 5 dias. **Mensagem rápida** do DEPENDENT para os tutores (texto ≤100 caracteres + até 1 imagem da galeria ou câmera ao vivo, retenção "2 lidas → apaga a mais antiga"). Ver ADR-0009.
@@ -28,7 +28,7 @@ Sem testes configurados. Verificação antes de entregar: **lint → typecheck �
 
 ## Setup
 1. `npm install`
-2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (cadastro de ADMIN) e `PIN_PTS` (alteração manual de pontos de dependente pelo ADMIN).
+2. `.env.local` (não versionado) com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MASTER_PIN` (cadastro de ADMIN). Sem `PIN_PTS`: a alteração manual de pontos de dependente usa o PIN da casa (`houses.code`).
 3. Supabase: schema, RLS e publication Realtime. **Todos os scripts SQL já foram aplicados** neste projeto (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, tabela `notifications` + policy de SELECT em `recipient_id`, enum `NOT_DELIVERED`, `reward_suggestions`, publicação e bucket público `casasync-media`). Para um projeto novo, ver `docs/schema.md` e os blocos de SQL em `PROJECT_STATUS.md` (registro histórico). Migrações não ficam no repo.
 
 ## Estrutura

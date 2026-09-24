@@ -17,8 +17,10 @@ Decisões confirmadas com o usuário:
 2. **Feedback:** inline no modal (o app não tem lib de toast; consistente com os
    demais formulários).
 3. **Senha mínima:** manter `>= 6` (`validatePassword`), igual ao cadastro/login.
-4. **Escopo:** o ADMIN pode redefinir a senha de **qualquer membro** de uma casa
-   que controla — dependentes E co-ADMINs (inclusive a própria).
+4. **Escopo:** qualquer ADMIN redefine a **própria senha**; redefinir a senha de
+   **outros** membros (dependentes E co-ADMINs) fica restrito ao **autor da casa**
+   (`houses.owner_id`) — um co-ADMIN que entrou via PIN não altera a senha de
+   ninguém além da própria (decisão confirmada após o co-controle por PIN).
 
 ## Decisão
 - **`updateMemberPassword(targetUserId, newPassword)`** (`src/actions/houses.ts`):
@@ -28,6 +30,10 @@ Decisões confirmadas com o usuário:
     alvo é membro de **pelo menos uma** dessas casas antes de agir — o
     `targetUserId` nunca é confiado sem essa checagem (impede redefinir a senha
     de usuários de outras casas).
+  - **Guard de autor:** quando o alvo **não é o próprio usuário**, exige que o
+    ator seja o `owner_id` do `houses` daquele membro (a casa onde o alvo tem
+    membresia). Co-ADMINs comuns caem no erro "Apenas o autor da casa pode
+    alterar a senha de outros membros."
   - Chama `createAdminClient().auth.admin.updateUserById(targetUserId, { password })`
     (service role, server-only), dentro de `try/catch` — a action nunca lança
     (não expõe argumentos em overlay de dev, ADR-0003).
@@ -41,9 +47,11 @@ Decisões confirmadas com o usuário:
 
 ## Consequências
 - ADMIN resolve senha esquecida sem dashboard/e-mail; mantém o padrão de
-  autorização por membresia (ADR-0006).
+  autorização por membresia (ADR-0006), agora com o `owner_id` limitando quem
+  altera a senha de terceiros.
 - Sem envio de credencial por e-mail (o ADMIN comunica a nova senha à parte).
-- A existência da capability exige cuidado: qualquer ADMIN membro pode redefinir
-  a senha de outro co-ADMIN da mesma casa (assumido como desejado).
+- A capability fica restrita ao autor: só o criador da casa redefine a senha de
+  outro co-ADMIN/dependente; co-ADMINs compartilham a gestão da casa mas não
+  alteram senhas alheias (mesma linha do ADR-0008/da distinção autor × co-gerente).
 - Alternativa descartada: gerar link de recuperação via Supabase Auth — exigiria
   e-mail real, que o modelo de contas sintéticas não tem (ADR-0002).

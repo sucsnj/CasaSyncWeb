@@ -7,7 +7,10 @@ import { toast } from 'sonner'
 import {
   createDependent,
   createHouse,
+  deleteHouse,
+  expelMember,
   joinHouseByPin,
+  rotateHousePin,
   selectHouse,
   updateDependentPoints,
   updateDependentProfile,
@@ -19,7 +22,15 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Coins, Copy, Key, Pencil } from 'lucide-react'
+import {
+  Coins,
+  Copy,
+  Key,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  UserMinus,
+} from 'lucide-react'
 import {
   Card,
   CardAction,
@@ -29,7 +40,13 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-type House = { id: string; name: string; image_url: string | null; code: string }
+type House = {
+  id: string
+  name: string
+  image_url: string | null
+  code: string
+  owner_id: string
+}
 type Member = {
   profileId: string
   fullName: string
@@ -44,14 +61,22 @@ type HousesManagerProps = {
   activeHouseId: string | null
   activeHouseName: string | null
   activeHouseImageUrl: string | null
+  activeHouseOwnerId: string | null
+  currentUserId: string
   members: Member[]
 }
+
+type ConfirmAction =
+  | { kind: 'expel'; member: Member }
+  | { kind: 'deleteHouse'; house: House }
 
 export function HousesManager({
   houses,
   activeHouseId,
   activeHouseName,
   activeHouseImageUrl,
+  activeHouseOwnerId,
+  currentUserId,
   members,
 }: HousesManagerProps) {
   const router = useRouter()
@@ -83,6 +108,10 @@ export function HousesManager({
   const [pointsError, setPointsError] = useState<string | null>(null)
   const [pointsSuccess, setPointsSuccess] = useState<string | null>(null)
   const [pointsPending, setPointsPending] = useState(false)
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [actionPending, setActionPending] = useState(false)
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -267,7 +296,7 @@ export function HousesManager({
     setPointsPending(true)
 
     try {
-      // Valores lidos do FormData no submit — o PIN_PTS nunca vai para o
+      // Valores lidos do FormData no submit — o PIN da casa nunca vai para o
       // estado do React (ver ADR-0003).
       const formData = new FormData(form)
       const result = await updateDependentPoints(
@@ -289,6 +318,50 @@ export function HousesManager({
       router.refresh()
     } finally {
       setPointsPending(false)
+    }
+  }
+
+  function handleRotatePin(house: House) {
+    startTransition(async () => {
+      const result = await rotateHousePin(house.id)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(result.message ?? 'PIN atualizado!')
+      router.refresh()
+    })
+  }
+
+  async function handleConfirmAction() {
+    if (!confirmAction) return
+    setConfirmError(null)
+    setActionPending(true)
+
+    try {
+      const result =
+        confirmAction.kind === 'expel'
+          ? await expelMember(
+              activeHouseId ?? '',
+              confirmAction.member.profileId
+            )
+          : await deleteHouse(confirmAction.house.id)
+
+      if (!result.ok) {
+        setConfirmError(result.error)
+        toast.error(result.error)
+        return
+      }
+
+      toast.success(result.message ?? 'Concluído!')
+      setConfirmAction(null)
+      if (confirmAction.kind === 'deleteHouse') {
+        setEditingHouse(null)
+        setHouseImageUrl(null)
+      }
+      router.refresh()
+    } finally {
+      setActionPending(false)
     }
   }
 
@@ -460,8 +533,18 @@ export function HousesManager({
                         </span>
                       )}
                       <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium text-slate-800">
-                          {house.name}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate font-medium text-slate-800">
+                            {house.name}
+                          </span>
+                          {house.owner_id === currentUserId ? (
+                            <span
+                              title="Autor da casa"
+                              className="flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-700"
+                            >
+                              A
+                            </span>
+                          ) : null}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {active ? 'Casa ativa' : 'Alternar'} · PIN{' '}
@@ -632,7 +715,17 @@ export function HousesManager({
                         {member.fullName.charAt(0).toUpperCase()}
                       </span>
                     )}
-                    <span className="truncate font-medium">{member.fullName}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium">{member.fullName}</span>
+                        {member.profileId === activeHouseOwnerId ? (
+                          <span
+                            title="Autor da casa"
+                            className="flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-700"
+                          >
+                            A
+                          </span>
+                        ) : null}
+                      </span>
                   </span>
                   <span className="flex flex-wrap items-center justify-end gap-2">
                     <span
@@ -646,20 +739,28 @@ export function HousesManager({
                         {member.points} pts
                       </span>
                     ) : null}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="min-h-9 px-2 text-xs text-slate-500"
-                      onClick={() => {
-                        setPasswordError(null)
-                        setPasswordSuccess(null)
-                        setPasswordMember(member)
-                      }}
-                    >
-                      <Key className="size-3.5" />
-                      Senha
-                    </Button>
+                    {member.profileId === currentUserId ||
+                    currentUserId === activeHouseOwnerId ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-9 px-2 text-xs text-slate-500"
+                        onClick={() => {
+                          setPasswordError(null)
+                          setPasswordSuccess(null)
+                          setPasswordMember(member)
+                        }}
+                        title={
+                          member.profileId === currentUserId
+                            ? 'Alterar a própria senha'
+                            : 'Redefinir a senha deste membro'
+                        }
+                      >
+                        <Key className="size-3.5" />
+                        Senha
+                      </Button>
+                    ) : null}
                     {member.role === 'DEPENDENT' ? (
                       <Button
                         type="button"
@@ -693,6 +794,23 @@ export function HousesManager({
                         Editar
                       </Button>
                     ) : null}
+                    {activeHouseOwnerId === currentUserId &&
+                    member.profileId !== activeHouseOwnerId ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => {
+                          setConfirmError(null)
+                          setConfirmAction({ kind: 'expel', member })
+                        }}
+                        title="Expulsar da casa (remove os dados ativos)"
+                      >
+                        <UserMinus className="size-3.5" />
+                        Expulsar
+                      </Button>
+                    ) : null}
                   </span>
                 </li>
               ))}
@@ -710,36 +828,67 @@ export function HousesManager({
         title={`Editar casa — ${editingHouse?.name ?? ''}`}
       >
         {editingHouse ? (
-          <form onSubmit={handleSaveHouse} className="flex flex-col gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-house-name">Nome da casa</Label>
-              <Input
-                id="edit-house-name"
-                name="houseName"
-                type="text"
-                defaultValue={editingHouse.name}
-                required
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Imagem</Label>
-              <ImageUpload
-                folder="houses"
-                ownerId={editingHouse.id}
-                value={houseImageUrl}
-                onChange={setHouseImageUrl}
-              />
-              <input type="hidden" name="image_url" value={houseImageUrl ?? ''} />
-            </div>
-            {error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
+          <>
+            <form onSubmit={handleSaveHouse} className="flex flex-col gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-house-name">Nome da casa</Label>
+                <Input
+                  id="edit-house-name"
+                  name="houseName"
+                  type="text"
+                  defaultValue={editingHouse.name}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Imagem</Label>
+                <ImageUpload
+                  folder="houses"
+                  ownerId={editingHouse.id}
+                  value={houseImageUrl}
+                  onChange={setHouseImageUrl}
+                />
+                <input type="hidden" name="image_url" value={houseImageUrl ?? ''} />
+              </div>
+              {error ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <Button type="submit" disabled={pending}>
+                {pending ? 'Salvando...' : 'Salvar alterações'}
+              </Button>
+            </form>
+            {editingHouse.owner_id === currentUserId ? (
+              <div className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-4">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Ações do autor
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 justify-start"
+                  disabled={pending}
+                  onClick={() => handleRotatePin(editingHouse)}
+                >
+                  <RefreshCw className="size-4" />
+                  Alterar PIN da casa
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 justify-start text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => {
+                    setConfirmError(null)
+                    setConfirmAction({ kind: 'deleteHouse', house: editingHouse })
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  Excluir casa
+                </Button>
+              </div>
             ) : null}
-            <Button type="submit" disabled={pending}>
-              {pending ? 'Salvando...' : 'Salvar alterações'}
-            </Button>
-          </form>
+          </>
         ) : null}
       </Modal>
 
@@ -906,19 +1055,19 @@ export function HousesManager({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="member-pin-pts">PIN de pontos</Label>
+              <Label htmlFor="member-pin-pts">PIN da casa</Label>
               <Input
                 id="member-pin-pts"
                 name="pinPts"
                 type="password"
                 autoComplete="off"
-                placeholder="Informe o PIN de pontos"
+                placeholder="Informe o PIN da casa"
                 suppressHydrationWarning
                 required
               />
               <p className="text-xs text-muted-foreground">
-                Senha de administração exigida para confirmar a
-                alteração.
+                Confirme a alteração com o PIN da casa (o mesmo código exibido em
+                &quot;Suas casas&quot;).
               </p>
             </div>
 
@@ -937,6 +1086,77 @@ export function HousesManager({
               {pointsPending ? 'Salvando...' : 'Salvar pontos'}
             </Button>
           </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!confirmAction}
+        onClose={() => {
+          if (actionPending) return
+          setConfirmAction(null)
+          setConfirmError(null)
+        }}
+        title={
+          confirmAction?.kind === 'deleteHouse'
+            ? 'Excluir casa'
+            : `Expulsar — ${confirmAction?.member?.fullName ?? ''}`
+        }
+      >
+        {confirmAction ? (
+          <div className="flex flex-col gap-3">
+            {confirmAction.kind === 'deleteHouse' ? (
+              <p className="text-sm text-muted-foreground">
+                Excluir <strong>{confirmAction.house.name}</strong> remove a
+                casa e todos os dados dela (tarefas, recompensas, resgates,
+                sugestões, notificações e configurações). Só é possível quando
+                você é o único membro restante. Esta ação não pode ser
+                desfeita.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Remover <strong>{confirmAction.member.fullName}</strong> da casa
+                faz com que tarefas pendentes/ativas, resgates pendentes e
+                sugestões sejam apagados. Tarefas concluídas/aprovadas, resgates
+                resolvidos e os pontos do perfil ficam como histórico.
+              </p>
+            )}
+
+            {confirmError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {confirmError}
+              </p>
+            ) : null}
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                disabled={actionPending}
+                onClick={() => {
+                  setConfirmAction(null)
+                  setConfirmError(null)
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                disabled={actionPending}
+                onClick={() => void handleConfirmAction()}
+              >
+                {actionPending
+                  ? confirmAction.kind === 'deleteHouse'
+                    ? 'Excluindo...'
+                    : 'Expulsando...'
+                  : confirmAction.kind === 'deleteHouse'
+                    ? 'Excluir casa'
+                    : 'Expulsar'}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </Modal>
     </div>
