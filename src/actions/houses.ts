@@ -14,6 +14,7 @@ import {
   validatePoints,
   validateUsername,
 } from './types'
+import { notifyUser } from '@/utils/notifications'
 
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
@@ -607,11 +608,17 @@ export async function updateMemberPassword(
  * absoluto do acumulado (pode ser negativo). Autorização derivada da sessão:
  * o alvo precisa ser membro DEPENDENT de uma casa que o ator controla como
  * ADMIN; a escrita de `profiles.points` usa service role.
+ * 
+ * ADMIN penaliza um dependente subtraindo uma quantia fixa de seus pontos
+ * acumulados. Protegido por PIN e lógica de membresia (o dependente precisa
+ * pertencer a uma casa controlada pelo admin). Implementado como SET negativo
+ * no banco (não é cumulativo).
  */
 export async function updateDependentPoints(
   dependentId: string,
   newPoints: number,
-  pinPts: string
+  pinPts: string,
+  reason?: string
 ): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
 
@@ -638,7 +645,7 @@ export async function updateDependentPoints(
   // O alvo precisa ser um DEPENDENT de alguma casa que o ator controla.
   const { data: member } = await admin
     .from('house_members')
-    .select('house_id')
+    .select('house_id, profiles!inner(points)')
     .eq('profile_id', dependentId)
     .eq('role', 'DEPENDENT')
     .limit(1)
@@ -647,6 +654,10 @@ export async function updateDependentPoints(
   if (!member) {
     return { ok: false, error: 'Dependente não encontrado.' }
   }
+
+  // Traz os pontos atuais do dependente
+  const currentPoints = member.profiles?.points ?? 0
+  const pointsDeducted = currentPoints - newPoints
 
   const { data: isAdmin } = await admin
     .from('house_members')
@@ -667,6 +678,20 @@ export async function updateDependentPoints(
 
   if (error) {
     return { ok: false, error: 'Falha ao atualizar os pontos.' }
+  }
+
+  // Se houve DÉBITO de pontos E um MOTIVO foi informado, envia a notificação
+  const trimmedReason = reason?.trim()
+  if (pointsDeducted > 0 && trimmedReason) {
+    await notifyUser(admin, {
+      houseId: member.house_id,
+      recipientId: dependentId,
+      actorId: user.id,
+      type: 'PENALTY',
+      title: 'Penalidade Aplicada',
+      body: `-${pointsDeducted} pt(s) · Motivo: ${trimmedReason}`,
+      link: '/dashboard/dependent',
+    })
   }
 
   revalidatePath('/dashboard/admin')

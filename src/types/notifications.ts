@@ -26,3 +26,19 @@ export type NotificationType =
   | 'SUGGESTION_APPROVED'
   | 'SUGGESTION_REJECTED'
   | 'QUICK_MESSAGE'
+  | 'PENALTY'
+
+export type NotificationItem = {
+  id: string
+  house_id: string
+  recipient_id: string
+  actor_id: string | null
+  type: NotificationType
+  title: string
+  body: string
+  link: string | null
+  image_url: string | null
+  message_id: string | null
+  read_at: string | null
+  created_at: string
+}

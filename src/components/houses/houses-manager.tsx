@@ -272,7 +272,8 @@ export function HousesManager({
       const result = await updateDependentPoints(
         pointsMember.profileId,
         Number(String(formData.get('newPoints') ?? '')),
-        String(formData.get('pinPts') ?? '')
+        String(formData.get('pinPts') ?? ''),
+        String(formData.get('reason') ?? '')
       )
 
       if (!result.ok) {
@@ -880,6 +881,18 @@ export function HousesManager({
                 inputMode="numeric"
                 defaultValue={pointsMember.points}
                 required
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="member-reason">Descrição do ajuste</Label>
+              <Input
+                id="member-reason"
+                name="reason"
+                type="text"
+                autoComplete="off"
+                placeholder="Informe a descrição do ajuste"
+                suppressHydrationWarning
               />
             </div>
 

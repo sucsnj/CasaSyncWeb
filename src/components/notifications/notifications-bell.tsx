@@ -10,6 +10,7 @@ import {
   CircleCheck,
   CircleCheckBig,
   Clock,
+  Flame,
   Gift,
   Lightbulb,
   ListTodo,
@@ -63,6 +64,7 @@ const TYPE_META: Record<
   },
   SUGGESTION_REJECTED: { icon: Lightbulb, chip: 'bg-red-100 text-red-700' },
   QUICK_MESSAGE: { icon: MessageSquare, chip: 'bg-violet-100 text-violet-700' },
+  PENALTY: { icon: Flame, chip: 'bg-red-100 text-red-700' },
 }
 
 function metaFor(type: string) {
