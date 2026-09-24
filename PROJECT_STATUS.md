@@ -1,5 +1,30 @@
 # CasaSync Web — PROJECT STATUS
 
+## Exclusão real de conta de dependente — "Excluir conta" substitui "Expulsar" para DEPENDENT (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Nova Server Action `deleteDependentAccount(houseId, targetUserId)`** (`src/actions/houses.ts`): só o **autor da casa** (`getOwnedHouse`) exclui a conta **completa** de um membro `DEPENDENT`. Limpeza em **ordem explícita** (sem depender de cascade):
+  1. tarefas ativas (`PENDING/IN_PROGRESS/NOT_DELIVERED`) do dependente → delete;
+  2. tarefas `COMPLETED/APPROVED` da casa → **MANTIDAS** e apenas **desatribuídas** (`assigned_to`/`completed_by` → null) — histórico pertence à casa;
+  3. resgates (pendentes e resolvidos) → delete (`reward_redemptions.profile_id` é NOT NULL — sem migração, o log de resgate não tem como ser retido);
+  4. sugestões, notificações (`recipient_id`) e push subscriptions → delete;
+  5. arquivos do dependente no bucket (`avatars/<id>/` + `messages/<id>/`) → **best-effort** (`deleteMemberStorage`);
+  6. membresias e perfil (`profiles`, incluindo os pontos globais) → delete;
+  7. `admin.auth.admin.deleteUser` **por último** (se falhar, sobra conta sem perfil que não passa nos checks de role).
+- **Por que existe:** expulso, o dependente vira **órfão** — o login continua válido, vê "sem casa", e o `username` único fica ocupado para sempre, sem caminho no app para re-vincular. Excluir a conta (auth + perfil) remove o lixo e libera o username.
+- **UI (`houses-manager.tsx`):** para membro `DEPENDENT`, visível só ao autor (fora da própria linha), o botão vermelho passou de "Expulsar" para **"Excluir conta"** (`Trash2`) com `Modal` de confirmação avisando da irreversibilidade e de que o histórico da casa é preservado. Co-ADMINs seguem com "Expulsar" (`expelMember`); **conta de ADMIN nunca é excluída**.
+- **Sem mudança de schema:** tudo coberto por colunas/ordens existentes (nuláveis de `tasks`, cascades de `notifications`/`push_subscriptions`, `house_settings.updated_by` set null).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (12 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Requer deploy** para valer online.
+- **Trade-off documentado (ADR-0014):** resgates resolvidos do dependente excluído são removidos — se um dia o log de resgates do excluído precisar ser retido, a evolução é tornar `reward_redemptions.profile_id` nulável com `on delete set null` (migração opcional, fora de escopo hoje).
+- Excluir é **permanente e imediato**: conta de login + perfil + pontos somem; tarefas concluídas/aprovadas da casa permanecem sem atribuição.
+
+---
+
 ## ADMIN autor da casa — chip "A", expulsar membros, trocar PIN e excluir a casa (concluída — sem mudança de schema)
 
 ### O que foi implementado

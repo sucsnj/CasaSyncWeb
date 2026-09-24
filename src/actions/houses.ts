@@ -15,6 +15,7 @@ import {
   validateUsername,
 } from './types'
 import { notifyUser } from '@/utils/notifications'
+import { getPushTable } from '@/lib/push-service'
 
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
@@ -850,6 +851,193 @@ export async function expelMember(
   return {
     ok: true,
     message: `${roleLabel} removido da casa "${house.name}".`,
+  }
+}
+
+/**
+ * Limpeza best-effort das imagens do dependente no bucket público
+ * `casasync-media`: avatar (`avatars/<id>/`) e as imagens das mensagens
+ * rápidas enviadas por ele (`messages/<id>/`). Falha aqui nunca derruba a
+ * exclusão da conta — sobra só arquivo órfão no storage (sem cascade natural).
+ */
+async function deleteMemberStorage(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string
+): Promise<void> {
+  const bucket = 'casasync-media'
+  try {
+    for (const folder of ['avatars', 'messages']) {
+      const sub = `${folder}/${userId}`
+      const { data, error } = await admin.storage.from(bucket).list(sub)
+      if (error || !data?.length) continue
+      const paths = data
+        .filter((file) => file.name)
+        .map((file) => `${sub}/${file.name}`)
+      await admin.storage.from(bucket).remove(paths)
+    }
+  } catch (err) {
+    console.error('[STORAGE] Falha ao limpar arquivos do dependente:', err)
+  }
+}
+
+/**
+ * SÓ o AUTOR exclui a conta completa de um DEPENDENT da casa: login (auth),
+ * perfil, pontos e assinaturas de push são removidos; tarefas ativas, resgates,
+ * sugestões e notificações do dependente são apagados. O HISTÓRICO da casa é
+ * preservado: tarefas concluídas/aprovadas são MANTIDAS e apenas desatribuídas
+ * (`assigned_to`/`completed_by` → null — colunas nuláveis). Resgates resolvidos
+ * e sugestões são removidos com a pessoa (o contrato de `reward_redemptions.
+ * profile_id` é NOT NULL — não há como reter o log sem migração); a recompensa
+ * em si permanece, e notificações cujo `actor_id` era o dependente ficam com
+ * ator nulo (`set null`).
+ */
+export async function deleteDependentAccount(
+  houseId: string,
+  targetUserId: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+
+  if (!user || profile?.user_role !== 'ADMIN') {
+    return { ok: false, error: 'Apenas administradores podem excluir contas.' }
+  }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  const house = await getOwnedHouse(admin, houseId, user.id)
+  if (!house) {
+    return { ok: false, error: 'Casa não encontrada ou você não é o autor dela.' }
+  }
+
+  if (targetUserId === user.id) {
+    return { ok: false, error: 'Você não pode excluir a própria conta.' }
+  }
+
+  const { data: membership } = await admin
+    .from('house_members')
+    .select('role')
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+    .maybeSingle()
+
+  if (!membership) {
+    return { ok: false, error: 'Membro não encontrado na casa.' }
+  }
+
+  if (membership.role !== 'DEPENDENT') {
+    return { ok: false, error: 'Conta de administrador não pode ser excluída.' }
+  }
+
+  const { data: targetProfile } = await admin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', targetUserId)
+    .maybeSingle()
+
+  const targetName = targetProfile?.full_name?.trim() || 'dependente'
+
+  // Tarefas ativas do dependente são apagadas (sem valor para a casa).
+  const { error: tasksActiveError } = await admin
+    .from('tasks')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('assigned_to', targetUserId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+  if (tasksActiveError) {
+    return { ok: false, error: 'Falha ao remover as tarefas ativas do dependente.' }
+  }
+
+  // Tarefas concluídas/aprovadas da casa são MANTIDAS como histórico — só
+  // desatribuímos o dependente (colunas nuláveis), na própria atribuição ou
+  // como quem concluiu.
+  const { error: tasksHistoryError } = await admin
+    .from('tasks')
+    .update({ assigned_to: null, completed_by: null })
+    .eq('house_id', houseId)
+    .or(`assigned_to.eq.${targetUserId},completed_by.eq.${targetUserId}`)
+    .in('status', ['COMPLETED', 'APPROVED'])
+  if (tasksHistoryError) {
+    return { ok: false, error: 'Falha ao desatribuir o histórico de tarefas.' }
+  }
+
+  // Resgates do dependente (pendentes e resolvidos) são removidos — a coluna
+  // `profile_id` é NOT NULL e o histórico de resgate pertence à pessoa.
+  const { error: redemptionsError } = await admin
+    .from('reward_redemptions')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (redemptionsError) {
+    return { ok: false, error: 'Falha ao remover os resgates do dependente.' }
+  }
+
+  // Sugestões do dependente são removidas (propostas, sem valor histórico).
+  const { error: suggestionsError } = await admin
+    .from('reward_suggestions')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (suggestionsError) {
+    return { ok: false, error: 'Falha ao remover as sugestões do dependente.' }
+  }
+
+  // Notificações do dependente (cascade `recipient_id`, mas explícito).
+  const { error: notificationsError } = await admin
+    .from('notifications')
+    .delete()
+    .eq('recipient_id', targetUserId)
+  if (notificationsError) {
+    return { ok: false, error: 'Falha ao remover as notificações do dependente.' }
+  }
+
+  // Assinaturas de push (cascade `user_id`, mas explícito).
+  const { error: pushError } = await getPushTable(admin)
+    .delete()
+    .eq('user_id', targetUserId)
+  if (pushError) {
+    return { ok: false, error: 'Falha ao remover as assinaturas de push.' }
+  }
+
+  // Imagens no Storage (best-effort).
+  await deleteMemberStorage(admin, targetUserId)
+
+  // Membresias (todas — dependente tem uma, mas o guard roda por segurança).
+  const { error: membersError } = await admin
+    .from('house_members')
+    .delete()
+    .eq('profile_id', targetUserId)
+  if (membersError) {
+    return { ok: false, error: 'Falha ao remover o vínculo do dependente.' }
+  }
+
+  // Perfil (e os pontos globais, que morrem com a conta).
+  const { error: profileError } = await admin
+    .from('profiles')
+    .delete()
+    .eq('id', targetUserId)
+  if (profileError) {
+    return { ok: false, error: 'Falha ao remover o perfil do dependente.' }
+  }
+
+  // Conta de autenticação (auth.users) — por último: se falhar, sobra uma conta
+  // sem perfil que não passa nos checks de role (efetivamente descartada).
+  const { error: authError } = await admin.auth.admin.deleteUser(targetUserId)
+  if (authError) {
+    return { ok: false, error: 'Falha ao remover a conta de login.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/houses')
+  revalidatePath('/tasks')
+  revalidatePath('/rewards')
+
+  return {
+    ok: true,
+    message: `Conta de "${targetName}" excluída permanentemente.`,
   }
 }
 

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import {
   createDependent,
   createHouse,
+  deleteDependentAccount,
   deleteHouse,
   expelMember,
   joinHouseByPin,
@@ -68,6 +69,7 @@ type HousesManagerProps = {
 
 type ConfirmAction =
   | { kind: 'expel'; member: Member }
+  | { kind: 'deleteDependent'; member: Member }
   | { kind: 'deleteHouse'; house: House }
 
 export function HousesManager({
@@ -345,7 +347,12 @@ export function HousesManager({
               activeHouseId ?? '',
               confirmAction.member.profileId
             )
-          : await deleteHouse(confirmAction.house.id)
+          : confirmAction.kind === 'deleteDependent'
+            ? await deleteDependentAccount(
+                activeHouseId ?? '',
+                confirmAction.member.profileId
+              )
+            : await deleteHouse(confirmAction.house.id)
 
       if (!result.ok) {
         setConfirmError(result.error)
@@ -796,20 +803,37 @@ export function HousesManager({
                     ) : null}
                     {activeHouseOwnerId === currentUserId &&
                     member.profileId !== activeHouseOwnerId ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="min-h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-                        onClick={() => {
-                          setConfirmError(null)
-                          setConfirmAction({ kind: 'expel', member })
-                        }}
-                        title="Expulsar da casa (remove os dados ativos)"
-                      >
-                        <UserMinus className="size-3.5" />
-                        Expulsar
-                      </Button>
+                      member.role === 'DEPENDENT' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => {
+                            setConfirmError(null)
+                            setConfirmAction({ kind: 'deleteDependent', member })
+                          }}
+                          title="Excluir a conta e todos os dados do dependente"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Excluir conta
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => {
+                            setConfirmError(null)
+                            setConfirmAction({ kind: 'expel', member })
+                          }}
+                          title="Expulsar da casa (remove os dados ativos)"
+                        >
+                          <UserMinus className="size-3.5" />
+                          Expulsar
+                        </Button>
+                      )
                     ) : null}
                   </span>
                 </li>
@@ -1099,7 +1123,9 @@ export function HousesManager({
         title={
           confirmAction?.kind === 'deleteHouse'
             ? 'Excluir casa'
-            : `Expulsar — ${confirmAction?.member?.fullName ?? ''}`
+            : confirmAction?.kind === 'deleteDependent'
+              ? `Excluir conta — ${confirmAction?.member?.fullName ?? ''}`
+              : `Expulsar — ${confirmAction?.member?.fullName ?? ''}`
         }
       >
         {confirmAction ? (
@@ -1111,6 +1137,15 @@ export function HousesManager({
                 sugestões, notificações e configurações). Só é possível quando
                 você é o único membro restante. Esta ação não pode ser
                 desfeita.
+              </p>
+            ) : confirmAction.kind === 'deleteDependent' ? (
+              <p className="text-sm text-muted-foreground">
+                Excluir a conta de{' '}
+                <strong>{confirmAction.member.fullName}</strong> remove
+                permanentemente o login, o perfil, os pontos e os dados ativos
+                dele. O histórico da casa é preservado: tarefas
+                concluídas/aprovadas ficam na casa, apenas sem a atribuição do
+                dependente. Esta ação não pode ser desfeita.
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -1149,11 +1184,15 @@ export function HousesManager({
               >
                 {actionPending
                   ? confirmAction.kind === 'deleteHouse'
-                    ? 'Excluindo...'
-                    : 'Expulsando...'
+                    ? 'Excluindo casa...'
+                    : confirmAction.kind === 'deleteDependent'
+                      ? 'Excluindo conta...'
+                      : 'Expulsando...'
                   : confirmAction.kind === 'deleteHouse'
                     ? 'Excluir casa'
-                    : 'Expulsar'}
+                    : confirmAction.kind === 'deleteDependent'
+                      ? 'Excluir conta'
+                      : 'Expulsar'}
               </Button>
             </div>
           </div>
