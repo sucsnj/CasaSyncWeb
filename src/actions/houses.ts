@@ -657,7 +657,6 @@ export async function updateDependentPoints(
 
   // Traz os pontos atuais do dependente
   const currentPoints = member.profiles?.points ?? 0
-  const pointsDeducted = currentPoints - newPoints
 
   const { data: isAdmin } = await admin
     .from('house_members')
@@ -680,9 +679,13 @@ export async function updateDependentPoints(
     return { ok: false, error: 'Falha ao atualizar os pontos.' }
   }
 
-  // Se houve DÉBITO de pontos E um MOTIVO foi informado, envia a notificação
+  // Se houve DÉBITO de pontos (penalização), EXIGE motivo e envia notificação
+  const pointsDeducted = currentPoints - newPoints
   const trimmedReason = reason?.trim()
-  if (pointsDeducted > 0 && trimmedReason) {
+  if (pointsDeducted > 0) {
+    if (!trimmedReason) {
+      return { ok: false, error: 'Informe o motivo da penalização.' }
+    }
     await notifyUser(admin, {
       houseId: member.house_id,
       recipientId: dependentId,

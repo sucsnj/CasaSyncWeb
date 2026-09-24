@@ -1,5 +1,27 @@
 # CasaSync Web — PROJECT STATUS
 
+## Penalização de dependente pelo ADMIN (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Nova funcionalidade:** ADMIN pode penalizar um dependente subtraindo pontos do saldo acumulado via `updateDependentPoints`. A penalização **só ocorre em reajuste negativo** (SET para valor menor que o atual) e **exige motivo/descrição**.
+- **Server Action `updateDependentPoints`** (`src/actions/houses.ts:617`):
+  - Valida PIN_PTS (server-only, fail-closed).
+  - Calcula `pointsDeducted = currentPoints - newPoints`.
+  - Se `pointsDeducted > 0` **exige `reason` não-vazio** (retorna erro se omitido).
+  - Envia notificação `type='PENALTY'` via `notifyUser` para o dependente: título "Penalidade Aplicada", body "`-X pt(s) · Motivo: Y`", link `/dashboard/dependent`.
+  - Revalida `/dashboard/dependent` para o dependente ver saldo atualizado.
+- **UI ADMIN (`houses-manager.tsx:853-932`):** Modal "Alterar pontos" já continha campo "Descrição do ajuste" (`reason`) e PIN de pontos. O submit passa `reason` para a action.
+- **Notificação para o dependente:**
+  - **Toast em tempo real** (`realtime-toast-listener.tsx:25`) — exibe "Penalidade Aplicada" com detalhes.
+  - **Balão flutuante persistente** (`penalty-dialog.tsx`) — modal não fechável por backdrop/Esc; só fecha ao clicar "Compreendi" (marca como lida via `markNotificationRead`). Parseia o body para exibir pontos e motivo.
+  - **Sino de notificações** (`notifications-bell.tsx:67`) — tipo `PENALTY` com ícone Flame, chip vermelho.
+- **Layout dependente** (`dashboard/dependent/layout.tsx:49-52`) — inclui `PenaltyDialog` que monitora notificações `PENALTY` não lidas (inicial + Realtime).
+
+### Verificação
+`npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+---
+
 ## Botão "Concluir e creditar" oculto durante edição de campos (corrigido — sem mudança de schema)
 
 ### O que foi implementado
