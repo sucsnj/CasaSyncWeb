@@ -19,11 +19,13 @@ export function Modal({
   onClose,
   title,
   children,
+  hideCloseButton = false,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: React.ReactNode
+  hideCloseButton?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
@@ -123,16 +125,18 @@ export function Modal({
           <p className="font-heading text-base font-semibold text-slate-800">
             {title}
           </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Fechar"
-            className="min-h-10 px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
+          {!hideCloseButton ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Fechar"
+              className="min-h-10 px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          ) : null}
         </div>
         <div className="overflow-y-auto px-5 py-4">{children}</div>
       </div>

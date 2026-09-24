@@ -84,6 +84,7 @@ export function PenaltyDialog({ userId, initialNotifications = [] }: PenaltyDial
       open={true}
       onClose={() => {}} // Previne fechar modal quando clica fora do componente; apenas o botão de confirmar fecha
       title="Sua pontuação foi reduzida"
+      hideCloseButton
     >
       <div className="flex flex-col gap-4 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">

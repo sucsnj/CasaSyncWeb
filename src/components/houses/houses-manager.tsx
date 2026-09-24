@@ -79,6 +79,7 @@ export function HousesManager({
   const [passwordPending, setPasswordPending] = useState(false)
 
   const [pointsMember, setPointsMember] = useState<Member | null>(null)
+  const [pointsNewValue, setPointsNewValue] = useState<number>(0)
   const [pointsError, setPointsError] = useState<string | null>(null)
   const [pointsSuccess, setPointsSuccess] = useState<string | null>(null)
   const [pointsPending, setPointsPending] = useState(false)
@@ -668,6 +669,7 @@ export function HousesManager({
                         onClick={() => {
                           setPointsError(null)
                           setPointsSuccess(null)
+                          setPointsNewValue(member.points)
                           setPointsMember(member)
                         }}
                       >
@@ -879,7 +881,8 @@ export function HousesManager({
                 name="newPoints"
                 type="number"
                 inputMode="numeric"
-                defaultValue={pointsMember.points}
+                value={pointsNewValue}
+                onChange={(event) => setPointsNewValue(Number(event.target.value))}
                 required
               />
             </div>
@@ -892,8 +895,14 @@ export function HousesManager({
                 type="text"
                 autoComplete="off"
                 placeholder="Informe a descrição do ajuste"
+                disabled={pointsNewValue >= pointsMember.points}
+                required={pointsNewValue < pointsMember.points}
                 suppressHydrationWarning
               />
+              <p className="text-xs text-muted-foreground">
+                Obrigatório apenas quando o novo total for menor que o saldo
+                atual (penalização).
+              </p>
             </div>
 
             <div className="grid gap-2">
