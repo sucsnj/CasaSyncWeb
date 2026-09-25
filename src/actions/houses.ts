@@ -832,6 +832,16 @@ export async function expelMember(
     return { ok: false, error: 'Falha ao remover as sugestões do membro.' }
   }
 
+  // Progresso de conquistas do expulso nesta casa é removido com a membresia.
+  const { error: achievementsError } = await admin
+    .from('dependent_achievements')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (achievementsError) {
+    return { ok: false, error: 'Falha ao remover o progresso de conquistas.' }
+  }
+
   const { error: membershipError } = await admin
     .from('house_members')
     .delete()
@@ -1002,6 +1012,15 @@ export async function deleteDependentAccount(
     return { ok: false, error: 'Falha ao remover as assinaturas de push.' }
   }
 
+  // Progresso de conquistas do dependente (morre com a conta, mas explícito).
+  const { error: achievementsError } = await admin
+    .from('dependent_achievements')
+    .delete()
+    .eq('profile_id', targetUserId)
+  if (achievementsError) {
+    return { ok: false, error: 'Falha ao remover o progresso de conquistas.' }
+  }
+
   // Imagens no Storage (best-effort).
   await deleteMemberStorage(admin, targetUserId)
 
@@ -1088,9 +1107,10 @@ export async function rotateHousePin(
 /**
  * SÓ o AUTOR exclui a própria casa, e apenas quando ela está "vazia" — ele é
  * o ÚNICO membro restante. Os dados da casa (tarefas, recompensas, resgates,
- * sugestões, notificações, configurações, assinaturas de push e membresias)
- * são removidos em ordem explícita, sem depender de cascade no banco. Perfis e
- * pontos dos antigos membros são globais e permanecem intactos.
+ * sugestões, progresso de conquistas, conquistas, notificações, configurações,
+ * assinaturas de push e membresias) são removidos em ordem explícita, sem
+ * depender de cascade no banco. Perfis e pontos dos antigos membros são
+ * globais e permanecem intactos.
  */
 export async function deleteHouse(houseId: string): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
@@ -1145,6 +1165,23 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
     .eq('house_id', houseId)
   if (suggestionsError) {
     return { ok: false, error: 'Falha ao excluir as sugestões da casa.' }
+  }
+
+  // Progresso de conquistas dos dependentes, e as conquistas em si.
+  const { error: dependentAchievementsError } = await admin
+    .from('dependent_achievements')
+    .delete()
+    .eq('house_id', houseId)
+  if (dependentAchievementsError) {
+    return { ok: false, error: 'Falha ao excluir o progresso de conquistas.' }
+  }
+
+  const { error: achievementsError } = await admin
+    .from('achievements')
+    .delete()
+    .eq('house_id', houseId)
+  if (achievementsError) {
+    return { ok: false, error: 'Falha ao excluir as conquistas da casa.' }
   }
 
   const { error: rewardsError } = await admin

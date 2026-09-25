@@ -1,5 +1,94 @@
 # CasaSync Web — PROJECT STATUS
 
+## Conquistas gamificadas por casa — rota `/achievements` (concluída — 2 tabelas novas já aplicadas no banco)
+
+### O que foi implementado
+- **Novo domínio de conquistas por casa:** o ADMIN define **conquistas** para a casa ativa (título ≤100, descrição opcional, ícone, recompensa em pontos, objetivo, métrica, repetível/secreta) e o progresso do dependente é registrado **automaticamente nas aprovações de tarefas**; o dependente vê a meta (barra de progresso) e **resgata** a recompensa quando desbloqueia.
+- **Tabelas novas (SQL abaixo — aplicado pelo usuário; restou apenas a coluna `decay_started_at` do decaimento):**
+  - **`achievements`** — `house_id`, `title`, `description`, `icon`, `metric_type`, `reward_points`, `target_count`, `is_repeatable`, `is_secret`, `created_by`.
+  - **`dependent_achievements`** — `house_id`, `achievement_id` (FK), `profile_id` (FK), `level`, `current_progress`, `unlocked_at`. Uma linha por (conquista, dependente); `level` sobe a cada resgate.
+- **Server Actions (`src/actions/achievements.ts`):**
+  - `createAchievement` / `updateAchievement` (patch whitelist; progressão já registrada **não** é recalculada retroativamente) / `deleteAchievement` — ADMIN da casa ativa (`assertAdminCanManage`), validação fail-closed (`validateAchievementFields`), revalidam `/achievements`.
+  - **`registerAchievementProgress(houseId, profileId, metricType, amount)`** — chamada em `approveTask` e `adminCompleteTask` pelo próprio fluxo de crédito: `amount` = 1 por tarefa aprovada (`COMPLETED_TASKS`) ou o **valor corrente creditado** (já com `task_decay`) para `EARNED_POINTS`. **Best-effort** (try/catch; falha nunca derruba o crédito): **lazy insert** para conquistas sem linha (nível 1, `unlocked_at` se `amount >= target_count`) e **update atômico por linha com guard `.eq('current_progress', valor lido)` + 1 retry relendo** — duas aprovações concorrentes não perdem incremento. `current_progress` **não é capado no banco** (a UI capa a barra em 100%).
+  - **`claimAchievementReward(achievementId)`** — só DEPENDENT da própria casa; **credita `reward_points` direto em `profiles.points`** (mesmo ajuste de `approveTask`). Repetível: `level+1`, **rollover** `max(0, progress − target)` e `unlocked_at` volta a null (re-desbloqueia no próximo ciclo); **não repetível**: resgata **uma vez** no nível 1 (guard `.eq('level', 1)`), depois vira chip "Concluída" e o botão some. Guards anti-race (`unlocked_at` lido no repetível, `level` no não repetível) + **rollback da linha** se o crédito de pontos falhar. Revalida `/achievements`, `/rewards`, `/dashboard/dependent`.
+- **Rota `/achievements`** (role-aware, service role com escopo de sessão — padrão ADR-0006): ADMIN vê conquistas + **progresso por dependente**; DEPENDENT vê as próprias metas. Carregada via `listAchievements`/`getAchievementProgress` (dados iniciais) e alimentada por **Realtime** (`achievements` + `dependent_achievements`, filter `house_id`).
+- **UI:** `achievements/achievement-icon.tsx` (`AchievementIcon` + `ICON_MAP`, 12 slugs Lucide), `achievements/achievements-admin.tsx` (form de criação/edição controlado com chips de ícone + checkboxes repetível/secreta, seção de progresso por dependente por card, delete com `Modal` de confirmação; sem `router.refresh` — Realtime cobre), `achievements/achievements-dependent.tsx` (cards com barra/pill "N/N"; secreta não desbloqueada → card oculto "Conquista secreta" que só revela ao desbloquear; `handleClaim` otimista + `router.refresh()`).
+- **Nav:** item **"Conquistas"** (ícone `Trophy`) adicionado em `dashboard-nav.tsx` (ADMIN tem **5** itens; DEPENDENT **4** — o slot extra da bottom nav só existe com `< 4` itens).
+- **Limpeza:** exclusão de conquista apaga o progresso (FK `on delete cascade` no SQL); `expelMember`/`deleteDependentAccount`/`deleteHouse` (`src/actions/houses.ts`) removem linhas de `dependent_achievements` (e `deleteHouse` remove as `achievements` da casa) no fluxo de limpeza.
+- **Decisões de escopo (ADR-0015):** progresso conta apenas **aprovações** (não débitos); `EARNED_POINTS` conta só créditos de tarefa aprovada (sem loop com resgates de recompensa); **sem notificação `ACHIEVEMENT_UNLOCKED`**; `restoreTask`/`adminCompleteTask` no caminho do crédito também registram/registram progresso apenas no crédito real.
+
+### SQL aplicado no Supabase (registro — o usuário aplicou com sucesso; verificado via probe: tabelas existem e um insert service-role reversível passou)
+```sql
+-- Conquistas: tabelas novas do módulo gamificado.
+create table if not exists public.achievements (
+  id uuid primary key default gen_random_uuid(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  title text not null,
+  description text,
+  icon text,
+  metric_type text not null,
+  reward_points int not null default 0,
+  target_count int not null default 1,
+  is_repeatable boolean not null default false,
+  is_secret boolean not null default false,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists achievements_house_idx on public.achievements (house_id);
+
+create table if not exists public.dependent_achievements (
+  id uuid primary key default gen_random_uuid(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  achievement_id uuid not null references public.achievements(id) on delete cascade,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  level int not null default 1,
+  current_progress int not null default 0,
+  unlocked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists dependent_achievements_house_idx on public.dependent_achievements (house_id);
+create index if not exists dependent_achievements_achievement_idx on public.dependent_achievements (achievement_id);
+create index if not exists dependent_achievements_profile_idx on public.dependent_achievements (profile_id);
+
+alter table public.achievements enable row level security;
+alter table public.dependent_achievements enable row level security;
+
+-- Realtime: as ações/leituras são service-role (ADR-0006), mas o browser (DEPENDENT
+-- na própria linha / ADMIN da casa) precisa de SELECT por membro + publication.
+create policy "achievements_select_members" on public.achievements
+  for select to authenticated
+  using (exists (
+    select 1 from public.house_members hm
+    where hm.house_id = achievements.house_id
+      and hm.profile_id = auth.uid()
+  ));
+
+create policy "dependent_achievements_select_members" on public.dependent_achievements
+  for select to authenticated
+  using (exists (
+    select 1 from public.house_members hm
+    where hm.house_id = dependent_achievements.house_id
+      and hm.profile_id = auth.uid()
+  ));
+
+alter publication supabase_realtime add table public.achievements;
+alter publication supabase_realtime add table public.dependent_achievements;
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo, `/achievements` dinâmico).
+
+### Pontos de atenção
+- As 2 tabelas **já estão no banco** (aplicadas pelo usuário e verificadas via probe: `SELECT` anônimo retornou 200 e um insert service-role reversível passou com o payload exato de `createAchievement`; a action e a rota rodam).
+- **Bug de import corrigido:** `ACHIEVEMENT_ICONS`/`ACHIEVEMENT_METRIC_TYPES`/`AchievementMetricType` saíram de `src/actions/achievements.ts` para **`src/utils/achievements.ts`** (módulo puro). Exports não-função de arquivo `'use server'` **não são transmitidos** a client components → `ACHIEVEMENT_ICONS.map is not a function` no `achievements-admin.tsx` em runtime (`tsc`/`build` não pegam). As actions seguem em `src/actions/achievements.ts`.
+- **Requer deploy** para valer online.
+- Índices/`level` inicial já contemplados no SQL; o progresso de quem já está na tabela é preservado (nada é re-insertado com dedup por `achievement_id`+`profile_id` — o registro é lazy).
+- Sem mudança nas demais features; `rewards.active`/mensagem rápida/`house_settings` seguem como documentado.
+
+---
+
 ## Exclusão real de conta de dependente — "Excluir conta" substitui "Expulsar" para DEPENDENT (concluída — sem mudança de schema)
 
 ### O que foi implementado
@@ -168,7 +257,7 @@
 
 ---
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Única exceção pendente no banco:** a coluna `tasks.decay_started_at` da seção no topo (**SQL abaixo** — sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Exceções pendentes no banco (SQL abaixo, aplicar ANTES de subir):** apenas a coluna `tasks.decay_started_at` da seção de decaimento (sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra). As tabelas `achievements`/`dependent_achievements` da seção "Conquistas gamificadas" no topo **já foram aplicadas** pelo usuário (verificado via probe).
 
 ## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — requer 1 coluna nova)
 

@@ -6,19 +6,13 @@ import {
   getActiveAdminHouse,
   getDependentHouse,
   getHouseAssignees,
-  getProfileNames,
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
-import {
-  getHouseExtensionRulesSettings,
-  getHouseQuickMessageSettings,
-  getHouseTaskDecaySettings,
-  getHouseTaskSlaSettings,
-} from '@/utils/house-settings'
+import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
-import { TasksAdmin } from '@/components/tasks/tasks-admin'
-import { TasksDependent } from '@/components/tasks/tasks-dependent'
+import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
+import { AchievementsDependent } from '@/components/achievements/achievements-dependent'
 import {
   Card,
   CardContent,
@@ -28,7 +22,7 @@ import {
 } from '@/components/ui/card'
 
 export const metadata: Metadata = {
-  title: 'Tarefas',
+  title: 'Conquistas',
 }
 
 export const dynamic = 'force-dynamic'
@@ -55,7 +49,7 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
         <CardTitle>Nenhuma casa ativa</CardTitle>
         <CardDescription>
           {role === 'ADMIN'
-            ? 'Crie ou selecione uma casa antes de gerenciar tarefas.'
+            ? 'Crie ou selecione uma casa antes de gerenciar conquistas.'
             : 'Você ainda não foi vinculado a uma casa.'}
         </CardDescription>
       </CardHeader>
@@ -73,21 +67,16 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
   )
 }
 
-export default async function TasksPage() {
+export default async function AchievementsPage() {
   const { user, profile } = await getSessionProfile()
 
   if (!user || !profile) {
     redirect('/login')
   }
 
-  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
-  // (sessão), não por policies RLS — o co-gerente precisa ver as tarefas da
-  // casa mesmo não sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
-  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
   const [notifications, activeHouse, dependentHouse] = await Promise.all([
     getMyNotifications(user.id),
     isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
@@ -98,44 +87,34 @@ export default async function TasksPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
-  // Settings de prazos/SLA e de adiamento da casa, aplicadas nos cards de
-  // tarefas (prazo padrão, chip "Prazo próximo" e botões de adiamento).
-  const houseIdForSettings = isAdmin ? activeHouse?.id : dependentHouse?.id
-  const taskSlaSettings = houseIdForSettings
-    ? await getHouseTaskSlaSettings(houseIdForSettings)
-    : undefined
-  const extensionRulesSettings = isAdmin && houseIdForSettings
-    ? await getHouseExtensionRulesSettings(houseIdForSettings)
-    : undefined
-  const taskDecaySettings = houseIdForSettings
-    ? await getHouseTaskDecaySettings(houseIdForSettings)
-    : undefined
-
   let content: React.ReactNode
 
   if (isAdmin) {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const [{ data: tasks }, assignees] = await Promise.all([
+      const [achievements, progress, dependents] = await Promise.all([
         admin
-          .from('tasks')
+          .from('achievements')
           .select('*')
           .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: true }),
+        admin
+          .from('dependent_achievements')
+          .select(
+            'id, achievement_id, profile_id, level, current_progress, unlocked_at'
+          )
+          .eq('house_id', activeHouse.id),
         getHouseAssignees(activeHouse.id),
       ])
 
       content = (
-        <TasksAdmin
+        <AchievementsAdmin
           key={activeHouse.id}
           houseId={activeHouse.id}
-          initialTasks={tasks ?? []}
-          assignees={assignees}
-          defaultDueDays={taskSlaSettings?.defaultDueDays}
-          dueSoonHours={taskSlaSettings?.dueSoonHours}
-          extensionDayOptions={extensionRulesSettings?.dayOptions}
-          taskDecay={taskDecaySettings}
+          initialAchievements={achievements?.data ?? []}
+          dependents={dependents}
+          initialProgress={progress?.data ?? []}
         />
       )
     }
@@ -143,26 +122,33 @@ export default async function TasksPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const { data: tasks } = await admin
-        .from('tasks')
-        .select('*')
-        .eq('house_id', dependentHouse.id)
-        .eq('assigned_to', user.id)
-        .order('created_at', { ascending: false })
+      const [achievements, progress] = await Promise.all([
+        admin
+          .from('achievements')
+          .select('*')
+          .eq('house_id', dependentHouse.id)
+          .order('created_at', { ascending: true }),
+        admin
+          .from('dependent_achievements')
+          .select('id, achievement_id, level, current_progress, unlocked_at')
+          .eq('house_id', dependentHouse.id)
+          .eq('profile_id', user.id),
+      ])
 
-      const taskList = tasks ?? []
-      const creatorNames = await getProfileNames(
-        taskList.map((task) => task.created_by)
-      )
+      const views = (achievements?.data ?? []).map((achievement) => ({
+        achievement,
+        progress:
+          progress?.data?.find(
+            (entry) => entry.achievement_id === achievement.id
+          ) ?? null,
+      }))
 
       content = (
-        <TasksDependent
+        <AchievementsDependent
           key={dependentHouse.id}
           houseId={dependentHouse.id}
-          initialTasks={taskList}
-          creatorNames={creatorNames}
-          dueSoonHours={taskSlaSettings?.dueSoonHours}
-          taskDecay={taskDecaySettings}
+          userId={user.id}
+          initialViews={views}
         />
       )
     }

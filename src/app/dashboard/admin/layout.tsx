@@ -10,6 +10,7 @@ const adminItems: NavItem[] = [
   { href: '/dashboard/admin/houses', label: 'Casas' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
+  { href: '/achievements', label: 'Conquistas' },
 ]
 
 export default async function AdminDashboardLayout({

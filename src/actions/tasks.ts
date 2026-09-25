@@ -15,6 +15,9 @@ import {
   type NotifyHouseInput,
 } from '@/utils/notifications'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
+import {
+  registerAchievementProgress,
+} from './achievements'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
   getHouseExtensionRulesSettings,
@@ -565,8 +568,14 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
     link: '/tasks',
   })
 
+  // Conquistas: a aprovação conta como 1 tarefa concluída e como N pontos
+  // ganhos (best-effort — uma falha aqui não reverte a aprovação).
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'COMPLETED_TASKS', 1)
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints)
+
   revalidatePath('/tasks')
   revalidatePath('/rewards')
+  revalidatePath('/achievements')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -895,8 +904,13 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
     link: '/tasks',
   })
 
+  // Conquistas: 1 tarefa concluída + pontos ganhos (best-effort).
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'COMPLETED_TASKS', 1)
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints)
+
   revalidatePath('/tasks')
   revalidatePath('/rewards')
+  revalidatePath('/achievements')
   revalidatePath('/dashboard/dependent')
 
   return {

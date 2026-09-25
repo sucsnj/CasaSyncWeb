@@ -13,6 +13,7 @@ const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
+  { href: '/achievements', label: 'Conquistas' },
 ]
 
 export default async function DependentDashboardLayout({

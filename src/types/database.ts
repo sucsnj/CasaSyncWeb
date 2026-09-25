@@ -416,6 +416,127 @@ export interface Database {
           },
         ]
       }
+      achievements: {
+        Row: {
+          id: string
+          house_id: string
+          title: string
+          description: string | null
+          icon: string | null
+          reward_points: number
+          target_count: number
+          metric_type: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          is_repeatable: boolean
+          is_secret: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          title: string
+          description?: string | null
+          icon?: string | null
+          reward_points?: number
+          target_count?: number
+          metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          is_repeatable?: boolean
+          is_secret?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          title?: string
+          description?: string | null
+          icon?: string | null
+          reward_points?: number
+          target_count?: number
+          metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          is_repeatable?: boolean
+          is_secret?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'achievements_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'achievements_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      dependent_achievements: {
+        Row: {
+          id: string
+          achievement_id: string
+          profile_id: string
+          house_id: string
+          level: number
+          current_progress: number
+          unlocked_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          achievement_id: string
+          profile_id: string
+          house_id: string
+          level?: number
+          current_progress?: number
+          unlocked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          achievement_id?: string
+          profile_id?: string
+          house_id?: string
+          level?: number
+          current_progress?: number
+          unlocked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'dependent_achievements_achievement_id_fkey'
+            columns: ['achievement_id']
+            isOneToOne: false
+            referencedRelation: 'achievements'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'dependent_achievements_profile_id_fkey'
+            columns: ['profile_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'dependent_achievements_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       notifications: {
         Row: {
           id: string
