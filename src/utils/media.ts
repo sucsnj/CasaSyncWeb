@@ -9,6 +9,7 @@ export type MediaFolder =
   | 'tasks'
   | 'suggestions'
   | 'messages'
+  | 'achievements'
 
 /**
  * Identificador único para o nome do arquivo. `crypto.randomUUID` só existe em

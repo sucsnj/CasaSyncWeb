@@ -11,7 +11,11 @@ import {
   ACHIEVEMENT_ICONS,
   ACHIEVEMENT_METRIC_TYPES,
   type AchievementMetricType,
+  achievementRewardAtLevel,
+  maxAchievementLevel,
 } from '@/utils/achievements'
+
+const ACHIEVEMENTS_IMAGE_MARKER = '/casasync-media/achievements/'
 import { POINTS_MAX, type ActionResult } from './types'
 import type { Database, Tables } from '@/types/database'
 
@@ -54,6 +58,9 @@ function validateAchievementFields(input: {
   isRepeatable: boolean
   isSecret: boolean
   icon: string | null
+  imageUrl: string | null
+  maxLevel: number
+  levelMultiplier: number
 }): string | null {
   if (!input.title.trim()) return 'Informe o título da conquista.'
   if (input.title.trim().length > 100) return 'Título muito longo (máximo 100 caracteres).'
@@ -76,6 +83,23 @@ function validateAchievementFields(input: {
   if (input.icon && !(ACHIEVEMENT_ICONS as readonly string[]).includes(input.icon)) {
     return 'Ícone inválido.'
   }
+  if (
+    input.imageUrl &&
+    !input.imageUrl.includes(ACHIEVEMENTS_IMAGE_MARKER)
+  ) {
+    return 'Imagem inválida: use a imagem enviada da conquista.'
+  }
+  if (!Number.isInteger(input.maxLevel) || input.maxLevel < 1 || input.maxLevel > 1000) {
+    return 'O nível máximo deve ser um inteiro entre 1 e 1000.'
+  }
+  if (
+    typeof input.levelMultiplier !== 'number' ||
+    !Number.isFinite(input.levelMultiplier) ||
+    input.levelMultiplier < 0 ||
+    input.levelMultiplier > 100
+  ) {
+    return 'O multiplicador por nível deve estar entre 0 e 100.'
+  }
   return null
 }
 
@@ -90,10 +114,13 @@ export async function createAchievement(
     title: string
     description: string | null
     icon: string | null
+    imageUrl: string | null
     rewardPoints: number
     targetCount: number
     metricType: AchievementMetricType
     isRepeatable: boolean
+    maxLevel: number
+    levelMultiplier: number
     isSecret: boolean
   }
 ): Promise<ActionResult<{ achievement: Achievement }>> {
@@ -115,10 +142,14 @@ export async function createAchievement(
       title: input.title.trim(),
       description: input.description?.trim() ? input.description.trim() : null,
       icon: input.icon,
+      image_url: input.imageUrl,
       reward_points: input.rewardPoints,
       target_count: input.targetCount,
       metric_type: input.metricType,
       is_repeatable: input.isRepeatable,
+      // Só repetíveis têm nível: as únicas ficam travadas no nível 1.
+      max_level: input.isRepeatable ? input.maxLevel : 1,
+      level_multiplier: input.levelMultiplier,
       is_secret: input.isSecret,
       created_by: auth.adminId,
       created_at: now,
@@ -143,10 +174,13 @@ export type AchievementPatch = {
   title?: string
   description?: string | null
   icon?: string | null
+  imageUrl?: string | null
   rewardPoints?: number
   targetCount?: number
   metricType?: AchievementMetricType
   isRepeatable?: boolean
+  maxLevel?: number
+  levelMultiplier?: number
   isSecret?: boolean
 }
 
@@ -183,6 +217,9 @@ export async function updateAchievement(
     isRepeatable: patch.isRepeatable ?? false,
     isSecret: patch.isSecret ?? false,
     icon: patch.icon ?? null,
+    imageUrl: patch.imageUrl ?? null,
+    maxLevel: patch.maxLevel ?? 1,
+    levelMultiplier: patch.levelMultiplier ?? 1,
   })
   if (validation) return { ok: false, error: validation }
 
@@ -194,10 +231,18 @@ export async function updateAchievement(
     updates.description = patch.description?.trim() ? patch.description.trim() : null
   }
   if (patch.icon !== undefined) updates.icon = patch.icon
+  if (patch.imageUrl !== undefined) updates.image_url = patch.imageUrl
   if (patch.rewardPoints !== undefined) updates.reward_points = patch.rewardPoints
   if (patch.targetCount !== undefined) updates.target_count = patch.targetCount
   if (patch.metricType !== undefined) updates.metric_type = patch.metricType
   if (patch.isRepeatable !== undefined) updates.is_repeatable = patch.isRepeatable
+  if (patch.isRepeatable === false) {
+    // Mesma regra da criação: só repetíveis têm nível acima de 1.
+    updates.max_level = 1
+  } else if (patch.maxLevel !== undefined) {
+    updates.max_level = patch.maxLevel
+  }
+  if (patch.levelMultiplier !== undefined) updates.level_multiplier = patch.levelMultiplier
   if (patch.isSecret !== undefined) updates.is_secret = patch.isSecret
 
   const { error } = await admin
@@ -208,6 +253,26 @@ export async function updateAchievement(
 
   revalidatePath('/achievements')
   return { ok: true, message: 'Conquista atualizada.' }
+}
+
+/**
+ * Remove (best-effort) a imagem da conquista do bucket `casasync-media`
+ * (pasta `achievements/`). Falha nunca derruba a exclusão da conquista.
+ */
+async function removeAchievementImage(
+  admin: ReturnType<typeof createAdminClient>,
+  imageUrl: string | null
+): Promise<void> {
+  if (!imageUrl) return
+  const at = imageUrl.indexOf('/casasync-media/')
+  if (at === -1) return
+  const path = imageUrl.slice(at + 1).split('?')[0]
+  try {
+    const { error } = await admin.storage.from('casasync-media').remove([path])
+    if (error) console.error('[ACHIEVEMENTS] Falha ao remover imagem:', error.message)
+  } catch (err) {
+    console.error('[ACHIEVEMENTS] Falha ao remover imagem:', err)
+  }
 }
 
 /**
@@ -226,7 +291,7 @@ export async function deleteAchievement(
 
   const { data: achievement } = await admin
     .from('achievements')
-    .select('house_id, title')
+    .select('house_id, title, image_url')
     .eq('id', achievementId)
     .maybeSingle()
 
@@ -239,6 +304,8 @@ export async function deleteAchievement(
     .delete()
     .eq('id', achievementId)
   if (error) return { ok: false, error: 'Falha ao excluir a conquista.' }
+
+  removeAchievementImage(admin, achievement.image_url)
 
   revalidatePath('/achievements')
   return { ok: true, message: `Conquista "${achievement.title}" excluída.` }
@@ -411,7 +478,9 @@ export async function claimAchievementReward(
 
   const { data: achievement } = await admin
     .from('achievements')
-    .select('id, house_id, reward_points, target_count, is_repeatable')
+    .select(
+      'id, house_id, reward_points, target_count, is_repeatable, max_level, level_multiplier'
+    )
     .eq('id', achievementId)
     .maybeSingle()
 
@@ -435,9 +504,21 @@ export async function claimAchievementReward(
     return { ok: false, error: 'Esta conquista já foi resgatada.' }
   }
 
-  const now = new Date().toISOString()
-  const nextLevel = row.level + 1
+  // Recompensa do nível ATUAL do dependente: pts base × nível × multiplicador.
+  const points = achievementRewardAtLevel(
+    achievement.reward_points,
+    row.level,
+    achievement.level_multiplier
+  )
 
+  // Repetível sobe 1 nível por ciclo até o `max_level` configurado; no cap ela
+  // continua repetível (o nível fica travado e a recompensa do nível máximo é
+  // paga a cada novo ciclo). Não repetível encerra no nível 1.
+  const maxLevel = maxAchievementLevel(achievement.is_repeatable, achievement.max_level)
+  const nextLevel = Math.min(row.level + 1, maxLevel)
+  const capped = nextLevel === row.level
+
+  const now = new Date().toISOString()
   const update =
     achievement.is_repeatable
       ? {
@@ -477,7 +558,7 @@ export async function claimAchievementReward(
 
   const { error: pointsError } = await admin
     .from('profiles')
-    .update({ points: dependent.points + achievement.reward_points })
+    .update({ points: dependent.points + points })
     .eq('id', user.id)
 
   if (pointsError) {
@@ -492,7 +573,9 @@ export async function claimAchievementReward(
 
   return {
     ok: true,
-    data: { points: achievement.reward_points, nextLevel },
-    message: `${achievement.reward_points} ponto(s) creditados — você subiu para o nível ${nextLevel}.`,
+    data: { points, nextLevel },
+    message: capped
+      ? `${points} ponto(s) creditados — você continuou no nível máximo (${maxLevel}).`
+      : `${points} ponto(s) creditados — você subiu para o nível ${nextLevel}.`,
   }
 }

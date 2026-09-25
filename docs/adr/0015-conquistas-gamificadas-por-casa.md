@@ -2,6 +2,27 @@
 
 **Status:** aceito · **Data:** gamificação
 
+> **Emenda (2026) — imagem como ícone + níveis.**
+> A `achievements` ganhou 3 colunas novas (SQL manual, pendente no Supabase —
+> sem elas o runtime quebra, pois insert/select das actions já as referenciam):
+> - **`image_url`** — imagem na pasta `achievements/` do bucket substitui o slug
+>   `icon` na exibição (ADMIN e dependente); secreta não desbloqueada permanece
+>   oculta, sem revelar a imagem. `deleteAchievement` remove do storage
+>   best-effort. *(Revoga o escopo "Sem upload de imagem" na lista abaixo.)*
+> - **`max_level`** (int, default 10, **só repetíveis**) — a cada ciclo o
+>   dependente sobe **1 nível** (`nextLevel = min(level+1, maxLevel)`); no cap a
+>   conquista **segue repetível**, com o nível travado pagando a recompensa do
+>   nível máximo. Única = nível 1 (server clampa `max_level = 1` quando
+>   `is_repeatable = false`).
+> - **`level_multiplier`** (numeric, default 1) — **recompensa no nível N =
+>   `reward_points × N × level_multiplier`** (`Math.round`, helper puro
+>   `achievementRewardAtLevel` em `src/utils/achievements.ts`). O crédito do
+>   resgate usa o valor do **nível atual**; a UI dependente mostra a recompensa
+>   por nível. *Mantém a regra do ADR-0001/ajuste de `approveTask`: crédito direto
+>   em `profiles.points` via service role, com rollback da linha em falha.*
+> Sem alteração em `dependent_achievements` (o cap fica só na leitura). Ver seção
+> no topo do `PROJECT_STATUS.md` para o SQL a aplicar.
+
 ## Contexto
 O fluxo tarefas→pontos→recompensas já cobre o "dever" e o "gasto", mas não há
 objetivos de longo prazo nem recompensa por marcos. Queremos que o ADMIN defina
@@ -36,12 +57,15 @@ Restrições herdadas do projeto:
   duas aprovações concorrentes não perdem incremento. `current_progress` **não é
   capado no banco** (a UI capa a barra em 100%; permite rollover natural).
 - **Resgate (`claimAchievementReward`)** — só DEPENDENT da própria casa; credita
-  `reward_points` **direto em `profiles.points`** (mesmo ajuste simples de
-  `approveTask`, sem serviço compartilhado). Guard anti-race no `unlocked_at`
+  **direto em `profiles.points`** (mesmo ajuste simples de `approveTask`, sem
+  serviço compartilhado) o valor **`reward_points × nível atual × level_multiplier`**
+  (`achievementRewardAtLevel`). Guard anti-race no `unlocked_at`
   lido (repetíveis) ou `level == 1` (não repetíveis); rollback da linha se o
   crédito falhar.
-  - **Repetível:** `level+1` e rollover `max(0, progress − target)`; `unlocked_at`
-    volta a null → re-desbloqueia no próximo ciclo e pode resgatar de novo.
+  - **Repetível:** `level+1` (cap em `max_level` — **no cap segue repetível**, com
+    o nível travado pagando a recompensa máxima) e rollover
+    `max(0, progress − target)`; `unlocked_at` volta a null → re-desbloqueia no
+    próximo ciclo e pode resgatar de novo.
   - **Não repetível:** resgata **uma vez** no nível 1; depois vira chip
     "Concluída" (`level` 2 no banco) e o botão some.
 - **Limpeza em cascata:** excluir uma conquista apaga o progresso (FK `on delete
@@ -81,8 +105,10 @@ Restrições herdadas do projeto:
 - **`updateAchievement` não recalcula progresso retroativamente** — mudar
   `target_count`/`metric_type` afeta apenas o futuro (o padrão de snapshot do
   projeto: título/custo são históricos em `notifications`, etc.).
-- **Sem upload de imagem** nas conquistas: o ícone é um slug Lucide (sem inflar
-  o storage/banco — mesma política do upload de imagem de tarefas).
+- ~~**Sem upload de imagem** nas conquistas~~: o ícone era um slug Lucide (sem
+  inflar o storage/banco — mesma política do upload de imagem de tarefas).
+  **Superado pela emenda (2026):** a opção de imagem passou a existir
+  (`image_url` + pasta `achievements/`), mantendo o slug como fallback.
 
 ## Consequências
 - Módulo novo exige **deploy + SQL das tabelas** (pendente no Supabase): sem as

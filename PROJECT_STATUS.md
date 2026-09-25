@@ -1,5 +1,30 @@
 # CasaSync Web — PROJECT STATUS
 
+## Conquistas — imagem como ícone, nível máximo configurável e multiplicador por nível (concluída — requer 3 colunas novas no banco)
+
+### O que foi implementado
+- **Imagem como ícone:** as `achievements` ganharam a coluna `image_url`; no form do ADMIN há novos **chips de slug + `ImageUpload`** (pasta `achievements/` no bucket `casasync-media`, owner = `house_id`). Quando `image_url` está definida, **substitui o ícone de símbolo** nos cards (ADMIN e dependente; conquistas **secretas** não desbloqueadas continuam ocultas, sem revelar a imagem). `deleteAchievement` remove a imagem do storage **best-effort** (`removeAchievementImage`).
+- **Nível máximo configurável (`max_level`, default 10):** campo "Nível máximo (repetível)" no form (1–1000, desabilitado para conquistas únicas). **A cada ciclo o dependente ganha 1 nível**; ao atingir o cap, a conquista **segue repetível** — o nível fica travado no máximo e a recompensa daquele nível é paga a cada novo ciclo. Conquista **única** continua resgatando só no nível 1 (server clampa `max_level = 1` quando `is_repeatable = false`).
+- **Multiplicador por nível (`level_multiplier`, numeric default 1):** `recompensa no nível N = reward_points × N × level_multiplier` (helper puro `achievementRewardAtLevel` em `src/utils/achievements.ts`, redondado). O crédito do resgate (`claimAchievementReward`) usa o valor do **nível atual** do dependente; a UI dependente mostra a recompensa por nível e o chip `×{mult} por nível` quando ≠ 1.
+- **Sem mudança em `dependent_achievements`:** `level`/`current_progress`/`unlocked_at` seguem como estão; o cap fica só na leitura (helper `maxAchievementLevel`).
+
+### SQL a aplicar no dashboard do Supabase (A PRENDER ANTES DE SUBIR — junto com `tasks.decay_started_at`)
+```sql
+-- Conquistas: ícone por imagem + níveis (cap + multiplicador de pontos por nível).
+alter table public.achievements add column if not exists image_url text;
+alter table public.achievements add column if not exists max_level int not null default 10;
+alter table public.achievements add column if not exists level_multiplier numeric not null default 1;
+-- Opcional: meter o multiplicador de conquistas antigas repetíveis em 1 (default já é 1).
+```
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth; os `<img>` novos são deliberados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo, `/achievements` dinâmico).
+
+### Pontos de atenção
+- **Sem as 3 colunas, o runtime quebra** (o `insert`/`select` das actions referencia `image_url`/`max_level`/`level_multiplier`) — aplicar o SQL antes de subir.
+- **Tarefa quebra no ORIGINAL:** ex.: os chips de nível no ADMIN e no DEPENDENT e o crédito de recompensa dependem de `max_level`/`level_multiplier` retornados pelo select.
+
+---
+
 ## Conquistas gamificadas por casa — rota `/achievements` (concluída — 2 tabelas novas já aplicadas no banco)
 
 ### O que foi implementado
@@ -257,7 +282,7 @@ alter publication supabase_realtime add table public.dependent_achievements;
 
 ---
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Exceções pendentes no banco (SQL abaixo, aplicar ANTES de subir):** apenas a coluna `tasks.decay_started_at` da seção de decaimento (sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra). As tabelas `achievements`/`dependent_achievements` da seção "Conquistas gamificadas" no topo **já foram aplicadas** pelo usuário (verificado via probe).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Exceções pendentes no banco (SQL abaixo, aplicar ANTES de subir):** a coluna `tasks.decay_started_at` do decaimento (sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra) **e as 3 colunas novas das conquistas** (`image_url`/`max_level`/`level_multiplier` na seção "imagem como ícone…" no topo — **sem elas o runtime de conquistas quebra**, pois insert/select das actions já referenciam os campos). As tabelas `achievements`/`dependent_achievements` **já foram aplicadas** pelo usuário (verificado via probe).
 
 ## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — requer 1 coluna nova)
 

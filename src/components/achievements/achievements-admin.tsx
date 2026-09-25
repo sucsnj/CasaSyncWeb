@@ -17,6 +17,7 @@ import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
@@ -38,10 +39,13 @@ type AchievementForm = {
   title: string
   description: string
   icon: string | null
+  imageUrl: string | null
   rewardPoints: string
   targetCount: string
   metricType: AchievementMetricType
   isRepeatable: boolean
+  maxLevel: string
+  levelMultiplier: string
   isSecret: boolean
 }
 
@@ -49,10 +53,13 @@ const EMPTY_FORM: AchievementForm = {
   title: '',
   description: '',
   icon: 'trophy',
+  imageUrl: null,
   rewardPoints: '10',
   targetCount: '5',
   metricType: 'COMPLETED_TASKS',
   isRepeatable: true,
+  maxLevel: '10',
+  levelMultiplier: '1',
   isSecret: false,
 }
 
@@ -141,10 +148,13 @@ export function AchievementsAdmin({
       title: achievement.title,
       description: achievement.description ?? '',
       icon: achievement.icon,
+      imageUrl: achievement.image_url,
       rewardPoints: String(achievement.reward_points),
       targetCount: String(achievement.target_count),
       metricType: achievement.metric_type,
       isRepeatable: achievement.is_repeatable,
+      maxLevel: String(achievement.max_level),
+      levelMultiplier: String(achievement.level_multiplier),
       isSecret: achievement.is_secret,
     })
     setEditingId(achievement.id)
@@ -160,14 +170,18 @@ export function AchievementsAdmin({
     if (submitting) return
     const rewardPoints = Number(form.rewardPoints)
     const targetCount = Number(form.targetCount)
+    const maxLevel = form.isRepeatable ? Number(form.maxLevel) : 1
     const payload = {
       title: form.title,
       description: form.description || null,
       icon: form.icon,
+      imageUrl: form.imageUrl,
       rewardPoints,
       targetCount,
       metricType: form.metricType,
       isRepeatable: form.isRepeatable,
+      maxLevel,
+      levelMultiplier: Number(form.levelMultiplier),
       isSecret: form.isSecret,
     }
 
@@ -188,10 +202,13 @@ export function AchievementsAdmin({
                   title: entry.title.trim(),
                   description: entry.description,
                   icon: entry.icon,
+                  image_url: entry.imageUrl,
                   reward_points: entry.rewardPoints,
                   target_count: entry.targetCount,
                   metric_type: entry.metricType,
                   is_repeatable: entry.isRepeatable,
+                  max_level: entry.maxLevel,
+                  level_multiplier: entry.levelMultiplier,
                   is_secret: entry.isSecret,
                 }
               : item
@@ -316,9 +333,9 @@ export function AchievementsAdmin({
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="grid gap-2">
-                <Label htmlFor="ach-reward">Recompensa (pontos)</Label>
+                <Label htmlFor="ach-reward">Recompensa base (pts)</Label>
                 <Input
                   id="ach-reward"
                   type="number"
@@ -341,27 +358,71 @@ export function AchievementsAdmin({
                   }
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ach-metric">Métrica do progresso</Label>
+                <select
+                  id="ach-metric"
+                  value={form.metricType}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      metricType: event.target.value as AchievementMetricType,
+                    })
+                  }
+                  className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                >
+                  {METRIC_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="ach-metric">Métrica do progresso</Label>
-              <select
-                id="ach-metric"
-                value={form.metricType}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    metricType: event.target.value as AchievementMetricType,
-                  })
-                }
-                className="min-h-12 w-full min-w-0 rounded-xl border border-input bg-white px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                {METRIC_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label
+                  htmlFor="ach-maxlevel"
+                  className={cn(
+                    form.isRepeatable ? 'text-slate-700' : 'text-slate-400'
+                  )}
+                >
+                  Nível máximo (repetível)
+                </Label>
+                <Input
+                  id="ach-maxlevel"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={form.isRepeatable ? form.maxLevel : '1'}
+                  disabled={!form.isRepeatable}
+                  onChange={(event) =>
+                    setForm({ ...form, maxLevel: event.target.value })
+                  }
+                />
+                <p className="text-xs text-slate-500">
+                  {form.isRepeatable
+                    ? 'A cada ciclo o dependente sobe 1 nível; no máximo, segue repetível pagando essa recompensa.'
+                    : 'Conquistas únicas resgatam uma vez no nível 1.'}
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ach-mult">Multiplicador por nível</Label>
+                <Input
+                  id="ach-mult"
+                  type="number"
+                  min={0}
+                  step={0.25}
+                  value={form.levelMultiplier}
+                  onChange={(event) =>
+                    setForm({ ...form, levelMultiplier: event.target.value })
+                  }
+                />
+                <p className="text-xs text-slate-500">
+                  Pontos por nível = recompensa × nível × multiplicador
+                </p>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -389,29 +450,47 @@ export function AchievementsAdmin({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-6">
-              <Label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.isRepeatable}
-                  onChange={(event) =>
-                    setForm({ ...form, isRepeatable: event.target.checked })
-                  }
-                  className="size-4 rounded border-slate-300 accent-indigo-600"
+<div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+              <div className="flex flex-col gap-2">
+                <Label>Imagem como ícone (opcional)</Label>
+                <ImageUpload
+                  folder="achievements"
+                  ownerId={houseId}
+                  value={form.imageUrl}
+                  onChange={(url) => setForm({ ...form, imageUrl: url })}
+                  label="Enviar imagem"
                 />
-                Repetível (pode resgatar de novo a cada ciclo)
-              </Label>
-              <Label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.isSecret}
-                  onChange={(event) =>
-                    setForm({ ...form, isSecret: event.target.checked })
-                  }
-                  className="size-4 rounded border-slate-300 accent-indigo-600"
-                />
-                Secreta (escondida até desbloquear)
-              </Label>
+                <p className="text-xs text-slate-500">
+                  Quando definida, a imagem substitui o ícone de símbolo nos
+                  cards (para o dependente e para o ADMIN). Envie uma imagem
+                  quadrada (PNG/JPG/WEBP).
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Opções</Label>
+                <Label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={form.isRepeatable}
+                    onChange={(event) =>
+                      setForm({ ...form, isRepeatable: event.target.checked })
+                    }
+                    className="size-4 rounded border-slate-300 accent-indigo-600"
+                  />
+                  Repetível (pode resgatar de novo a cada ciclo)
+                </Label>
+                <Label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={form.isSecret}
+                    onChange={(event) =>
+                      setForm({ ...form, isSecret: event.target.checked })
+                    }
+                    className="size-4 rounded border-slate-300 accent-indigo-600"
+                  />
+                  Secreta (escondida até desbloquear)
+                </Label>
+              </div>
             </div>
 
             <Button
@@ -449,12 +528,20 @@ export function AchievementsAdmin({
               <Card key={achievement.id}>
                 <div className="flex flex-col gap-3 p-4">
                   <div className="flex items-center gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-                      <AchievementIcon
-                        icon={achievement.icon}
-                        className="size-5"
+                    {achievement.image_url ? (
+                      <img
+                        src={achievement.image_url}
+                        alt=""
+                        className="size-10 shrink-0 rounded-xl border border-slate-200 object-cover shadow-sm"
                       />
-                    </span>
+                    ) : (
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                        <AchievementIcon
+                          icon={achievement.icon}
+                          className="size-5"
+                        />
+                      </span>
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold text-slate-800">
                         {achievement.title}
@@ -465,7 +552,7 @@ export function AchievementsAdmin({
                           ? 'A cada tarefa aprovada'
                           : 'A cada pontos ganhos'}
                         {' · +'}
-                        {achievement.reward_points} pts
+                        {achievement.reward_points} pts base
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
@@ -525,9 +612,20 @@ export function AchievementsAdmin({
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">
                       Recompensa: +{achievement.reward_points} pts
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
-                      {achievement.is_repeatable ? 'Repetível' : 'Única'}
-                    </span>
+                    {achievement.level_multiplier !== 1 ? (
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-700">
+                        ×{achievement.level_multiplier} por nível
+                      </span>
+                    ) : null}
+                    {achievement.is_repeatable ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                        Repetível · Nível máx: {achievement.max_level}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                        Única
+                      </span>
+                    )}
                     {achievement.is_secret ? (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-700">
                         Secreta
@@ -558,7 +656,9 @@ export function AchievementsAdmin({
                               {entry ? (
                                 <span className="flex shrink-0 items-center gap-2">
                                   <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                                    Nível {entry.level}
+                                    {achievement.is_repeatable
+                                      ? `Nível ${entry.level}/${achievement.max_level}`
+                                      : `Nível ${entry.level}`}
                                   </span>
                                   <span className="text-xs text-slate-500">
                                     {entry.current_progress}/

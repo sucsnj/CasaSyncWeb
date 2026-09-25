@@ -423,10 +423,13 @@ export interface Database {
           title: string
           description: string | null
           icon: string | null
+          image_url: string | null
           reward_points: number
           target_count: number
           metric_type: 'COMPLETED_TASKS' | 'EARNED_POINTS'
           is_repeatable: boolean
+          max_level: number
+          level_multiplier: number
           is_secret: boolean
           created_by: string | null
           created_at: string
@@ -438,10 +441,13 @@ export interface Database {
           title: string
           description?: string | null
           icon?: string | null
+          image_url?: string | null
           reward_points?: number
           target_count?: number
           metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
           is_repeatable?: boolean
+          max_level?: number
+          level_multiplier?: number
           is_secret?: boolean
           created_by?: string | null
           created_at?: string
@@ -453,10 +459,13 @@ export interface Database {
           title?: string
           description?: string | null
           icon?: string | null
+          image_url?: string | null
           reward_points?: number
           target_count?: number
           metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
           is_repeatable?: boolean
+          max_level?: number
+          level_multiplier?: number
           is_secret?: boolean
           created_by?: string | null
           created_at?: string

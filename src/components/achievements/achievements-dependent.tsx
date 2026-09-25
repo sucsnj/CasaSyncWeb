@@ -6,6 +6,10 @@ import { toast } from 'sonner'
 import { PartyPopper } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { claimAchievementReward } from '@/actions/achievements'
+import {
+  achievementRewardAtLevel,
+  maxAchievementLevel,
+} from '@/utils/achievements'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
@@ -81,7 +85,7 @@ export function AchievementsDependent({
         toast.error(res.ok ? 'Conquista indisponível no momento.' : res.error)
         return
       }
-      const { points, nextLevel } = res.data
+      const { nextLevel } = res.data
 
       setViews((prev) =>
         prev.map((entry) => {
@@ -107,7 +111,7 @@ export function AchievementsDependent({
         })
       )
 
-      toast.success(`+${points} pts! Você subiu para o nível ${nextLevel}.`)
+      toast.success(res.message)
       router.refresh()
     } catch {
       toast.error('Falha ao resgatar a conquista.')
@@ -168,6 +172,15 @@ export function AchievementsDependent({
         const claimed = !achievement.is_repeatable && level > 1
         const claimable = unlocked && !claimed
         const target = achievement.target_count
+        const maxLevel = maxAchievementLevel(
+          achievement.is_repeatable,
+          achievement.max_level
+        )
+        const reward = achievementRewardAtLevel(
+          achievement.reward_points,
+          level,
+          achievement.level_multiplier
+        )
         const percent = progress
           ? Math.min(100, Math.round((progress.current_progress / target) * 100))
           : 0
@@ -183,16 +196,27 @@ export function AchievementsDependent({
             )}
           >
             <div className="flex items-center gap-3">
-              <span
-                className={cn(
-                  'flex size-10 shrink-0 items-center justify-center rounded-xl',
-                  unlocked
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-sky-100 text-sky-700'
-                )}
-              >
-                <AchievementIcon icon={achievement.icon} className="size-5" />
-              </span>
+              {achievement.image_url ? (
+                <img
+                  src={achievement.image_url}
+                  alt=""
+                  className={cn(
+                    'size-10 shrink-0 rounded-xl border border-slate-200 object-cover shadow-sm',
+                    unlocked && 'border-amber-300'
+                  )}
+                />
+              ) : (
+                <span
+                  className={cn(
+                    'flex size-10 shrink-0 items-center justify-center rounded-xl',
+                    unlocked
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-sky-100 text-sky-700'
+                  )}
+                >
+                  <AchievementIcon icon={achievement.icon} className="size-5" />
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-slate-800">
                   {achievement.title}
@@ -207,7 +231,11 @@ export function AchievementsDependent({
                   ? 'bg-emerald-100 text-emerald-700'
                   : 'bg-indigo-100 text-indigo-700'
               )}>
-                {claimed ? 'Concluída' : `Nível ${level}`}
+                {claimed
+                  ? 'Concluída'
+                  : achievement.is_repeatable
+                    ? `Nível ${level}/${maxLevel}`
+                    : `Nível ${level}`}
               </span>
             </div>
 
@@ -217,8 +245,13 @@ export function AchievementsDependent({
 
             <div className="flex items-center justify-between gap-2">
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-bold text-amber-700">
-                +{achievement.reward_points} pts
+                +{reward} pts
               </span>
+              {achievement.level_multiplier !== 1 ? (
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                  ×{achievement.level_multiplier} por nível
+                </span>
+              ) : null}
               {unlocked && !claimed ? (
                 <span className="flex items-center gap-1 text-xs font-semibold text-amber-700">
                   <PartyPopper className="size-4" /> Desbloqueada!
@@ -249,7 +282,7 @@ export function AchievementsDependent({
               >
                 {claimingId === achievement.id
                   ? 'Resgatando…'
-                  : `Resgatar +${achievement.reward_points} PTS`}
+                  : `Resgatar +${reward} PTS`}
               </Button>
             ) : claimed ? (
               <p className="text-center text-xs text-emerald-600">
