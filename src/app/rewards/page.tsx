@@ -225,6 +225,7 @@ export default async function RewardsPage() {
           />
           <ComunicadoOverlay
             houseId={dependentHouse.id}
+            userId={user.id}
             initialQueue={dueComunicados}
           />
         </>

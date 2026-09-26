@@ -18,6 +18,7 @@ import {
   type DueComunicado,
 } from '@/utils/comunicados'
 import type { ActionResult } from './types'
+import { notifyHouse } from '@/utils/notifications'
 
 /**
  * Verifica (via service role) que o ADMIN controla a casa ativa como membro
@@ -253,6 +254,23 @@ export async function setComunicadoPublished(
     .update({ published, updated_at: new Date().toISOString() })
     .eq('id', comunicadoId)
   if (error) return { ok: false, error: 'Falha ao alternar a publicação.' }
+
+  // Publicar também sinaliza os DEPENDENTEs por notificação (`notifications` é
+  // o canal Realtime que comprovadamente entrega ao vivo no navegador). O
+  // overlay escuta essas notificações e revalida a fila — a 1ª exibição é
+  // imediata mesmo que o Realtime direto de `comunicados` não entregue.
+  if (published) {
+    await notifyHouse(admin, {
+      houseId: activeHouse.id,
+      actorId: auth.adminId,
+      side: 'DEPENDENTS',
+      type: 'COMUNICADO_PUBLISHED',
+      title: 'Novo comunicado da casa',
+      body: comunicado.title,
+      link: '/',
+      excludeUserId: auth.adminId,
+    })
+  }
 
   revalidatePath('/dashboard/admin/comunicados')
   return {

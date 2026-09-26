@@ -175,6 +175,7 @@ export default async function TasksPage() {
           />
           <ComunicadoOverlay
             houseId={dependentHouse.id}
+            userId={user.id}
             initialQueue={dueComunicados}
           />
         </>

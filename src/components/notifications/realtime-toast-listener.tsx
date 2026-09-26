@@ -23,6 +23,7 @@ const TYPE_STYLE: Record<string, 'success' | 'error' | 'info' | 'warning'> = {
   SUGGESTION_REJECTED: 'error',
   QUICK_MESSAGE: 'info',
   PENALTY: 'info',
+  COMUNICADO_PUBLISHED: 'info',
 }
 
 export function RealtimeToastListener({ userId }: { userId: string }) {

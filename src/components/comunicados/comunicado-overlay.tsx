@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { Megaphone } from 'lucide-react'
@@ -11,6 +11,7 @@ import {
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { Button } from '@/components/ui/button'
 import type { DueComunicado } from '@/utils/comunicados'
+import type { NotificationRow } from '@/types/notifications'
 
 /**
  * Fila de comunicados "devidos" do DEPENDENTE. Exibe um aviso por vez, com
@@ -21,15 +22,25 @@ import type { DueComunicado } from '@/utils/comunicados'
  * A fila inicial vem do servidor (próxima abertura); eventos Realtime de
  * publicação/edição reavaliam a fila ao vivo.
  */
+const emptySubscribe = () => () => {}
+
 export function ComunicadoOverlay({
   houseId,
+  userId,
   initialQueue,
 }: {
   houseId: string
+  userId: string
   initialQueue: DueComunicado[]
 }) {
   const [queue, setQueue] = useState<DueComunicado[]>(initialQueue)
   const [pending, setPending] = useState(false)
+  // O overlay é exclusivamente client-side (portal em `document.body`): montar a
+  // árvore durante o SSR divergia do cliente (branch `typeof document`), o que
+  // quebrava a hidratação quando a fila tinha itens. `useSyncExternalStore`
+  // (padrão do `FormattedDateTime`): o snapshot do servidor é `false`, o do
+  // cliente é `true` — o portal só existe após a hidratação, sem efeito.
+  const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false)
   const excludedRef = useRef(new Set<string>())
   const confirmRef = useRef<HTMLButtonElement>(null)
 
@@ -56,6 +67,21 @@ export function ComunicadoOverlay({
     },
     onDelete: () => {
       void refreshDue()
+    },
+  })
+
+  // Sinal de publicação: a publicação do ADMIN também grava uma notificação
+  // por dependente (`notifications` é o canal que entrega ao vivo com
+  // confiança neste app — sino/toast). Ao receber, reavalia a fila: garante a
+  // 1ª exibição imediata mesmo se o Realtime de `comunicados` não entregar.
+  usePostgresChanges<NotificationRow>({
+    table: 'notifications',
+    filter: `recipient_id=eq.${userId}`,
+    event: 'INSERT',
+    onUpsert: (notification) => {
+      if (notification.type === 'COMUNICADO_PUBLISHED') {
+        void refreshDue()
+      }
     },
   })
 
@@ -108,7 +134,7 @@ export function ComunicadoOverlay({
     }
   }
 
-  if (!current || typeof document === 'undefined') return null
+  if (!current || !isMounted) return null
 
   const remaining = current.remaining
 
