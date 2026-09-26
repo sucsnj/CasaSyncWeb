@@ -173,11 +173,7 @@ export default async function TasksPage() {
             dueSoonHours={taskSlaSettings?.dueSoonHours}
             taskDecay={taskDecaySettings}
           />
-          <ComunicadoOverlay
-            houseId={dependentHouse.id}
-            userId={user.id}
-            initialQueue={dueComunicados}
-          />
+          <ComunicadoOverlay initialQueue={dueComunicados} />
         </>
       )
     }

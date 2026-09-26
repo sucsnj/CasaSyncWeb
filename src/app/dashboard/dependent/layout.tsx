@@ -68,11 +68,7 @@ export default async function DependentDashboardLayout({
         initialNotifications={notifications as NotificationItem[]}
       />
       {house ? (
-        <ComunicadoOverlay
-          houseId={house.id}
-          userId={user.id}
-          initialQueue={dueComunicados}
-        />
+        <ComunicadoOverlay initialQueue={dueComunicados} />
       ) : null}
       {children}
     </div>

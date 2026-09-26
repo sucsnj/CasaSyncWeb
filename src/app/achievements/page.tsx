@@ -159,11 +159,7 @@ export default async function AchievementsPage() {
             userId={user.id}
             initialViews={views}
           />
-          <ComunicadoOverlay
-            houseId={dependentHouse.id}
-            userId={user.id}
-            initialQueue={dueComunicados}
-          />
+          <ComunicadoOverlay initialQueue={dueComunicados} />
         </>
       )
     }

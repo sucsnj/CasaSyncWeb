@@ -39,11 +39,14 @@ create table if not exists public.comunicado_deliveries (
 create index if not exists comunicado_deliveries_house_idx on public.comunicado_deliveries (house_id);
 create index if not exists comunicado_deliveries_profile_idx on public.comunicado_deliveries (profile_id);
 
--- 3) RLS: leituras client-side (Realtime dos ADMINs) via policy por membro;
---    escritas/leituras de negócio são service role (padrão ADR-0006).
+-- 3) RLS: sem Realtime client no módulo (decisão de produto — o aviso só entra
+--    num render server-side). A policy de SELECT e a publication do passo 4 são
+--    OPCIONAIS (herança da Fase 1, ficam inofensivas se já aplicadas) — o app
+--    não depende delas. Escritas/leituras de negócio são service role.
 alter table public.comunicados enable row level security;
 alter table public.comunicado_deliveries enable row level security;
 
+-- 4) OPCIONAL (não é mais necessário — sem Realtime client):
 create policy "comunicados_select_members" on public.comunicados
   for select to authenticated
   using (exists (
@@ -51,7 +54,4 @@ create policy "comunicados_select_members" on public.comunicados
     where hm.house_id = comunicados.house_id
       and hm.profile_id = auth.uid()
   ));
-
--- 4) Realtime SÓ de `comunicados`: o overlay do dependente reavalia a fila na
---    publicação/edição; as entregas não são publicadas (o servidor deriva).
-alter publication supabase_realtime add table public.comunicados;
+-- alter publication supabase_realtime add table public.comunicados;

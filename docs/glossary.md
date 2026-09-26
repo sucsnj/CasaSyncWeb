@@ -73,17 +73,20 @@ em primeiro; siglas técnicas resolvidas no fim.
 ## Comunicados
 - **Comunicado** (`comunicados`) — aviso da casa publicado pelo ADMIN que o
   dependente **precisa confirmar** (modal bloqueante). Rascunho (`published:
-  false`) é invisível ao dependente; publicar dispara a 1ª exibição imediata
-  (Realtime) ou na próxima abertura.
+  false`) é invisível ao dependente. **Sem tempo real**: a 1ª exibição respeita
+  a agenda e só ocorre num render server-side (atualizar/trocar de endpoint) —
+  no primeiro slot agendado (weekday + horário) a partir da publicação.
 - **Repetição por dependente** — cada confirmação (`comunicado_deliveries`)
   agenda a próxima exibição (período em dias, dias da semana e horário em
   America/Recife) até completar `repeats_total` confirmações.
 - **Confirmação / entrega** (`comunicado_deliveries`) — `delivered_count` +
   `last_confirmed_at` por (comunicado, dependente); `last_confirmed_at` é a
   referência do cálculo da próxima ocorrência.
-- **Devido** — primeiro aviso sem entrega registrada **ou** próxima ocorrência
-  vencida (derivado no servidor via `getDueComunicados`); sem cron — o "disparo"
-  agendado é calculado na abertura/refresh.
+- **Devido** — primeiro aviso sem entrega registrada quando `now >=` primeira
+  ocorrência (a partir de `created_at`, **sem intervalo** no 1º ciclo) **ou**
+  próxima ocorrência vencida (derivado no servidor via `getDueComunicados`); sem
+  cron e sem Realtime — o "disparo" agendado só é calculado num render
+  server-side (abertura/troca de endpoint/refresh após confirmar).
 
 ## Ganhos em Realtime
 - **publication `supabase_realtime`** — índices de quais tabelas emitem eventos.

@@ -1,16 +1,23 @@
 # ADR-0017 — Comunicados: avisos da casa que o dependente precisa confirmar
 
-Status: Proposto (requer aplicar o SQL e deploy)
+Status: Aceito (requer aplicar o SQL e deploy)
 
 ## Contexto
 
 O ADMIN precisa publicar avisos importantes da casa (reuniões, recados,
 orientações) que o dependente **precisa ler e confirmar** — não é uma
-notificação descartável do sino. O aviso deve aparecer em tempo real para quem
-está logado e, para quem está com o app fechado/deslogado, na próxima abertura;
-o dependente só prossegue ao tocar em "Confirmar"; e o ADMIN pode repetir o
-aviso por agendamento (N confirmações por dependente, período em dias, dias da
-semana e horário).
+notificação descartável do sino. O aviso deve aparecer para o dependente
+**respeitando uma agenda** (dias da semana + horário em America/Recife), ser
+repetido por agendamento (N confirmações por dependente, período em dias) e o
+dependente só prossegue ao tocar em "Confirmar".
+
+**Sem tempo real (decisão de produto, 2026):** tentou-se entregar o aviso ao
+vivo/na hora — primeiro via Realtime direto de `comunicados` (não entregava
+mesmo com policy + publication aplicadas) e depois via notificação
+`COMUNICADO_PUBLISHED` como sinal (funcionava, mas o esforço era
+desproporcional ao objetivo). **Abandonado:** o comunicado só é exibido no
+render server-side das telas do dependente — ao atualizar a página, trocar de
+endpoint ou após confirmar.
 
 ## Decisão
 
@@ -24,15 +31,18 @@ semana e horário).
 - **`comunicado_deliveries`** — uma linha por (comunicado, dependente, casa):
   `delivered_count` e `last_confirmed_at`. `UNIQUE (comunicado_id, profile_id)`.
   Sem policies client: só o service role lê/escreve (padrão ADR-0006).
-- RLS só para o Realtime dos ADMINs (`comunicados_select_members`) e `comunicados`
-  entra na publication `supabase_realtime`. As entregas **não** são publicadas —
-  a UI do ADMIN (total de confirmações) atualiza via `router.refresh()` pós-ação.
+- **Sem Realtime client:** a entrega é por render server-side
+  (`getDueComunicados()`/`confirmComunicadoDelivery` via service role) — não há
+  policy de SELECT nem publication para `comunicados`/`comunicado_deliveries`
+  (se aplicadas no banco, ficam inofensivas). A UI do ADMIN (total de
+  confirmações) atualiza via `router.refresh()` pós-ação.
 
 ### Regras de negócio (fixadas com o usuário)
 
-- **Primeira exibição é imediata** à publicação, para todos os dependentes da
-  casa ativa (sem seleção). Quem está fechado/deslogado recebe na próxima
-  abertura — a primeira exibição **ignora** dia da semana/horário.
+- **A 1ª exibição respeita a agenda** (não é imediata): o aviso aparece no
+  **primeiro slot agendado** (dia da semana em `repeat_weekdays` + `repeat_time`)
+  a partir do momento da publicação (`created_at`), **sem somar o intervalo**
+  nesse primeiro ciclo — um horário futuro não é "adiantado".
 - **Repetição é por dependente.** Cada "Confirmar" soma `delivered_count`, grava
   `last_confirmed_at` e agenda a próxima exibição via
   `nextComunicadoOccurrence(after, agenda)` (referência = `last_confirmed_at` +
@@ -41,11 +51,12 @@ semana e horário).
   `repeats_total`, o dependente para de receber.
 - **Sem cron/background no projeto:** o "disparo agendado" é mero cálculo
   server-side no `getDueComunicados()` (usado no render de cada tela e no
-  refresh do overlay). "Devido" = sem linha de entrega (`delivered_count = 0`,
-  primeira) **ou** `now >= próxima ocorrência` (repetições). A publicação ao
-  vivo é coberta pelo Realtime; o horário passado do dia não é pulado — aparece
-  na próxima abertura (o helper devolve o próximo instante **futuro** na direção
-  do relógio).
+  refresh do overlay). "Devido" = **sem** linha de entrega e `now >=` primeira
+  ocorrência (a partir de `created_at`, **intervalo 0** no primeiro ciclo) **ou**
+  `now >= próxima ocorrência` de `last_confirmed_at` (repetições). **Sem
+  Realtime:** um aviso só aparece num novo render server-side (atualizar página,
+  trocar de endpoint ou após confirmar) — o horário passado do dia não é pulado,
+  aparece no render seguinte (o helper devolve o próximo instante **futuro**).
 - **Confirmação é bloqueante:** overlay em portal `z-[120]` (acima do Modal),
   sem botão fechar, sem toque fora, sem Esc, com foco preso no botão
   "Confirmar" e scroll do documento travado. A fila é uma-a-uma; itens não mais
@@ -62,7 +73,8 @@ semana e horário).
   para 5 itens); link só pelo card, como `/dashboard/admin/settings`.
 - DEPENDENT: overlay nas 4 telas dependentes (`/dashboard/dependent`,
   `/tasks`, `/rewards`, `/achievements`) com fila inicial **do servidor** e
-  refresh via Realtime de `comunicados` pelo `house_id`.
+  **sem Realtime** — o aviso entra apenas num render server-side; `refreshDue()`
+  reavalia a fila após confirmar.
 - Autorização sempre derivada da sessão (ADR-0001/0006): ADMIN valida controle
   pela membresia (`house_members.role='ADMIN'`) e casa ativa; DEPENDENT pela
   própria casa. Nenhum `house_id` vem de parâmetro público.
@@ -71,8 +83,8 @@ semana e horário).
 
 - **Requer SQL aplicado no Supabase** (bloco em `docs/sql/comunicados.sql` e na
   seção "Comunicados" do `PROJECT_STATUS.md`) e **deploy** para valer online.
-- A agenda (dias/horário) vale para as **repetições**; editar a agenda não
-  recalcula confirmações já feitas.
+- A agenda (dias/horário) vale para a **1ª exibição e as repetições**; editar a
+  agenda não recalcula confirmações já feitas.
 - Limite conhecido: sem Realtime nas entregas, o total de confirmações da tela
   ADMIN só entra ao salvar/abrir (refreshes pós-ação) — aceito.
 - Limite conhecido: um "horário que passou" num dia da semana diferente do hoje

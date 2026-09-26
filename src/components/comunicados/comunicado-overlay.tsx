@@ -8,10 +8,8 @@ import {
   confirmComunicadoDelivery,
   getDueComunicados,
 } from '@/actions/comunicados'
-import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { Button } from '@/components/ui/button'
 import type { DueComunicado } from '@/utils/comunicados'
-import type { NotificationRow } from '@/types/notifications'
 
 /**
  * Fila de comunicados "devidos" do DEPENDENTE. Exibe um aviso por vez, com
@@ -19,18 +17,15 @@ import type { NotificationRow } from '@/types/notifications'
  * "Confirmar" — isso registra a confirmação (`comunicado_deliveries`) e
  * agenda a próxima repetição conforme a configuração do ADMIN.
  *
- * A fila inicial vem do servidor (próxima abertura); eventos Realtime de
- * publicação/edição reavaliam a fila ao vivo.
+ * SEM tempo real (decisão de produto): a fila vem do servidor no render de
+ * cada tela (`getDueComunicados()`); ela só muda quando o dependente atualiza
+ * a página, troca de endpoint (re-render) ou confirma um aviso (`refreshDue`).
  */
 const emptySubscribe = () => () => {}
 
 export function ComunicadoOverlay({
-  houseId,
-  userId,
   initialQueue,
 }: {
-  houseId: string
-  userId: string
   initialQueue: DueComunicado[]
 }) {
   const [queue, setQueue] = useState<DueComunicado[]>(initialQueue)
@@ -56,34 +51,6 @@ export function ComunicadoOverlay({
       console.error('[COMUNICADOS] Falha ao atualizar a fila:', err)
     }
   }
-
-  // Realtime: publicar/editar/despublicar/excluir um comunicado reavalia a
-  // fila do dependente (o servidor decide o que é "devido" — a agenda mora lá).
-  usePostgresChanges<{ id: string }>({
-    table: 'comunicados',
-    filter: `house_id=eq.${houseId}`,
-    onUpsert: () => {
-      void refreshDue()
-    },
-    onDelete: () => {
-      void refreshDue()
-    },
-  })
-
-  // Sinal de publicação: a publicação do ADMIN também grava uma notificação
-  // por dependente (`notifications` é o canal que entrega ao vivo com
-  // confiança neste app — sino/toast). Ao receber, reavalia a fila: garante a
-  // 1ª exibição imediata mesmo se o Realtime de `comunicados` não entregar.
-  usePostgresChanges<NotificationRow>({
-    table: 'notifications',
-    filter: `recipient_id=eq.${userId}`,
-    event: 'INSERT',
-    onUpsert: (notification) => {
-      if (notification.type === 'COMUNICADO_PUBLISHED') {
-        void refreshDue()
-      }
-    },
-  })
 
   const current = queue[0]
 

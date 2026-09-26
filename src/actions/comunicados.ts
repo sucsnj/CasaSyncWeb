@@ -18,7 +18,6 @@ import {
   type DueComunicado,
 } from '@/utils/comunicados'
 import type { ActionResult } from './types'
-import { notifyHouse } from '@/utils/notifications'
 
 /**
  * Verifica (via service role) que o ADMIN controla a casa ativa como membro
@@ -109,9 +108,8 @@ export type ComunicadoInput = {
 
 /**
  * ADMIN cria um comunicado (rascunho, `published = false`). Publicar é um passo
- * à parte (`setComunicadoPublished`); na publicação todos os dependentes da
- * casa ativa passam a recebê-lo em tempo real (quem está fechado, na próxima
- * abertura).
+ * à parte (`setComunicadoPublished`); na publicação ele passa a ser "devido"
+ * para os dependentes da casa no próximo slot agendado (agenda do comunicado).
  */
 export async function createComunicado(
   input: ComunicadoInput
@@ -224,9 +222,10 @@ export async function updateComunicado(
 }
 
 /**
- * ADMIN publica/despublica um comunicado da casa ativa. Publicar dispara o
- * Realtime para os dependentes (a fila deles reavalia os "devidos" na hora);
- * despublicar os faz parar de receber nas próximas avaliações.
+ * ADMIN publica/despublica um comunicado da casa ativa. Sem tempo real
+ * (decisão de produto): os dependentes passam a vê-lo na próxima atualização
+ * da tela ou troca de endpoint (`getDueComunicados()` no render); despublicar
+ * os faz parar de receber nesses mesmos renders.
  */
 export async function setComunicadoPublished(
   comunicadoId: string,
@@ -255,28 +254,11 @@ export async function setComunicadoPublished(
     .eq('id', comunicadoId)
   if (error) return { ok: false, error: 'Falha ao alternar a publicação.' }
 
-  // Publicar também sinaliza os DEPENDENTEs por notificação (`notifications` é
-  // o canal Realtime que comprovadamente entrega ao vivo no navegador). O
-  // overlay escuta essas notificações e revalida a fila — a 1ª exibição é
-  // imediata mesmo que o Realtime direto de `comunicados` não entregue.
-  if (published) {
-    await notifyHouse(admin, {
-      houseId: activeHouse.id,
-      actorId: auth.adminId,
-      side: 'DEPENDENTS',
-      type: 'COMUNICADO_PUBLISHED',
-      title: 'Novo comunicado da casa',
-      body: comunicado.title,
-      link: '/',
-      excludeUserId: auth.adminId,
-    })
-  }
-
   revalidatePath('/dashboard/admin/comunicados')
   return {
     ok: true,
     message: published
-      ? `Comunicado "${comunicado.title}" publicado — os dependentes recebem agora.`
+      ? `Comunicado "${comunicado.title}" publicado — os dependentes verão conforme a agenda.`
       : 'Comunicado despublicado.',
   }
 }
@@ -317,16 +299,19 @@ export async function deleteComunicado(
 
 /**
  * Comunicados "devidos" do DEPENDENTE da própria casa (papel e casa derivados
- * da sessão — nunca de input público):
+ * da sessão — nunca de input público). SEM tempo real (decisão de produto):
+ * usado no render server-side das telas do dependente — a fila só muda em
+ * refresh/troca de endpoint (re-render) e após confirmar.
  *
- * - sem linha de entrega → devido (primeira exibição, imediata desde a
- *   publicação; cobre quem estava com o app fechado);
+ * A 1ª exibição TAMBÉM respeita a agenda (não é mais imediata) — ela ocorre no
+ * primeiro slot agendado (weekday + horário em America/Recife) a partir da
+ * publicação (`created_at`), sem somar o intervalo nesse primeiro ciclo.
+ *
+ * - sem linha de entrega → devido quando `now >= primeira ocorrência` a partir
+ *   de `created_at` (intervalo ignorado na 1ª exibição);
  * - `delivered_count >= repeats_total` → encerrado para este dependente;
- * - senão, devido quando `now >= próxima ocorrência` da agenda
- *   (`repeat_interval_days`/`repeat_weekdays`/`repeat_time`).
- *
- * Usado pelo servidor (lista inicial das telas do dependente) e pela fila
- * client-side (refresh a cada evento Realtime).
+ * - senão, devido quando `now >= próxima ocorrência` a partir da última
+ *   confirmação (`last_confirmed_at`, somando o intervalo).
  */
 export async function getDueComunicados(): Promise<DueComunicado[]> {
   const { user, profile } = await getSessionProfile()
@@ -369,17 +354,19 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
     const delivery = deliveriesByComunicado.get(comunicado.id)
     const deliveredCount = delivery?.delivered_count ?? 0
 
-    if (!delivery) {
-      due.push(toDueComunicado(comunicado, 0))
-      continue
-    }
-
     if (deliveredCount >= comunicado.repeats_total) continue
 
-    const lastConfirmed = delivery.last_confirmed_at
+    // Referência da próxima ocorrência: última confirmação (repetição) ou a
+    // publicação (1ª exibição). Na 1ª, o intervalo NÃO entra no cálculo — o
+    // comunicado aparece no próximo slot agendado (weekday + horário) a partir
+    // de `created_at`, então um horário futuro não é "adiantado".
+    const reference = delivery?.last_confirmed_at
       ? new Date(delivery.last_confirmed_at)
       : new Date(comunicado.created_at)
-    const next = nextComunicadoOccurrence(lastConfirmed, comunicadoSchedule(comunicado))
+    const schedule = comunicadoSchedule(comunicado)
+    const next = delivery
+      ? nextComunicadoOccurrence(reference, schedule)
+      : nextComunicadoOccurrence(reference, { ...schedule, repeatIntervalDays: 0 })
     if (now.getTime() >= next.getTime()) {
       due.push(toDueComunicado(comunicado, deliveredCount))
     }

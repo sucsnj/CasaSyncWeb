@@ -27,7 +27,6 @@ export type NotificationType =
   | 'SUGGESTION_REJECTED'
   | 'QUICK_MESSAGE'
   | 'PENALTY'
-  | 'COMUNICADO_PUBLISHED'
 
 export type NotificationItem = {
   id: string

@@ -2,9 +2,12 @@
  * Módulo puro dos COMUNICADOS (avisos da casa publicados pelo ADMIN).
  *
  * Regras de negócio (confirmadas com o usuário):
- * - O comunicado publicado aparece Imediatamente (tempo real) para todos os
- *   dependentes da casa ativa; quem está com o app fechado/deslogado recebe na
- *   próxima abertura — o primeiro aviso não respeita dia/horário.
+ * - SEM tempo real (decisão de produto): o comunicado só é exibido no render
+ *   server-side das telas do dependente — na atualização da página, troca de
+ *   endpoint ou após confirmar. Não há Realtime nem sinal por notificação.
+ * - A 1ª exibição respeita a agenda (não é imediata): aparece no primeiro
+ *   slot agendado (dia da semana + horário em America/Recife) a partir do
+ *   momento da publicação — um horário futuro não é "adiantado".
  * - Repetição é POR DEPENDENTE: cada confirmação agenda a próxima exibição
  *   conforme o período (dias), os dias da semana e o horário configurados;
  *   quando o dependente completa `repeats_total` confirmações, para de receber.
@@ -118,8 +121,10 @@ export function recifeWeekday(instant: Date): number {
  *   candidato   = primeiro instante >= referência cujo dia da semana está em
  *                 `repeatWeekdays` e cujo relógio local (Recife) é `HH:MM`
  *
- * A primeira exibição NÃO passa por aqui (é imediata após a publicação ou na
- * próxima abertura de quem perdeu) — este helper só agenda as repetições.
+ * O helper agenda a 1ª exibição e as repetições. Para a 1ª, o chamador passa
+ * uma agenda com `repeatIntervalDays: 0` e `after` = momento da publicação:
+ * o resultado é o primeiro slot (dia da semana + horário) >= a publicação. As
+ * repetições seguem com `after` = última confirmação e intervalo real.
  */
 export function nextComunicadoOccurrence(
   after: Date,

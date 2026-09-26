@@ -223,11 +223,7 @@ export default async function RewardsPage() {
               created_at: suggestion.created_at,
             }))}
           />
-          <ComunicadoOverlay
-            houseId={dependentHouse.id}
-            userId={user.id}
-            initialQueue={dueComunicados}
-          />
+          <ComunicadoOverlay initialQueue={dueComunicados} />
         </>
       )
     }
