@@ -426,7 +426,15 @@ export interface Database {
           image_url: string | null
           reward_points: number
           target_count: number
-          metric_type: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          metric_type:
+            | 'TASKS_APPROVED'
+            | 'TASKS_REJECTED'
+            | 'REWARDS_CLAIMED'
+            | 'CUSTOM_REWARDS_APPROVED'
+            | 'APP_LOGIN_DAYS'
+            | 'STREAK_LOGIN_DAYS'
+            | 'EARNED_POINTS'
+            | 'MANUAL'
           is_repeatable: boolean
           max_level: number
           level_multiplier: number
@@ -444,7 +452,15 @@ export interface Database {
           image_url?: string | null
           reward_points?: number
           target_count?: number
-          metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          metric_type?:
+            | 'TASKS_APPROVED'
+            | 'TASKS_REJECTED'
+            | 'REWARDS_CLAIMED'
+            | 'CUSTOM_REWARDS_APPROVED'
+            | 'APP_LOGIN_DAYS'
+            | 'STREAK_LOGIN_DAYS'
+            | 'EARNED_POINTS'
+            | 'MANUAL'
           is_repeatable?: boolean
           max_level?: number
           level_multiplier?: number
@@ -462,7 +478,15 @@ export interface Database {
           image_url?: string | null
           reward_points?: number
           target_count?: number
-          metric_type?: 'COMPLETED_TASKS' | 'EARNED_POINTS'
+          metric_type?:
+            | 'TASKS_APPROVED'
+            | 'TASKS_REJECTED'
+            | 'REWARDS_CLAIMED'
+            | 'CUSTOM_REWARDS_APPROVED'
+            | 'APP_LOGIN_DAYS'
+            | 'STREAK_LOGIN_DAYS'
+            | 'EARNED_POINTS'
+            | 'MANUAL'
           is_repeatable?: boolean
           max_level?: number
           level_multiplier?: number
@@ -539,6 +563,60 @@ export interface Database {
           },
           {
             foreignKeyName: 'dependent_achievements_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      dependent_stats: {
+        Row: {
+          profile_id: string
+          house_id: string
+          tasks_approved_count: number
+          tasks_rejected_count: number
+          rewards_claimed_count: number
+          custom_rewards_approved_count: number
+          app_login_days_count: number
+          streak_login_days: number
+          last_login_day: string | null
+          updated_at: string
+        }
+        Insert: {
+          profile_id: string
+          house_id: string
+          tasks_approved_count?: number
+          tasks_rejected_count?: number
+          rewards_claimed_count?: number
+          custom_rewards_approved_count?: number
+          app_login_days_count?: number
+          streak_login_days?: number
+          last_login_day?: string | null
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          house_id?: string
+          tasks_approved_count?: number
+          tasks_rejected_count?: number
+          rewards_claimed_count?: number
+          custom_rewards_approved_count?: number
+          app_login_days_count?: number
+          streak_login_days?: number
+          last_login_day?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'dependent_stats_profile_id_fkey'
+            columns: ['profile_id']
+            isOneToOne: true
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'dependent_stats_house_id_fkey'
             columns: ['house_id']
             isOneToOne: false
             referencedRelation: 'houses'

@@ -2,6 +2,7 @@ import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { getMyNotifications } from '@/utils/notifications'
+import { registerLoginDay } from '@/actions/stats'
 import { RealtimePointsListener } from '@/components/dashboard/realtime-points-listener'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
@@ -32,6 +33,12 @@ export default async function DependentDashboardLayout({
 
   if (!user || !profile) {
     return null
+  }
+
+  // Conquistas: conta o acesso diário do dependente (métricas APP_LOGIN_DAYS e
+  // STREAK_LOGIN_DAYS), dia em America/Recife. BEST-EFFORT e idempotente.
+  if (house) {
+    await registerLoginDay(house.id, user.id)
   }
 
   return (

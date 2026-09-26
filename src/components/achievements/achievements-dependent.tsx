@@ -9,6 +9,7 @@ import { claimAchievementReward } from '@/actions/achievements'
 import {
   achievementRewardAtLevel,
   maxAchievementLevel,
+  METRIC_LABELS,
 } from '@/utils/achievements'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { AchievementIcon } from './achievement-icon'
@@ -29,10 +30,7 @@ export type AchievementView = {
   progress: DependentAchievementProgress | null
 }
 
-const METRIC_LABEL: Record<string, string> = {
-  COMPLETED_TASKS: 'a cada tarefa aprovada',
-  EARNED_POINTS: 'a cada N pontos ganhos em aprovações',
-}
+const METRIC_LABEL: Record<string, string> = METRIC_LABELS
 
 export function AchievementsDependent({
   houseId,

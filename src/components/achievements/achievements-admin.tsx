@@ -7,10 +7,12 @@ import { cn } from '@/lib/utils'
 import {
   createAchievement,
   deleteAchievement,
+  grantAchievementProgress,
   updateAchievement,
 } from '@/actions/achievements'
 import {
   ACHIEVEMENT_ICONS,
+  METRIC_LABELS,
   type AchievementMetricType,
 } from '@/utils/achievements'
 import { AchievementIcon } from './achievement-icon'
@@ -56,7 +58,7 @@ const EMPTY_FORM: AchievementForm = {
   imageUrl: null,
   rewardPoints: '10',
   targetCount: '5',
-  metricType: 'COMPLETED_TASKS',
+  metricType: 'TASKS_APPROVED',
   isRepeatable: true,
   maxLevel: '10',
   levelMultiplier: '1',
@@ -64,8 +66,14 @@ const EMPTY_FORM: AchievementForm = {
 }
 
 const METRIC_OPTIONS: Array<{ value: AchievementMetricType; label: string }> = [
-  { value: 'COMPLETED_TASKS', label: 'Tarefas aprovadas' },
+  { value: 'TASKS_APPROVED', label: 'Tarefas aprovadas' },
+  { value: 'TASKS_REJECTED', label: 'Tarefas reprovadas na revisão' },
+  { value: 'REWARDS_CLAIMED', label: 'Recompensas resgatadas' },
+  { value: 'CUSTOM_REWARDS_APPROVED', label: 'Sugestões aprovadas' },
+  { value: 'APP_LOGIN_DAYS', label: 'Dias de acesso ao app' },
+  { value: 'STREAK_LOGIN_DAYS', label: 'Dias seguidos no app' },
   { value: 'EARNED_POINTS', label: 'Pontos ganhos em aprovações' },
+  { value: 'MANUAL', label: 'Concessão manual pelo tutor' },
 ]
 
 export function AchievementsAdmin({
@@ -91,6 +99,7 @@ export function AchievementsAdmin({
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [grantingKey, setGrantingKey] = useState<string | null>(null)
 
   // Realtime: conquistas/progresso criados/alterados por outro ADMIN ou pelas
   // aprovações de tarefas chegam ao vivo (confere também no `router.refresh`).
@@ -260,6 +269,24 @@ export function AchievementsAdmin({
     } finally {
       setSubmitting(false)
       setDeleteTarget(null)
+    }
+  }
+
+  async function handleGrant(achievement: Achievement, profileId: string) {
+    const key = `${achievement.id}:${profileId}`
+    if (grantingKey) return
+    setGrantingKey(key)
+    try {
+      const res = await grantAchievementProgress(achievement.id, profileId, 1)
+      if (!res.ok) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(res.message ?? 'Progresso concedido.')
+    } catch {
+      toast.error('Falha ao conceder o progresso.')
+    } finally {
+      setGrantingKey(null)
     }
   }
 
@@ -548,9 +575,7 @@ export function AchievementsAdmin({
                       </p>
                       <p className="truncate text-sm text-slate-500">
                         {achievement.is_secret ? 'Sigilosa · ' : ''}
-                        {achievement.metric_type === 'COMPLETED_TASKS'
-                          ? 'A cada tarefa aprovada'
-                          : 'A cada pontos ganhos'}
+                        {METRIC_LABELS[achievement.metric_type]}
                         {' · +'}
                         {achievement.reward_points} pts base
                       </p>
@@ -672,10 +697,40 @@ export function AchievementsAdmin({
                                         : 'Concluída'}
                                     </span>
                                   ) : null}
+                                  {achievement.metric_type === 'MANUAL' ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      disabled={grantingKey !== null}
+                                      onClick={() =>
+                                        handleGrant(achievement, dependent.id)
+                                      }
+                                    >
+                                      +1
+                                    </Button>
+                                  ) : null}
                                 </span>
                               ) : (
-                                <span className="shrink-0 text-xs text-slate-400">
-                                  Sem progresso
+                                <span className="flex shrink-0 items-center gap-2">
+                                  <span className="text-xs text-slate-400">
+                                    Sem progresso
+                                  </span>
+                                  {achievement.metric_type === 'MANUAL' ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      disabled={grantingKey !== null}
+                                      onClick={() =>
+                                        handleGrant(achievement, dependent.id)
+                                      }
+                                    >
+                                      +1
+                                    </Button>
+                                  ) : null}
                                 </span>
                               )}
                             </div>

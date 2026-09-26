@@ -10,6 +10,7 @@ import {
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
 import { AchievementsDependent } from '@/components/achievements/achievements-dependent'
@@ -122,6 +123,9 @@ export default async function AchievementsPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
+      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      await registerLoginDay(dependentHouse.id, user.id)
+
       const [achievements, progress] = await Promise.all([
         admin
           .from('achievements')

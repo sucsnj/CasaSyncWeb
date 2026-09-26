@@ -1,9 +1,35 @@
-export type AchievementMetricType = 'COMPLETED_TASKS' | 'EARNED_POINTS'
+export type AchievementMetricType =
+  | 'TASKS_APPROVED'
+  | 'TASKS_REJECTED'
+  | 'REWARDS_CLAIMED'
+  | 'CUSTOM_REWARDS_APPROVED'
+  | 'APP_LOGIN_DAYS'
+  | 'STREAK_LOGIN_DAYS'
+  | 'EARNED_POINTS'
+  | 'MANUAL'
 
 export const ACHIEVEMENT_METRIC_TYPES: AchievementMetricType[] = [
-  'COMPLETED_TASKS',
+  'TASKS_APPROVED',
+  'TASKS_REJECTED',
+  'REWARDS_CLAIMED',
+  'CUSTOM_REWARDS_APPROVED',
+  'APP_LOGIN_DAYS',
+  'STREAK_LOGIN_DAYS',
   'EARNED_POINTS',
+  'MANUAL',
 ]
+
+/** Rótulo curto de cada métrica, usado nos cards ADMIN/dependente. */
+export const METRIC_LABELS: Record<AchievementMetricType, string> = {
+  TASKS_APPROVED: 'a cada tarefa aprovada',
+  TASKS_REJECTED: 'a cada tarefa reprovada',
+  REWARDS_CLAIMED: 'a cada recompensa resgatada',
+  CUSTOM_REWARDS_APPROVED: 'a cada sugestão aprovada',
+  APP_LOGIN_DAYS: 'a cada dia de acesso ao app',
+  STREAK_LOGIN_DAYS: 'a cada dia seguido no app',
+  EARNED_POINTS: 'a cada N pontos ganhos em aprovações',
+  MANUAL: 'concessão manual pelo tutor',
+}
 
 /** Ícones Lucide permitidos em `achievements.icon` (mapeados na UI). */
 export const ACHIEVEMENT_ICONS = [

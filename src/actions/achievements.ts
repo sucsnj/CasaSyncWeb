@@ -14,6 +14,8 @@ import {
   achievementRewardAtLevel,
   maxAchievementLevel,
 } from '@/utils/achievements'
+import { syncAchievementProgress } from '@/utils/achievement-progress'
+import { incrementDependentStat } from './stats'
 
 const ACHIEVEMENTS_IMAGE_MARKER = '/casasync-media/achievements/'
 import { POINTS_MAX, type ActionResult } from './types'
@@ -105,8 +107,9 @@ function validateAchievementFields(input: {
 
 /**
  * ADMIN cria uma conquista para a casa ativa. A progressão é medida por
- * `metric_type`: tarefas aprovadas (`COMPLETED_TASKS`) ou pontos creditados em
- * aprovações (`EARNED_POINTS`). Pontos da conquista são apenas "marca de
+ * `metric_type`: uma métrica de `dependent_stats` (ex.: `TASKS_APPROVED`,
+ * `REWARDS_CLAIMED`), pontos creditados em aprovações (`EARNED_POINTS`) ou
+ * concessão manual (`MANUAL`). Pontos da conquista são apenas "marca de
  * recompensa" — o `task_decay` não os reduz.
  */
 export async function createAchievement(
@@ -213,7 +216,7 @@ export async function updateAchievement(
     title: patch.title ?? 'placeholder',
     rewardPoints: patch.rewardPoints ?? 0,
     targetCount: patch.targetCount ?? 1,
-    metricType: patch.metricType ?? 'COMPLETED_TASKS',
+    metricType: patch.metricType ?? 'TASKS_APPROVED',
     isRepeatable: patch.isRepeatable ?? false,
     isSecret: patch.isSecret ?? false,
     icon: patch.icon ?? null,
@@ -312,137 +315,103 @@ export async function deleteAchievement(
 }
 
 /**
- * Soma `amount` à métrica `metricType` de `profileId` em todas as conquistas
- * da casa que medem essa métrica. Cria a linha de progresso na primeira
- * ocorrência (lazy upsert) e marca `unlocked_at` assim que o objetivo é
- * atingido. BEST-EFFORT: uma falha aqui nunca derruba a ação principal
- * (aprovação/conclusão de tarefa) — o progresso volta na próxima aprovação.
+ * Dispatcher de progresso de conquistas, BEST-EFFORT (uma falha aqui nunca
+ * derruba a ação principal). Decide o caminho conforme a métrica:
  *
- * Uso: `approveTask`/`adminCompleteTask` chamam para `COMPLETED_TASKS` (amount
- * 1) e `EARNED_POINTS` (amount = pontos creditados).
+ * - Métricas contadas (`TASKS_APPROVED`, `TASKS_REJECTED`, `REWARDS_CLAIMED`,
+ *   `CUSTOM_REWARDS_APPROVED`, `APP_LOGIN_DAYS`, `STREAK_LOGIN_DAYS`): o
+ *   contador vive em `dependent_stats` e as conquistas são re-sincronizadas por
+ *   `evaluateAchievements` via `incrementDependentStat`.
+ * - `EARNED_POINTS`: volátil — soma `amount` no progresso de cada conquista que
+ *   mede pontos (sem coluna em `dependent_stats`), exatamente como antes.
+ * - `MANUAL`: não é registrada automaticamente — o ADMIN concede via
+ *   `grantAchievementProgress`.
+ *
+ * Uso: `approveTask`/`adminCompleteTask` chamam para `TASKS_APPROVED` (amount 1)
+ * e `EARNED_POINTS` (amount = pontos creditados); `rejectCompletedTask` para
+ * `TASKS_REJECTED`; `approveRedemption` para `REWARDS_CLAIMED`;
+ * `resolveRewardSuggestion` (aprovado) para `CUSTOM_REWARDS_APPROVED`.
  */
-type ProgressScan = {
-  id: string
-  achievement_id: string
-  current_progress: number
-  unlocked_at: string | null
-}
-
 export async function registerAchievementProgress(
   houseId: string,
   profileId: string,
   metricType: AchievementMetricType,
   amount: number
 ): Promise<void> {
-  let admin: ReturnType<typeof createAdminClient>
-  try {
-    admin = createAdminClient()
-  } catch {
+  if (metricType === 'MANUAL') return
+
+  if (metricType === 'EARNED_POINTS') {
+    await syncAchievementProgress(houseId, profileId, metricType, (achievement, existing) => {
+      const progress = (existing?.current_progress ?? 0) + amount
+      return {
+        progress,
+        unlockedAt:
+          existing?.unlocked_at ?? (progress >= achievement.target_count ? new Date().toISOString() : null),
+      }
+    })
     return
   }
 
-  try {
-    const { data: achievements } = await admin
-      .from('achievements')
-      .select('id, target_count')
-      .eq('house_id', houseId)
-      .eq('metric_type', metricType)
-    if (!achievements?.length) return
+  await incrementDependentStat(houseId, profileId, metricType, amount)
+}
 
-    const ids = achievements.map((achievement) => achievement.id)
-    const { data: existing } = await admin
-      .from('dependent_achievements')
-      .select('id, achievement_id, current_progress, unlocked_at')
-      .in('achievement_id', ids)
-      .eq('profile_id', profileId)
+/**
+ * ADMIN concede progresso manualmente a uma conquista de métrica `MANUAL` do
+ * dependente na casa ativa. Só `MANUAL` existe no domínio de concessão — as
+ * demais métricas são automáticas via `dependent_stats`.
+ */
+export async function grantAchievementProgress(
+  achievementId: string,
+  profileId: string,
+  amount = 1
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
-    const existingMap = new Map(
-      (existing ?? []).map((row) => [row.achievement_id, row])
-    )
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
 
-    const now = new Date().toISOString()
-
-    const toInsert: Array<{
-      achievement_id: string
-      profile_id: string
-      house_id: string
-      level: number
-      current_progress: number
-      unlocked_at: string | null
-      updated_at: string
-    }> = []
-
-    for (const achievement of achievements) {
-      const row = existingMap.get(achievement.id)
-      if (!row) {
-        toInsert.push({
-          achievement_id: achievement.id,
-          profile_id: profileId,
-          house_id: houseId,
-          level: 1,
-          current_progress: amount,
-          unlocked_at: amount >= achievement.target_count ? now : null,
-          updated_at: now,
-        })
-      }
-    }
-
-    if (toInsert.length > 0) {
-      const { error: insertError } = await admin
-        .from('dependent_achievements')
-        .insert(toInsert)
-      if (insertError) {
-        console.error('[ACHIEVEMENTS] Falha ao criar progresso:', insertError)
-      }
-    }
-
-    // Updates atômicos por linha: só muda o progresso se a linha ainda tiver o
-    // valor lido (duas aprovações concorrentes não perdem incremento). Se o
-    // guard bater em 0 linhas, relê e reaplica uma vez.
-    for (const achievement of achievements) {
-      const existingRow = existingMap.get(achievement.id)
-      if (!existingRow) continue
-
-      let row: ProgressScan = existingRow
-
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const nextProgress = row.current_progress + amount
-        const nextUnlocked =
-          !row.unlocked_at && nextProgress >= achievement.target_count
-            ? now
-            : row.unlocked_at
-
-        const { data: updatedRows, error } = await admin
-          .from('dependent_achievements')
-          .update({
-            current_progress: nextProgress,
-            unlocked_at: nextUnlocked,
-            updated_at: now,
-          })
-          .eq('id', row.id)
-          .eq('current_progress', row.current_progress)
-          .select('id')
-
-        if (error) {
-          console.error('[ACHIEVEMENTS] Falha ao atualizar progresso:', error)
-          break
-        }
-        if (updatedRows && updatedRows.length > 0) break
-
-        if (attempt === 0) {
-          const { data: fresh } = await admin
-            .from('dependent_achievements')
-            .select('id, achievement_id, current_progress, unlocked_at')
-            .eq('id', row.id)
-            .maybeSingle()
-          if (!fresh) break
-          row = fresh as ProgressScan
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[ACHIEVEMENTS] Falha ao registrar progresso:', err)
+  if (!Number.isInteger(amount) || amount < 1 || amount > 1000) {
+    return { ok: false, error: 'Quantidade inválida.' }
   }
+
+  const { data: achievement } = await admin
+    .from('achievements')
+    .select('id, house_id, metric_type, target_count')
+    .eq('id', achievementId)
+    .maybeSingle()
+
+  if (!achievement || achievement.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Conquista não encontrada nesta casa.' }
+  }
+  if (achievement.metric_type !== 'MANUAL') {
+    return { ok: false, error: 'Apenas conquistas de concessão manual aceitam progresso do ADMIN.' }
+  }
+
+  const { data: member } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', activeHouse.id)
+    .eq('profile_id', profileId)
+    .eq('role', 'DEPENDENT')
+    .maybeSingle()
+
+  if (!member) {
+    return { ok: false, error: 'Dependente não encontrado na casa.' }
+  }
+
+  await syncAchievementProgress(activeHouse.id, profileId, 'MANUAL', (achievementMeta, existing) => {
+    const progress = (existing?.current_progress ?? 0) + amount
+    return {
+      progress,
+      unlockedAt:
+        existing?.unlocked_at ?? (progress >= achievementMeta.target_count ? new Date().toISOString() : null),
+    }
+  })
+
+  revalidatePath('/achievements')
+  return { ok: true, message: 'Progresso concedido.' }
 }
 
 /**

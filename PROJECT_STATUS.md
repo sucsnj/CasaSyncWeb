@@ -1,6 +1,55 @@
 # CasaSync Web — PROJECT STATUS
 
-## Conquistas — imagem como ícone, nível máximo configurável e multiplicador por nível (concluída — requer 3 colunas novas no banco)
+## Conquistas autônomas — estatísticas por dependente, métricas novas e concessão manual (concluída — SQL aplicado no banco)
+
+### O que foi implementado
+- **Novas métricas (união de 8 em `src/utils/achievements.ts`):** `TASKS_APPROVED`, `TASKS_REJECTED`, `REWARDS_CLAIMED`, `CUSTOM_REWARDS_APPROVED`, `APP_LOGIN_DAYS`, `STREAK_LOGIN_DAYS`, `EARNED_POINTS` (volátil, sem coluna) e `MANUAL` (concessão). **`COMPLETED_TASKS` foi renomeada para `TASKS_APPROVED`** (migração abaixo). Rótulos em `METRIC_LABELS` — a UI ADMIN (select de métrica no form) e dependente (subtítulo dos cards) passaram a usar o mapa.
+- **`dependent_stats` (tabela nova, RLS sem policies):** uma linha por dependente+casa com `tasks_approved_count`, `tasks_rejected_count`, `rewards_claimed_count`, `custom_rewards_approved_count`, `app_login_days_count`, `streak_login_days`, `last_login_day`. Iniciadas **zeradas** (sem backfill). O mapa métrica→coluna vive em **`src/utils/dependent-stats.ts`** (módulo puro — valores não-função não saem de arquivos `'use server'`). Fora da publication Realtime (a UI continua via `dependent_achievements`, que segue na publication).
+- **Dispatcher `registerAchievementProgress` (mesma assinatura — zero paralelismo):** `MANUAL` → no-op; `EARNED_POINTS` → soma incremental via `syncAchievementProgress`; demais → `incrementDependentStat` (lazy insert ou update atômico com guard `.eq(column, valor lido)` + 1 retry) e depois `evaluateAchievements`.
+- **`evaluateAchievements` (deriva progresso do contador absoluto):** repetível → `contador − (nível−1) × objetivo` (o excedente consumido são os ciclos já resgatados); única → `min(contador, objetivo)`; `progress = existing ? max(existing.current_progress, raw) : raw` (histórico pré-estatísticas **nunca diminui**); `unlocked_at` só marcado no cruzamento e quando ausente. Helper compartilhado `syncAchievementProgress` em `src/utils/achievement-progress.ts`.
+- **Injeções (todas best-effort):** `approveTask`/`adminCompleteTask` → `TASKS_APPROVED` (1) + `EARNED_POINTS` (valor corrente, já com decay); **`rejectCompletedTask` → `TASKS_REJECTED`**; **`approveRedemption` → `REWARDS_CLAIMED`** (conta na aprovação); **`resolveRewardSuggestion` aprovado → `CUSTOM_REWARDS_APPROVED`**.
+- **Dias de acesso (`registerLoginDay` em `src/actions/stats.ts`):** conta **1×/dia** (dia em **America/Recife**, `Intl` en-CA), idempotente por `last_login_day` (guard `.eq`/`.is null` contra duplicação de abas); streak = registrado ontem ? `+1` : 1. Disparado best-effort nos renders dependentes: layout `/dashboard/dependent` **e** branches dependentes de `/tasks`, `/rewards`, `/achievements`. Avalia `APP_LOGIN_DAYS` + `STREAK_LOGIN_DAYS`.
+- **Concessão manual (`grantAchievementProgress(achievementId, profileId, amount=1)`):** só ADMIN da casa ativa; exige conquista **`metric_type='MANUAL'`** da casa e membro `DEPENDENT`; `amount` inteiro 1–1000. Concede via `syncAchievementProgress`. UX: botão **"+1"** por dependente no card da conquista MANUAL em `/achievements` (ADMIN).
+- **Limpeza:** `expelMember`/`deleteDependentAccount`/`deleteHouse` (`src/actions/houses.ts`) agora removem também as linhas de `dependent_stats` no fluxo explícito.
+- **Types:** `src/types/database.ts` reflete `dependent_stats` e a união nova de `metric_type` (não regenerado via CLI — espelho manual).
+
+### SQL aplicado no Supabase (registro — aplicado pelo usuário com sucesso)
+```sql
+-- Conquistas autônomas: tabela de estatísticas por dependente+casa.
+create table if not exists public.dependent_stats (
+  profile_id uuid primary key references public.profiles(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  tasks_approved_count int not null default 0,
+  tasks_rejected_count int not null default 0,
+  rewards_claimed_count int not null default 0,
+  custom_rewards_approved_count int not null default 0,
+  app_login_days_count int not null default 0,
+  streak_login_days int not null default 0,
+  last_login_day date,
+  updated_at timestamptz not null default now()
+);
+create index if not exists dependent_stats_house_idx on public.dependent_stats (house_id);
+alter table public.dependent_stats enable row level security;
+-- Sem policies de cliente: as leituras/escritas são service-role (ADR-0006).
+-- NÃO incluir em supabase_realtime (a UI segue por dependent_achievements).
+
+-- Migração: COMPLETED_TASKS virou TASKS_APPROVED (mesmo significado).
+update public.achievements set metric_type = 'TASKS_APPROVED'
+where metric_type = 'COMPLETED_TASKS';
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **SQL aplicado e verificado no banco** — a tabela `dependent_stats` e a migração `COMPLETED_TASKS→TASKS_APPROVED` estão vivas; as métricas contadas já registram progresso e conquistas antigas apontam para a métrica nova.
+- **Limitação documentada (ADR-0016):** no cap (`max_level`), o rollover subtrai o objetivo/ciclo mas a fórmula usa o nível travado → ciclos consumidos no cap são **subestimados**, desbloqueando um pouco antes; a recompensa paga é sempre a do nível travado.
+- `EARNED_POINTS` segue sem coluna: é a única métrica que depende do valor corrente na aprovação, não de um contador da casa.
+- Requer deploy para valer online.
+
+---
+
+## Conquistas — imagem como ícone, nível máximo configurável e multiplicador por nível (concluída — SQL aplicado no banco)
 
 ### O que foi implementado
 - **Imagem como ícone:** as `achievements` ganharam a coluna `image_url`; no form do ADMIN há novos **chips de slug + `ImageUpload`** (pasta `achievements/` no bucket `casasync-media`, owner = `house_id`). Quando `image_url` está definida, **substitui o ícone de símbolo** nos cards (ADMIN e dependente; conquistas **secretas** não desbloqueadas continuam ocultas, sem revelar a imagem). `deleteAchievement` remove a imagem do storage **best-effort** (`removeAchievementImage`).
@@ -8,7 +57,7 @@
 - **Multiplicador por nível (`level_multiplier`, numeric default 1):** `recompensa no nível N = reward_points × N × level_multiplier` (helper puro `achievementRewardAtLevel` em `src/utils/achievements.ts`, redondado). O crédito do resgate (`claimAchievementReward`) usa o valor do **nível atual** do dependente; a UI dependente mostra a recompensa por nível e o chip `×{mult} por nível` quando ≠ 1.
 - **Sem mudança em `dependent_achievements`:** `level`/`current_progress`/`unlocked_at` seguem como estão; o cap fica só na leitura (helper `maxAchievementLevel`).
 
-### SQL a aplicar no dashboard do Supabase (A PRENDER ANTES DE SUBIR — junto com `tasks.decay_started_at`)
+### SQL aplicado no Supabase (registro — aplicado pelo usuário com sucesso)
 ```sql
 -- Conquistas: ícone por imagem + níveis (cap + multiplicador de pontos por nível).
 alter table public.achievements add column if not exists image_url text;
@@ -20,8 +69,7 @@ alter table public.achievements add column if not exists level_multiplier numeri
 `npm run lint` ✓ (só warnings `no-img-element` + `'House' unused` esperados nos pages de auth; os `<img>` novos são deliberados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo, `/achievements` dinâmico).
 
 ### Pontos de atenção
-- **Sem as 3 colunas, o runtime quebra** (o `insert`/`select` das actions referencia `image_url`/`max_level`/`level_multiplier`) — aplicar o SQL antes de subir.
-- **Tarefa quebra no ORIGINAL:** ex.: os chips de nível no ADMIN e no DEPENDENT e o crédito de recompensa dependem de `max_level`/`level_multiplier` retornados pelo select.
+- **As 3 colunas já estão no banco** (aplicadas pelo usuário com o restante do SQL) — o runtime de conquistas opera com `image_url`/`max_level`/`level_multiplier` nas ações e na UI.
 
 ---
 
@@ -29,7 +77,7 @@ alter table public.achievements add column if not exists level_multiplier numeri
 
 ### O que foi implementado
 - **Novo domínio de conquistas por casa:** o ADMIN define **conquistas** para a casa ativa (título ≤100, descrição opcional, ícone, recompensa em pontos, objetivo, métrica, repetível/secreta) e o progresso do dependente é registrado **automaticamente nas aprovações de tarefas**; o dependente vê a meta (barra de progresso) e **resgata** a recompensa quando desbloqueia.
-- **Tabelas novas (SQL abaixo — aplicado pelo usuário; restou apenas a coluna `decay_started_at` do decaimento):**
+- **Tabelas novas (SQL abaixo — aplicado pelo usuário):**
   - **`achievements`** — `house_id`, `title`, `description`, `icon`, `metric_type`, `reward_points`, `target_count`, `is_repeatable`, `is_secret`, `created_by`.
   - **`dependent_achievements`** — `house_id`, `achievement_id` (FK), `profile_id` (FK), `level`, `current_progress`, `unlocked_at`. Uma linha por (conquista, dependente); `level` sobe a cada resgate.
 - **Server Actions (`src/actions/achievements.ts`):**
@@ -282,18 +330,18 @@ alter publication supabase_realtime add table public.dependent_achievements;
 
 ---
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` da desativação de recompensa e `notifications.image_url`/`message_id` da mensagem rápida, **todas já aplicadas**), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, **tabela `house_settings` (+ policy de SELECT por membro)** **e o bucket público `casasync-media`** (cujo upload de imagens funciona em avatares/casas/recompensas/tarefas/sugestões **e na pastinha da compositor**) **já foram aplicados** no Supabase. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Exceções pendentes no banco (SQL abaixo, aplicar ANTES de subir):** a coluna `tasks.decay_started_at` do decaimento (sem ela, o decaimento simplesmente ignora a coluna e usa `created_at`, caindo no comportamento antigo; nada quebra) **e as 3 colunas novas das conquistas** (`image_url`/`max_level`/`level_multiplier` na seção "imagem como ícone…" no topo — **sem elas o runtime de conquistas quebra**, pois insert/select das actions já referenciam os campos). As tabelas `achievements`/`dependent_achievements` **já foram aplicadas** pelo usuário (verificado via probe).
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, tabela `house_settings` (+ policy de SELECT por membro), bucket público `casasync-media`, **`tasks.decay_started_at`**, as **3 colunas novas das conquistas** (`image_url`/`max_level`/`level_multiplier`), as tabelas **`achievements`**/**`dependent_achievements`** e a tabela **`dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`** — **todos já foram aplicados** no Supabase pelo usuário. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Nada está pendente no banco.**
 
-## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — requer 1 coluna nova)
+## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — SQL aplicado no banco)
 
 ### O que foi implementado
 - **O ponto de partida do decaimento deixou de ser a criação e passou a ser dinâmico:** o relógio agora começa no `decay_started_at` da tarefa — definido na **criação** e atualizado para o **momento de cada edição** (`updateTask`). **Adiamentos NÃO reiniciam o relógio:** aprovar adiamento (`resolveTaskExtension`), o auto-aceite via edição de `due_date` de tarefa com pedido pendente e a reversão de uma `NOT_DELIVERED` via prazo são situações de adiamento e não afetam o decaimento.
 - **`restoreTask` reinicia o relógio:** a tarefa aprovada restaurada nasce com o `decay_started_at` = momento do restauro (novo ciclo, pontos cheios na base).
-- **Nova coluna `tasks.decay_started_at timestamptz` (nullable):** tarefas antigas (coluna vazia) caem no fallback `created_at` até a primeira edição/restauro — comportamento antigo preservado. **SQL abaixo — única pendência no banco.**
+- **Nova coluna `tasks.decay_started_at timestamptz` (nullable):** tarefas antigas (coluna vazia) caem no fallback `created_at` até a primeira edição/restauro — comportamento antigo preservado. **Coluna já aplicada no banco (registro abaixo).**
 - **Aplicações:** `getTaskDecayStart(createdAt, decayStartedAt)` (`src/utils/task-decay.ts`) resolve o start (`decay_started_at ?? created_at`); crédito (`approveTask`/`adminCompleteTask`), débito (`markTaskNotDelivered`), devoluções (`resolveTaskExtension`/`updateTask`) e a exibição nos cards ADMIN/dependente passam a usar o start resolvido. `tasks.points` (base) continua intocada.
 - `getTaskCurrentPoints` teve o parâmetro `createdAt` renomeado/documented como **startAt** (ponto de partida do relógio).
 
-### SQL a aplicar no dashboard do Supabase (aplicar ANTES de subir)
+### SQL aplicado no Supabase (registro — aplicado pelo usuário com sucesso)
 ```sql
 -- Relógio do decaimento por tarefa: null = usa created_at (tarefas antigas).
 alter table public.tasks add column if not exists decay_started_at timestamptz;
@@ -303,7 +351,7 @@ alter table public.tasks add column if not exists decay_started_at timestamptz;
 `npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
 
 ### Pontos de atenção
-- **Requer a coluna para o comportamento novo:** sem ela, o decaimento ignora o reset de edição/restauro e continua usando `created_at` (nada quebra, só não reseta). Aplicar o SQL acima e, para as tarefas já criadas, opcionalmente `update tasks set decay_started_at = created_at;`.
+- **A coluna já está no banco** — tarefas novas nascem com o relógio em `decay_started_at`; tarefas antigas caem no fallback `created_at` até a primeira edição/restauro (comportamento documentado).
 - **Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — correção exigiria guardar o valor debitado numa coluna (fora de escopo).
 
 ---

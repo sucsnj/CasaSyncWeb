@@ -16,6 +16,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
+import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
@@ -143,6 +144,9 @@ export default async function TasksPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
+      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      await registerLoginDay(dependentHouse.id, user.id)
+
       const { data: tasks } = await admin
         .from('tasks')
         .select('*')

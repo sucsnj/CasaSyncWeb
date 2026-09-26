@@ -8,6 +8,7 @@ import {
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
@@ -162,6 +163,9 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
+      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      await registerLoginDay(dependentHouse.id, user.id)
+
       const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
         await Promise.all([
           admin

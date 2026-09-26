@@ -21,7 +21,7 @@
 >   por nível. *Mantém a regra do ADR-0001/ajuste de `approveTask`: crédito direto
 >   em `profiles.points` via service role, com rollback da linha em falha.*
 > Sem alteração em `dependent_achievements` (o cap fica só na leitura). Ver seção
-> no topo do `PROJECT_STATUS.md` para o SQL a aplicar.
+> no topo do `PROJECT_STATUS.md` para o SQL (registro histórico — já aplicado no banco).
 
 ## Contexto
 O fluxo tarefas→pontos→recompensas já cobre o "dever" e o "gasto", mas não há

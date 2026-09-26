@@ -17,6 +17,7 @@ import {
 import { getHouseRewardPricingSettings } from '@/utils/house-settings'
 import type { RewardPricingSettings } from '@/utils/settings'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
+import { registerAchievementProgress } from './achievements'
 import type { ActionResult } from './types'
 
 type CreateRewardInput = {
@@ -320,6 +321,14 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     console.error('[PUSH] Falha ao disparar push na aprovação de resgate:', err)
   }
 
+  // Conquistas: um resgate aprovado conta em REWARDS_CLAIMED (best-effort).
+  await registerAchievementProgress(
+    activeHouse.id,
+    redemption.profile_id,
+    'REWARDS_CLAIMED',
+    1
+  )
+
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
   revalidatePath('/tasks')
@@ -605,6 +614,17 @@ export async function resolveRewardSuggestion(
     body: `Sua sugestão "${suggestion.title}" foi ${approve ? 'aprovada' : 'rejeitada'}.`,
     link: '/rewards',
   })
+
+  // Conquistas: uma sugestão aprovada pelo ADMIN conta em
+  // CUSTOM_REWARDS_APPROVED para o dependente autor (best-effort).
+  if (approve) {
+    await registerAchievementProgress(
+      activeHouse.id,
+      suggestion.profile_id,
+      'CUSTOM_REWARDS_APPROVED',
+      1
+    )
+  }
 
   revalidatePath('/rewards')
   return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }

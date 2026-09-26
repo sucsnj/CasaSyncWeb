@@ -570,7 +570,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   // Conquistas: a aprovação conta como 1 tarefa concluída e como N pontos
   // ganhos (best-effort — uma falha aqui não reverte a aprovação).
-  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'COMPLETED_TASKS', 1)
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints)
 
   revalidatePath('/tasks')
@@ -632,6 +632,15 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
       body: `"${task.title}" foi devolvida para você refazer.`,
       link: '/tasks',
     })
+
+    // Conquistas: uma conclusão reprovada conta na métrica TASKS_REJECTED
+    // (best-effort — uma falha aqui não reverte a devolução).
+    await registerAchievementProgress(
+      activeHouse.id,
+      task.assigned_to,
+      'TASKS_REJECTED',
+      1
+    )
   }
 
   revalidatePath('/tasks')
@@ -905,7 +914,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   })
 
   // Conquistas: 1 tarefa concluída + pontos ganhos (best-effort).
-  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'COMPLETED_TASKS', 1)
+  await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints)
 
   revalidatePath('/tasks')

@@ -842,6 +842,16 @@ export async function expelMember(
     return { ok: false, error: 'Falha ao remover o progresso de conquistas.' }
   }
 
+  // Estatísticas do dependente (contadores de conquistas) morrem com o vínculo.
+  const { error: statsError } = await admin
+    .from('dependent_stats')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (statsError) {
+    return { ok: false, error: 'Falha ao remover as estatísticas do membro.' }
+  }
+
   const { error: membershipError } = await admin
     .from('house_members')
     .delete()
@@ -1021,6 +1031,15 @@ export async function deleteDependentAccount(
     return { ok: false, error: 'Falha ao remover o progresso de conquistas.' }
   }
 
+  // Estatísticas de conquistas (contadores por perfil).
+  const { error: statsError } = await admin
+    .from('dependent_stats')
+    .delete()
+    .eq('profile_id', targetUserId)
+  if (statsError) {
+    return { ok: false, error: 'Falha ao remover as estatísticas do dependente.' }
+  }
+
   // Imagens no Storage (best-effort).
   await deleteMemberStorage(admin, targetUserId)
 
@@ -1174,6 +1193,15 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
     .eq('house_id', houseId)
   if (dependentAchievementsError) {
     return { ok: false, error: 'Falha ao excluir o progresso de conquistas.' }
+  }
+
+  // Estatísticas de conquistas dos dependentes da casa.
+  const { error: statsError } = await admin
+    .from('dependent_stats')
+    .delete()
+    .eq('house_id', houseId)
+  if (statsError) {
+    return { ok: false, error: 'Falha ao excluir as estatísticas da casa.' }
   }
 
   const { error: achievementsError } = await admin
