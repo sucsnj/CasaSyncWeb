@@ -6,7 +6,7 @@ Fonte de verdade do código: `src/types/database.ts` (espelho manual). Para rege
 npx supabase gen types typescript --project-id <project-ref> > src/types/database.generated.ts
 ```
 
-As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication, bucket `casasync-media`, `tasks.decay_started_at`, as 3 colunas das conquistas, a tabela `house_settings` + policy, as tabelas `achievements`/`dependent_achievements` e a tabela `dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`) já foram aplicados no projeto atual — **nada está pendente no banco.**
+As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication, bucket `casasync-media`, `tasks.decay_started_at`, as 3 colunas das conquistas, a tabela `house_settings` + policy, as tabelas `achievements`/`dependent_achievements` e a tabela `dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`) já foram aplicados no projeto atual — **nada está pendente no banco**, exceto as tabelas de **comunicados** (`comunicados`/`comunicado_deliveries`, feature nova): o SQL em `docs/sql/comunicados.sql` **aguarda aplicação** no dashboard Supabase (ver seção "Comunicados" no topo do `PROJECT_STATUS.md`).
 
 ## Tabelas
 
@@ -193,6 +193,36 @@ Uma linha por (conquista, dependente). RLS: SELECT por membro (policy `dependent
 
 Uma linha por dependente+casa; contadores iniciados em **0** (sem backfill). Os contadores alimentam o progresso das métricas (exceto `EARNED_POINTS`/`MANUAL`); mapa métrica→coluna em `src/utils/dependent-stats.ts`. **RLS sem policies de cliente** (leituras/escritas service-role) e **fora da publication Realtime** (a UI segue por `dependent_achievements`).
 
+### comunicados
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | default `gen_random_uuid()` |
+| house_id | uuid FK → houses | `on delete cascade` |
+| created_by | uuid FK → profiles | `on delete set null` |
+| title | text | 1–120 chars |
+| description | text | 1–500 chars |
+| published | bool | default `false` (rascunho invisível ao dependente); `true` dispara a 1ª exibição |
+| repeats_total | int | 1–100; quantas confirmações por dependente |
+| repeat_interval_days | int | 0–365; período entre repetições (0 = sem período fixo) |
+| repeat_weekdays | int[] | default `{0,1,2,3,4,5,6}` (Dom..Sáb); vazio = todos |
+| repeat_time | time | default `08:00:00`; relógio de parede em America/Recife |
+| created_at / updated_at | timestamptz | |
+
+RLS: SELECT por membro (policy `comunicados_select_members`); na publication Realtime (o overlay do dependente reavalia a fila). Escritas via service role (escopo da sessão). **SQL pendente de aplicação** — ver `docs/sql/comunicados.sql` e seção "Comunicados" do `PROJECT_STATUS.md`.
+
+### comunicado_deliveries
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | |
+| comunicado_id | uuid FK → comunicados | `on delete cascade` (excluir o comunicado apaga as confirmações) |
+| profile_id | uuid FK → profiles | dependente |
+| house_id | uuid FK → houses | |
+| delivered_count | int | default 0; `>= 0`; nunca passa de `comunicados.repeats_total` (guard server) |
+| last_confirmed_at | timestamptz | agenda a próxima ocorrência da repetição |
+| created_at / updated_at | timestamptz | |
+
+Uma linha por (comunicado, dependente) — `UNIQUE (comunicado_id, profile_id)`. Sem policies client e **fora** da publication Realtime (leituras/escritas service-role; a UI de total de confirmações do ADMIN entra via `router.refresh()`).
+
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
 - `member_role` = `ADMIN` \| `DEPENDENT`
@@ -205,5 +235,5 @@ aplicado** no Supabase.
 
 ## Fora do snap dos types (não verificável no código)
 - **Storage:** bucket público `casasync-media` com pastas avatars/houses/rewards/tasks/suggestions/messages. Leituras públicas + insert para `authenticated` no bucket (policies `casasync_media_select_public` / `casasync_media_insert_authenticated` — criadas com o bucket, que **não existia** e causava `Bucket not found` em uploads. Ver `PROJECT_STATUS.md`).
-- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `notifications` para `recipient_id = auth.uid()` (necessária ao Realtime do sino); SELECT em `house_settings` para membros da mesma casa (SQL em `PROJECT_STATUS.md` — settings são lidas pelo app via service role, a policy atende leituras futuras via cliente autenticado); SELECT em `achievements`/`dependent_achievements` para membros da mesma casa (SQL em `PROJECT_STATUS.md`).
-- **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions, notifications, **achievements, dependent_achievements**) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos. **`dependent_stats` fica FORA da publication** (a UI segue por `dependent_achievements`). Além disso, o hook chama `getSession()` + `realtime.setAuth(access_token)` antes de assinar: com sessão restaurada de cookies o socket conectava como `anon` e o RLS descartava os eventos em silêncio.
+- **RLS:** cada tabela isola por `house_id`/owner; dependentes só leem as próprias linhas. O app faz as **leituras cross-role** (casas/membros/atribuições e tarefas/recompensas) via **service-role** com escopo derivado da sessão (ver ADR-0006), então a RLS é exigida principalmente pelo **Realtime** (o browser não usa service role) e por leituras via cliente autenticado. Policies úteis: SELECT em `houses` e `house_members` para quem é membro `ADMIN` da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `notifications` para `recipient_id = auth.uid()` (necessária ao Realtime do sino); SELECT em `house_settings` para membros da mesma casa (SQL em `PROJECT_STATUS.md` — settings são lidas pelo app via service role, a policy atende leituras futuras via cliente autenticado); SELECT em `achievements`/`dependent_achievements` para membros da mesma casa (SQL em `PROJECT_STATUS.md`); SELECT em `comunicados` para membros da mesma casa (`docs/sql/comunicados.sql` — necessária ao Realtime do overlay/listagem dos ADMINs).
+- **Realtime:** tabelas precisam estar na publication `supabase_realtime` (houses, house_members, profiles, tasks, rewards, reward_redemptions, reward_suggestions, notifications, **achievements, dependent_achievements, comunicados**) — sem isso, os listeners em `src/hooks/use-postgres-changes.ts` não recebem eventos. **`dependent_stats` e `comunicado_deliveries` ficam FORA da publication** (entrega do overlay/comunicados deriva do servidor; a lista do ADMIN acompanha por `router.refresh()`). Além disso, o hook chama `getSession()` + `realtime.setAuth(access_token)` antes de assinar: com sessão restaurada de cookies o socket conectava como `anon` e o RLS descartava os eventos em silêncio.

@@ -20,6 +20,8 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
+import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { getDueComunicados } from '@/actions/comunicados'
 import {
   Card,
   CardContent,
@@ -159,15 +161,23 @@ export default async function TasksPage() {
         taskList.map((task) => task.created_by)
       )
 
+      const dueComunicados = await getDueComunicados()
+
       content = (
-        <TasksDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          initialTasks={taskList}
-          creatorNames={creatorNames}
-          dueSoonHours={taskSlaSettings?.dueSoonHours}
-          taskDecay={taskDecaySettings}
-        />
+        <>
+          <TasksDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            initialTasks={taskList}
+            creatorNames={creatorNames}
+            dueSoonHours={taskSlaSettings?.dueSoonHours}
+            taskDecay={taskDecaySettings}
+          />
+          <ComunicadoOverlay
+            houseId={dependentHouse.id}
+            initialQueue={dueComunicados}
+          />
+        </>
       )
     }
   }

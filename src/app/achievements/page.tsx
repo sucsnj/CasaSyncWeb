@@ -14,6 +14,8 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
 import { AchievementsDependent } from '@/components/achievements/achievements-dependent'
+import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { getDueComunicados } from '@/actions/comunicados'
 import {
   Card,
   CardContent,
@@ -147,13 +149,21 @@ export default async function AchievementsPage() {
           ) ?? null,
       }))
 
+      const dueComunicados = await getDueComunicados()
+
       content = (
-        <AchievementsDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          userId={user.id}
-          initialViews={views}
-        />
+        <>
+          <AchievementsDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            userId={user.id}
+            initialViews={views}
+          />
+          <ComunicadoOverlay
+            houseId={dependentHouse.id}
+            initialQueue={dueComunicados}
+          />
+        </>
       )
     }
   }

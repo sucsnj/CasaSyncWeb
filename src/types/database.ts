@@ -624,6 +624,121 @@ export interface Database {
           }
         ]
       }
+      comunicados: {
+        Row: {
+          id: string
+          house_id: string
+          created_by: string | null
+          title: string
+          description: string
+          published: boolean
+          repeats_total: number
+          repeat_interval_days: number
+          repeat_weekdays: number[]
+          repeat_time: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          created_by?: string | null
+          title: string
+          description: string
+          published?: boolean
+          repeats_total?: number
+          repeat_interval_days?: number
+          repeat_weekdays?: number[]
+          repeat_time?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          created_by?: string | null
+          title?: string
+          description?: string
+          published?: boolean
+          repeats_total?: number
+          repeat_interval_days?: number
+          repeat_weekdays?: number[]
+          repeat_time?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'comunicados_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'comunicados_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      comunicado_deliveries: {
+        Row: {
+          id: string
+          comunicado_id: string
+          profile_id: string
+          house_id: string
+          delivered_count: number
+          last_confirmed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          comunicado_id: string
+          profile_id: string
+          house_id: string
+          delivered_count?: number
+          last_confirmed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          comunicado_id?: string
+          profile_id?: string
+          house_id?: string
+          delivered_count?: number
+          last_confirmed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'comunicado_deliveries_comunicado_id_fkey'
+            columns: ['comunicado_id']
+            isOneToOne: false
+            referencedRelation: 'comunicados'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'comunicado_deliveries_profile_id_fkey'
+            columns: ['profile_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'comunicado_deliveries_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       notifications: {
         Row: {
           id: string

@@ -8,6 +8,8 @@ import { RealtimeToastListener } from '@/components/notifications/realtime-toast
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { PenaltyDialog } from '@/components/notifications/penalty-dialog'
+import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { getDueComunicados } from '@/actions/comunicados'
 import { NotificationItem } from '@/types/notifications'
 
 const dependentItems: NavItem[] = [
@@ -35,6 +37,11 @@ export default async function DependentDashboardLayout({
     return null
   }
 
+  // Comunicados "devidos" do dependente (primeira exibição pendente ou
+  // repetição agendada vencida). O overlay bloqueante confirma e agenda a
+  // próxima repetição; Realtime cobre publicações ao vivo.
+  const dueComunicados = house ? await getDueComunicados() : []
+
   // Conquistas: conta o acesso diário do dependente (métricas APP_LOGIN_DAYS e
   // STREAK_LOGIN_DAYS), dia em America/Recife. BEST-EFFORT e idempotente.
   if (house) {
@@ -60,6 +67,9 @@ export default async function DependentDashboardLayout({
         userId={user.id}
         initialNotifications={notifications as NotificationItem[]}
       />
+      {house ? (
+        <ComunicadoOverlay houseId={house.id} initialQueue={dueComunicados} />
+      ) : null}
       {children}
     </div>
   )

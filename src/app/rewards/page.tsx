@@ -12,6 +12,8 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
+import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { getDueComunicados } from '@/actions/comunicados'
 import type { Tables } from '@/types/database'
 
 export const metadata: Metadata = {
@@ -201,23 +203,31 @@ export default async function RewardsPage() {
         })
       )
 
+      const dueComunicados = await getDueComunicados()
+
       content = (
-        <RewardsDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          myId={user.id}
-          initialPoints={profile.points}
-          initialRewards={rewards ?? []}
-          initialRedemptions={redemptionViews}
-          initialSuggestions={(suggestions ?? []).map((suggestion) => ({
-            id: suggestion.id,
-            title: suggestion.title,
-            description: suggestion.description,
-            points_cost: suggestion.points_cost,
-            status: suggestion.status,
-            created_at: suggestion.created_at,
-          }))}
-        />
+        <>
+          <RewardsDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            myId={user.id}
+            initialPoints={profile.points}
+            initialRewards={rewards ?? []}
+            initialRedemptions={redemptionViews}
+            initialSuggestions={(suggestions ?? []).map((suggestion) => ({
+              id: suggestion.id,
+              title: suggestion.title,
+              description: suggestion.description,
+              points_cost: suggestion.points_cost,
+              status: suggestion.status,
+              created_at: suggestion.created_at,
+            }))}
+          />
+          <ComunicadoOverlay
+            houseId={dependentHouse.id}
+            initialQueue={dueComunicados}
+          />
+        </>
       )
     }
   }

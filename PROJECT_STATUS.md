@@ -1,5 +1,44 @@
 # CasaSync Web — PROJECT STATUS
 
+## Comunicados / avisos da casa — rota `/dashboard/admin/comunicados` (implementado — SQL **aguardando aplicação**)
+
+### O que foi implementado
+- **Novo domínio de comunicados**: o ADMIN cria avisos para a casa ativa (título 1–120, descrição 1–500, agenda de repetição) e **publica** (`published`); os dependentes da casa **confirmam** em um overlay bloqueante. Sem cron — o "gatilho" é cálculo server-side na leitura.
+- **Tabelas novas (SQL em `docs/sql/comunicados.sql` — registro; **aguardando aplicação pelo usuário** no dashboard Supabase):**
+  - **`comunicados`** — `house_id`, `title`, `description`, `published` (default false = rascunho), `repeats_total` (1–100, N confirmações exigidas), `repeat_interval_days` (0–365; contagem do período), `repeat_weekdays` (int[] default todos, dias 0(dom)..6(sáb) do **agendamento**), `repeat_time` (**`time` default `'08:00'`** — horário do agendamento em **America/Recife**), `created_by` (FK set null), timestamps.
+  - **`comunicado_deliveries`** — `comunicado_id` (FK cascade), `profile_id` (FK cascade), `delivered_count`, `last_confirmed_at`; **UNIQUE (comunicado_id, profile_id)** — uma linha por (comunicado, dependente).
+- **Regras de exibição:** **1ª exibição é imediata** à publicação — via Realtime (`comunicados` entra na publication, policy `comunicados_select_members`/SELECT por membro) ou **na próxima abertura** do dependente (`getDueComunicados()` no render). **Repetição POR DEPENDENTE**: cada confirmação agenda a próxima ocorrência (soma o intervalo em dias, corta para o próximo weekday agendado e aplica o horário, fuso America/Recife — helpers puros em **`src/utils/comunicados.ts`**: `recifeWeekday`/`nextComunicadoOccurrence`/`toDueComunicado`/`comunicadoSchedule`, módulo sem `'use server'`); ao completar `repeats_total` confirmações, para de aparecer. Referência da agenda: `last_confirmed_at ?? created_at`.
+- **Server Actions (`src/actions/comunicados.ts`):** `createComunicado` / `updateComunicado` (whitelist) / `setComunicadoPublished` / `deleteComunicado` — ADMIN da casa ativa (`assertAdminCanManage`, service-role), validação fail-closed (`validateComunicadoFields`: título 1–120, descrição 1–500, repeats 1–100, intervalo 0–365, ≥1 weekday 0–6 sem duplicados, `repeatTime` `/^([01]\d|2[0-3]):[0-5]\d$/`); `getDueComunicados()` (só DEPENDENT com casa; `[]` para ADMIN/sem casa; publicados com agenda devida por dependente); `confirmComunicadoDelivery` (guarda em `delivered_count` + `.select('id')` + 2 tentativas, cap em `repeats_total`; `ok:false` quando recusa). Revalidam `/dashboard/admin/comunicados`; a confirmação revalida também as rotas do dependente.
+- **UI ADMIN (`src/components/comunicados/comunicados-admin.tsx`)** em `/dashboard/admin/comunicados` (force-dynamic, role check + NoHouseCard): form criar/editar com chips de dia do agendamento + `<input type="time">` + repetição (total/intervalo), toggle **Publicar/Despublicar**, deletar com `Modal`, **Realtime de `comunicados`** e total de confirmações por aviso. Acesso pelo **card "Comunicados"** na visão geral do ADMIN (`/dashboard/admin`) — **sem item na nav** (ADMIN segue com 5 itens).
+- **Overlay bloqueante do DEPENDENT (`src/components/comunicados/comunicado-overlay.tsx`):** portal **`z-[120]`** (acima do `Modal` z-[100]), fila uma a uma, foco preso no botão **Confirmar**, **Esc bloqueado** (capture), scroll do documento travado; alimentado por `getDueComunicados()` + Realtime de `comunicados`; itens que o servidor recusa saem da fila; falha de rede mantém o item com toast (`excludedRef` evita re-exibição). Montado no layout dependente e nas branches dependentes de `/tasks`, `/rewards`, `/achievements`.
+- **Realtime/limpeza:** `comunicado_deliveries` fica **FORA** da publication e **sem policies client** (escritas/leituras service-role; o total do ADMIN atualiza via `revalidatePath`/`router.refresh()` pós-ação). `deleteComunicado` remove as deliveries (FK cascade); `deleteHouse` remove os comunicados (FK cascade em `comunicados`). Ver **ADR-0017**.
+
+### SQL (docs/sql/comunicados.sql — aplicação pendente)
+```sql
+-- Resumo (arquivo completo em docs/sql/comunicados.sql):
+-- create table public.comunicados (… repeat_time time not null default '08:00:00' …);
+-- create index … on public.comunicados (house_id);
+-- create table public.comunicado_deliveries (… unique (comunicado_id, profile_id) …);
+-- create index … on public.comunicado_deliveries (comunicado_id);
+-- alter table … enable row level security (ambas);
+-- create policy "comunicados_select_members" on public.comunicados
+--   for select to authenticated using (exists (select 1 from public.house_members hm
+--     where hm.house_id = comunicados.house_id and hm.profile_id = auth.uid()));
+-- alter publication supabase_realtime add table public.comunicados;
+-- (comunicado_deliveries SEM publication e SEM policies — service-role apenas.)
+```
+
+### Verificação
+`npm run lint` ✓ (só warnings pré-existentes `no-img-element`/`House` unused nos pages de auth) · `npm run typecheck` ✓ (após `.select('id')` no update guardado da confirmação) · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo, `/dashboard/admin/comunicados` dinâmico).
+
+### Pontos de atenção
+- **SQL pendente:** aplicar `docs/sql/comunicados.sql` no dashboard do Supabase (o runtime do módulo falha sem as tabelas). Não foi criado/alterado nada do módulo que dependa de schema além do registrado.
+- **Requires deploy** para valer online.
+- Limite aceito: o total de confirmações do ADMIN não chega "ao vivo" (deliveries fora da publication) — atualiza via `revalidatePath`/`router.refresh()` pós-ação.
+- A 1ª exibição ignora o horário (imediata à publicação); o agendamento só rege as repetições seguintes.
+
+---
+
 ## Ajustes de UI — conquistas do dependente e navegação do header (concluída — sem mudança de schema)
 
 ### O que foi implementado

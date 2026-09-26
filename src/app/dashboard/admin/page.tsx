@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Gift, House, ListTodo, SlidersHorizontal } from 'lucide-react'
+import { Gift, House, ListTodo, Megaphone, SlidersHorizontal } from 'lucide-react'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import {
@@ -44,6 +44,13 @@ const actions = [
     description: 'Economia de pontos e mensagem rápida.',
     icon: SlidersHorizontal,
     accent: 'bg-violet-100 text-violet-700',
+  },
+  {
+    href: '/dashboard/admin/comunicados',
+    title: 'Comunicados',
+    description: 'Avisos que os dependentes confirmam.',
+    icon: Megaphone,
+    accent: 'bg-rose-100 text-rose-700',
   },
 ] as const
 

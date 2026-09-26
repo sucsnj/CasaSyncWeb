@@ -70,6 +70,21 @@ em primeiro; siglas técnicas resolvidas no fim.
   DEPENDENT aos ADMINs, com `message_id` agrupando as cópias; expira por
   `readRetentionDays` após a 1ª leitura de um tutor.
 
+## Comunicados
+- **Comunicado** (`comunicados`) — aviso da casa publicado pelo ADMIN que o
+  dependente **precisa confirmar** (modal bloqueante). Rascunho (`published:
+  false`) é invisível ao dependente; publicar dispara a 1ª exibição imediata
+  (Realtime) ou na próxima abertura.
+- **Repetição por dependente** — cada confirmação (`comunicado_deliveries`)
+  agenda a próxima exibição (período em dias, dias da semana e horário em
+  America/Recife) até completar `repeats_total` confirmações.
+- **Confirmação / entrega** (`comunicado_deliveries`) — `delivered_count` +
+  `last_confirmed_at` por (comunicado, dependente); `last_confirmed_at` é a
+  referência do cálculo da próxima ocorrência.
+- **Devido** — primeiro aviso sem entrega registrada **ou** próxima ocorrência
+  vencida (derivado no servidor via `getDueComunicados`); sem cron — o "disparo"
+  agendado é calculado na abertura/refresh.
+
 ## Ganhos em Realtime
 - **publication `supabase_realtime`** — índices de quais tabelas emitem eventos.
 - **Realtime listener** — assinatura `postgres_changes` no browser via
