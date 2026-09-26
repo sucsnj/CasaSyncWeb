@@ -102,7 +102,13 @@ ADMIN pode **retirar** progresso concedido, e não só conceder:
 - retirar exige progresso existente: sem linha (ou já em 0) a action devolve
   erro em vez de criar uma linha zerada pelo lazy insert;
 - o **`level` nunca é alterado** pelo ajuste — é histórico de resgates, não
-  progreso do ciclo.
+  progresso do ciclo;
+- o ajuste é **escopado à conquista escolhida**: `syncAchievementProgress` passou
+  a aceitar um 5º parâmetro `onlyAchievementId` (filtra `.eq('id', …)` na query
+  de conquistas), para que um `+1`/`−1` **não** mexa nas outras `MANUAL` da
+  casa — ao contrário das métricas automáticas, em que uma ocorrência conta
+  para todas as conquistas com a mesma métrica. O restante do helper (lazy
+  insert, guard `.eq('current_progress', …)` + 1 retry) ficou inalterado.
 
 O nome da action mudou de `grantAchievementProgress` para
 `adjustAchievementProgress` porque ela deixou de ser só concessão (único call

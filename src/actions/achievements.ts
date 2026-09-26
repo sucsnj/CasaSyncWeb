@@ -361,6 +361,9 @@ export async function registerAchievementProgress(
  * negativo **retira**. Só `MANUAL` existe no domínio de ajuste manual — as demais
  * métricas são automáticas via `dependent_stats`.
  *
+ * O ajuste é **por conquista** (as outras `MANUAL` da casa não são tocadas —
+ * diferente das métricas automáticas, em que uma ocorrência conta para todas).
+ *
  * Retirar progresso tem duas consequências:
  * - o progresso tem **piso em 0** (nunca fica negativo);
  * - ao cair abaixo do objetivo o `unlocked_at` é **limpo** — o desbloqueio é
@@ -428,18 +431,27 @@ export async function adjustAchievementProgress(
     }
   }
 
-  await syncAchievementProgress(activeHouse.id, profileId, 'MANUAL', (achievementMeta, existing) => {
-    const current = existing?.current_progress ?? 0
-    const progress =
-      amount > 0 ? current + amount : Math.max(0, current - Math.abs(amount))
+  // Escopo: SOMENTE a conquista escolhida. Um `+1`/`−1` do tutor na conquista A
+  // não pode mexer nas outras conquistas `MANUAL` da casa (diferente dos
+  // eventos automáticos, em que uma ocorrência conta para todas com a métrica).
+  await syncAchievementProgress(
+    activeHouse.id,
+    profileId,
+    'MANUAL',
+    (achievementMeta, existing) => {
+      const current = existing?.current_progress ?? 0
+      const progress =
+        amount > 0 ? current + amount : Math.max(0, current - Math.abs(amount))
 
-    const unlockedAt =
-      progress >= achievementMeta.target_count
-        ? existing?.unlocked_at ?? new Date().toISOString()
-        : null
+      const unlockedAt =
+        progress >= achievementMeta.target_count
+          ? existing?.unlocked_at ?? new Date().toISOString()
+          : null
 
-    return { progress, unlockedAt }
-  })
+      return { progress, unlockedAt }
+    },
+    achievementId
+  )
 
   revalidatePath('/achievements')
   return {

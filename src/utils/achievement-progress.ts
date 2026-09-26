@@ -27,7 +27,7 @@ export type ProgressWrite = {
 }
 
 /**
- * Centraliza a gravação de progresso em `dependent_achievements` para todas as
+ * Centraliza a gravação de progresso em `dependent_achievements` para as
  * conquistas da casa que medem `metricType`: lazy insert (nível 1) na primeira
  * ocorrência e update atômico por linha com guard `.eq('current_progress', valor
  * lido)` + 1 retry relendo — duas escritas concorrentes não perdem incremento.
@@ -35,6 +35,12 @@ export type ProgressWrite = {
  * `compute` decide o valor novo a partir da conquista e da linha atual
  * (`null` quando ainda não existe). BEST-EFFORT: nunca lança — uma falha aqui
  * não derruba a ação principal (uma nova ocorrência re-sincroniza).
+ *
+ * `onlyAchievementId` restringe a gravação a **uma** conquista: é o que a
+ * concessão manual do tutor usa (um `+1`/`−1` numa conquista `MANUAL` não pode
+ * mexer nas outras `MANUAL` da casa). Sem o parâmetro vale o comportamento dos
+ * eventos automáticos — um único evento conta para todas as conquistas da casa
+ * com a mesma métrica (`TASKS_APPROVED`, `EARNED_POINTS`, …).
  */
 export async function syncAchievementProgress(
   houseId: string,
@@ -43,7 +49,8 @@ export async function syncAchievementProgress(
   compute: (
     achievement: AchievementMeta,
     existing: ExistingProgressRow | null
-  ) => ProgressWrite
+  ) => ProgressWrite,
+  onlyAchievementId?: string
 ): Promise<void> {
   let admin: ReturnType<typeof createAdminClient>
   try {
@@ -53,11 +60,17 @@ export async function syncAchievementProgress(
   }
 
   try {
-    const { data: achievements } = await admin
+    let achievementsQuery = admin
       .from('achievements')
       .select('id, target_count, is_repeatable')
       .eq('house_id', houseId)
       .eq('metric_type', metricType)
+
+    if (onlyAchievementId) {
+      achievementsQuery = achievementsQuery.eq('id', onlyAchievementId)
+    }
+
+    const { data: achievements } = await achievementsQuery
     if (!achievements?.length) return
 
     const ids = achievements.map((achievement) => achievement.id)
