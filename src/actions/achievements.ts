@@ -324,8 +324,8 @@ export async function deleteAchievement(
  *   `evaluateAchievements` via `incrementDependentStat`.
  * - `EARNED_POINTS`: volátil — soma `amount` no progresso de cada conquista que
  *   mede pontos (sem coluna em `dependent_stats`), exatamente como antes.
- * - `MANUAL`: não é registrada automaticamente — o ADMIN concede via
- *   `grantAchievementProgress`.
+ * - `MANUAL`: não é registrada automaticamente — o ADMIN ajusta na mão via
+ *   `adjustAchievementProgress`.
  *
  * Uso: `approveTask`/`adminCompleteTask` chamam para `TASKS_APPROVED` (amount 1)
  * e `EARNED_POINTS` (amount = pontos creditados); `rejectCompletedTask` para
@@ -356,11 +356,20 @@ export async function registerAchievementProgress(
 }
 
 /**
- * ADMIN concede progresso manualmente a uma conquista de métrica `MANUAL` do
- * dependente na casa ativa. Só `MANUAL` existe no domínio de concessão — as
- * demais métricas são automáticas via `dependent_stats`.
+ * ADMIN ajusta o progresso manual de uma conquista de métrica `MANUAL` de um
+ * dependente da casa ativa (revisão do tutor): `amount` positivo **concede**,
+ * negativo **retira**. Só `MANUAL` existe no domínio de ajuste manual — as demais
+ * métricas são automáticas via `dependent_stats`.
+ *
+ * Retirar progresso tem duas consequências:
+ * - o progresso tem **piso em 0** (nunca fica negativo);
+ * - ao cair abaixo do objetivo o `unlocked_at` é **limpo** — o desbloqueio é
+ *   revogado e o dependente não consegue mais resgatar aquela conquista.
+ *
+ * O `level` (histórico de resgates) nunca é alterado por este ajuste, e retirar
+ * exige progresso existente (sem linha ou com 0, nada a retirar).
  */
-export async function grantAchievementProgress(
+export async function adjustAchievementProgress(
   achievementId: string,
   profileId: string,
   amount = 1
@@ -372,7 +381,7 @@ export async function grantAchievementProgress(
   const auth = await assertAdminCanManage(admin, activeHouse.id)
   if (!auth.ok) return auth
 
-  if (!Number.isInteger(amount) || amount < 1 || amount > 1000) {
+  if (!Number.isInteger(amount) || amount === 0 || Math.abs(amount) > 1000) {
     return { ok: false, error: 'Quantidade inválida.' }
   }
 
@@ -386,7 +395,7 @@ export async function grantAchievementProgress(
     return { ok: false, error: 'Conquista não encontrada nesta casa.' }
   }
   if (achievement.metric_type !== 'MANUAL') {
-    return { ok: false, error: 'Apenas conquistas de concessão manual aceitam progresso do ADMIN.' }
+    return { ok: false, error: 'Apenas conquistas de concessão manual aceitam ajuste do ADMIN.' }
   }
 
   const { data: member } = await admin
@@ -401,17 +410,42 @@ export async function grantAchievementProgress(
     return { ok: false, error: 'Dependente não encontrado na casa.' }
   }
 
-  await syncAchievementProgress(activeHouse.id, profileId, 'MANUAL', (achievementMeta, existing) => {
-    const progress = (existing?.current_progress ?? 0) + amount
-    return {
-      progress,
-      unlockedAt:
-        existing?.unlocked_at ?? (progress >= achievementMeta.target_count ? new Date().toISOString() : null),
+  if (amount < 0) {
+    // Não faz sentido "retirar" o que nunca foi concedido: sem linha (ou já em
+    // zero) a resposta é um erro explícito em vez de criar uma linha zerada.
+    const { data: currentRow } = await admin
+      .from('dependent_achievements')
+      .select('current_progress')
+      .eq('achievement_id', achievementId)
+      .eq('profile_id', profileId)
+      .maybeSingle()
+
+    if (!currentRow || currentRow.current_progress <= 0) {
+      return {
+        ok: false,
+        error: 'Este dependente não tem progresso para retirar nesta conquista.',
+      }
     }
+  }
+
+  await syncAchievementProgress(activeHouse.id, profileId, 'MANUAL', (achievementMeta, existing) => {
+    const current = existing?.current_progress ?? 0
+    const progress =
+      amount > 0 ? current + amount : Math.max(0, current - Math.abs(amount))
+
+    const unlockedAt =
+      progress >= achievementMeta.target_count
+        ? existing?.unlocked_at ?? new Date().toISOString()
+        : null
+
+    return { progress, unlockedAt }
   })
 
   revalidatePath('/achievements')
-  return { ok: true, message: 'Progresso concedido.' }
+  return {
+    ok: true,
+    message: amount > 0 ? 'Progresso concedido.' : 'Progresso retirado.',
+  }
 }
 
 /**

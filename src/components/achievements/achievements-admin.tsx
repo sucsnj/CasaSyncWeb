@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, Minus, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
+  adjustAchievementProgress,
   createAchievement,
   deleteAchievement,
-  grantAchievementProgress,
   updateAchievement,
 } from '@/actions/achievements'
 import {
@@ -99,7 +99,7 @@ export function AchievementsAdmin({
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [grantingKey, setGrantingKey] = useState<string | null>(null)
+  const [adjustingKey, setAdjustingKey] = useState<string | null>(null)
 
   // Realtime: conquistas/progresso criados/alterados por outro ADMIN ou pelas
   // aprovações de tarefas chegam ao vivo (confere também no `router.refresh`).
@@ -272,21 +272,24 @@ export function AchievementsAdmin({
     }
   }
 
-  async function handleGrant(achievement: Achievement, profileId: string) {
-    const key = `${achievement.id}:${profileId}`
-    if (grantingKey) return
-    setGrantingKey(key)
+  async function handleAdjust(
+    achievement: Achievement,
+    profileId: string,
+    delta: 1 | -1
+  ) {
+    if (adjustingKey) return
+    setAdjustingKey(`${achievement.id}:${profileId}:${delta}`)
     try {
-      const res = await grantAchievementProgress(achievement.id, profileId, 1)
+      const res = await adjustAchievementProgress(achievement.id, profileId, delta)
       if (!res.ok) {
         toast.error(res.error)
         return
       }
-      toast.success(res.message ?? 'Progresso concedido.')
+      toast.success(res.message ?? 'Progresso ajustado.')
     } catch {
-      toast.error('Falha ao conceder o progresso.')
+      toast.error('Falha ao ajustar o progresso.')
     } finally {
-      setGrantingKey(null)
+      setAdjustingKey(null)
     }
   }
 
@@ -698,18 +701,37 @@ export function AchievementsAdmin({
                                     </span>
                                   ) : null}
                                   {achievement.metric_type === 'MANUAL' ? (
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs"
-                                      disabled={grantingKey !== null}
-                                      onClick={() =>
-                                        handleGrant(achievement, dependent.id)
-                                      }
-                                    >
-                                      +1
-                                    </Button>
+                                    <span className="flex items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 w-7 p-0"
+                                        title="Retirar 1 do progresso (revoga o desbloqueio se ficar abaixo do objetivo)"
+                                        disabled={
+                                          adjustingKey !== null ||
+                                          entry.current_progress <= 0
+                                        }
+                                        onClick={() =>
+                                          handleAdjust(achievement, dependent.id, -1)
+                                        }
+                                      >
+                                        <Minus className="size-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 w-7 p-0"
+                                        title="Conceder 1 de progresso"
+                                        disabled={adjustingKey !== null}
+                                        onClick={() =>
+                                          handleAdjust(achievement, dependent.id, 1)
+                                        }
+                                      >
+                                        <Plus className="size-3.5" />
+                                      </Button>
+                                    </span>
                                   ) : null}
                                 </span>
                               ) : (
@@ -722,13 +744,14 @@ export function AchievementsAdmin({
                                       type="button"
                                       variant="outline"
                                       size="sm"
-                                      className="h-7 px-2 text-xs"
-                                      disabled={grantingKey !== null}
+                                      className="h-7 w-7 p-0"
+                                      title="Conceder 1 de progresso"
+                                      disabled={adjustingKey !== null}
                                       onClick={() =>
-                                        handleGrant(achievement, dependent.id)
+                                        handleAdjust(achievement, dependent.id, 1)
                                       }
                                     >
-                                      +1
+                                      <Plus className="size-3.5" />
                                     </Button>
                                   ) : null}
                                 </span>

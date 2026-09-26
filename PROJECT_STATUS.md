@@ -1,5 +1,25 @@
 # CasaSync Web — PROJECT STATUS
 
+## Revisão de conquistas pelo tutor — a concessão manual passou a conceder **e retirar** (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **A ação de concessão virou ajuste:** `grantAchievementProgress` foi renomeada para **`adjustAchievementProgress(achievementId, profileId, amount = 1)`** (`src/actions/achievements.ts`) e o `amount` passou a ser **inteiro com sinal** (`≠ 0`, `|amount| ≤ 1000`): **positivo concede** (comportamento anterior, 1–1000) e **negativo retira** progresso manual. A assinatura e as guardas de autorização seguem iguais — só ADMIN da casa ativa, conquista da casa com `metric_type='MANUAL'`, alvo `house_members.role='DEPENDENT'`.
+- **Retirar tem piso 0 e revoga o desbloqueio:** `progress = max(0, atual − |amount|)` (nunca fica negativo) e, ao cair abaixo do objetivo, o **`unlocked_at` é limpo** — o dependente deixa de ter o botão de resgate (chega pelo Realtime de `dependent_achievements`, que já é subscription `UPDATE` por `house_id` em `achievements-dependent.tsx`).
+- **Retirar exige progresso existente:** com `amount < 0`, a action lê a linha em `dependent_achievements` antes de gravar; sem linha (ou já em 0) devolve `ok:false` com mensagem clara em vez de deixar o lazy insert de `syncAchievementProgress` criar uma linha zerada.
+- **O `level` nunca muda no ajuste** — é histórico de resgates, não progresso do ciclo (repetível continua mostrando `Nível N/máx` como está).
+- **UI (`achievements/achievements-admin.tsx`):** no card de conquista `MANUAL`, a seção "Progresso por dependente" passou a ter **dois botões de ícone** — **"−"** (`Minus`, vermelho/retirada, com `title` explicando a revogação) e **"+"** (`Plus`). O "−" só é renderizado quando o dependente **tem** linha de progresso e **desliga em 0**; no estado "Sem progresso" só o "+" aparece. O estado `grantingKey` virou `adjustingKey` (lock único, como antes) e o handler `handleGrant` virou `handleAdjust(achievement, profileId, delta: 1 | -1)`. Sem `router.refresh` — o Realtime de `dependent_achievements` (já assinado no componente) repinta a barra, o chip e o nível.
+- **Sem mudança de schema** e sem SQL novo: usa as colunas que já existem (`current_progress`, `unlocked_at`, `level`).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). *Nota de ambiente: o `typecheck`/`build` falhavam com `TS2307` de `.next/dev/types/validator.ts` referenciando um route group `(dashboard)` inexistente — artefato stale de um `next dev` anterior; resolvido removendo `.next/dev` (gitignored), como manda o `AGENTS.md` §1.*
+
+### Pontos de atenção
+- Retirar é **revisão de histórico de desbloqueio**, não devolução de pontos: se o dependente **já resgatou** a conquista, os pontos ficam com ele (o `level` permanece) — só o progresso do ciclo em curso volta atrás.
+- A ação continua chamando `revalidatePath('/achievements')`; o lado do dependente depende do Realtime (mesma premissa da concessão, que já contava com isso).
+- Requer deploy para valer online.
+
+---
+
 ## Comunicados / avisos da casa — rota `/dashboard/admin/comunicados` (implementado — SEM tempo real)
 
 ### O que foi implementado
@@ -70,7 +90,7 @@
 - **`evaluateAchievements` (deriva progresso do contador absoluto):** repetível → `contador − (nível−1) × objetivo` (o excedente consumido são os ciclos já resgatados); única → `min(contador, objetivo)`; `progress = existing ? max(existing.current_progress, raw) : raw` (histórico pré-estatísticas **nunca diminui**); `unlocked_at` só marcado no cruzamento e quando ausente. Helper compartilhado `syncAchievementProgress` em `src/utils/achievement-progress.ts`.
 - **Injeções (todas best-effort):** `approveTask`/`adminCompleteTask` → `TASKS_APPROVED` (1) + `EARNED_POINTS` (valor corrente, já com decay); **`rejectCompletedTask` → `TASKS_REJECTED`**; **`approveRedemption` → `REWARDS_CLAIMED`** (conta na aprovação); **`resolveRewardSuggestion` aprovado → `CUSTOM_REWARDS_APPROVED`**.
 - **Dias de acesso (`registerLoginDay` em `src/actions/stats.ts`):** conta **1×/dia** (dia em **America/Recife**, `Intl` en-CA), idempotente por `last_login_day` (guard `.eq`/`.is null` contra duplicação de abas); streak = registrado ontem ? `+1` : 1. Disparado best-effort nos renders dependentes: layout `/dashboard/dependent` **e** branches dependentes de `/tasks`, `/rewards`, `/achievements`. Avalia `APP_LOGIN_DAYS` + `STREAK_LOGIN_DAYS`.
-- **Concessão manual (`grantAchievementProgress(achievementId, profileId, amount=1)`):** só ADMIN da casa ativa; exige conquista **`metric_type='MANUAL'`** da casa e membro `DEPENDENT`; `amount` inteiro 1–1000. Concede via `syncAchievementProgress`. UX: botão **"+1"** por dependente no card da conquista MANUAL em `/achievements` (ADMIN).
+- **Concessão manual (`adjustAchievementProgress(achievementId, profileId, amount=1)`):** só ADMIN da casa ativa; exige conquista **`metric_type='MANUAL'`** da casa e membro `DEPENDENT`; `amount` inteiro **com sinal** (`≠ 0`, `|amount| ≤ 1000) — positivo concede, negativo **retira** (piso 0, revoga o `unlocked_at` ao cair abaixo do objetivo; ver seção "Revisão de conquistas pelo tutor" no topo). Ajusta via `syncAchievementProgress`. UX: botões **"+1"/"−1"** por dependente no card da conquista MANUAL em `/achievements` (ADMIN). *(O nome era `grantAchievementProgress` até a revisão do tutor.)*
 - **Limpeza:** `expelMember`/`deleteDependentAccount`/`deleteHouse` (`src/actions/houses.ts`) agora removem também as linhas de `dependent_stats` no fluxo explícito.
 - **Types:** `src/types/database.ts` reflete `dependent_stats` e a união nova de `metric_type` (não regenerado via CLI — espelho manual).
 

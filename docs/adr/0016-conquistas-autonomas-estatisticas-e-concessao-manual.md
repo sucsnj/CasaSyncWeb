@@ -84,12 +84,29 @@ travado); corrigir exigiria desacoplar count-consumido de level.
   `/dashboard/dependent` + branches dependentes de `/tasks`, `/rewards`,
   `/achievements`).
 
-### `grantAchievementProgress(achievementId, profileId, amount=1)`
+### `adjustAchievementProgress(achievementId, profileId, amount=1)`
 Só ADMIN da casa ativa; a conquista precisa ser da casa **e** `metric_type =
 'MANUAL'`; o alvo precisa ser `house_members.role='DEPENDENT'`; `amount` inteiro
-1–1000. Concede via `syncAchievementProgress` (lazy insert/atomic update). UX:
-botão "+1" por dependente no card da conquista MANUAL em
-`/achievements` (ADMIN).
+**com sinal**, `≠ 0` e `|amount| ≤ 1000`. Ajusta via `syncAchievementProgress`
+(lazy insert/atomic update). UX: botões **"+1"/"−1"** por dependente no card da
+conquista MANUAL em `/achievements` (ADMIN).
+
+**Evolução (revisão do tutor):** o `amount` passou a aceitar **negativo** — o
+ADMIN pode **retirar** progresso concedido, e não só conceder:
+- `amount > 0` → `progress = atual + amount` (comportamento original);
+- `amount < 0` → `progress = max(0, atual − |amount|)` (**piso 0**, o progresso
+  nunca fica negativo) e, ao cair abaixo do objetivo, o `unlocked_at` é
+  **limpo** — o desbloqueio é **revogado** e o dependente não consegue mais
+  resgatar aquela conquista (o botão de resgate some via Realtime de
+  `dependent_achievements`);
+- retirar exige progresso existente: sem linha (ou já em 0) a action devolve
+  erro em vez de criar uma linha zerada pelo lazy insert;
+- o **`level` nunca é alterado** pelo ajuste — é histórico de resgates, não
+  progreso do ciclo.
+
+O nome da action mudou de `grantAchievementProgress` para
+`adjustAchievementProgress` porque ela deixou de ser só concessão (único call
+site: `achievements/achievements-admin.tsx`).
 
 ### Limpeza
 `expelMember` / `deleteDependentAccount` / `deleteHouse` removem também as linhas
