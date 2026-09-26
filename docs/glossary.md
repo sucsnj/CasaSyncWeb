@@ -73,17 +73,19 @@ em primeiro; siglas técnicas resolvidas no fim.
 ## Comunicados
 - **Comunicado** (`comunicados`) — aviso da casa publicado pelo ADMIN que o
   dependente **precisa confirmar** (modal bloqueante). Rascunho (`published:
-  false`) é invisível ao dependente. **Sem tempo real**: a 1ª exibição respeita
-  a agenda e só ocorre num render server-side (atualizar/trocar de endpoint) —
-  no primeiro slot agendado (weekday + horário) a partir da publicação.
+  false`) é invisível ao dependente. **Sem tempo real**: a 1ª exibição segue a
+  regra "slot de hoje ou próximo" e só ocorre num render server-side
+  (atualizar/trocar de endpoint) — dia agendado com horário já passado aparece
+  já; antes do horário, espera o horário de hoje; dia não agendado → próximo dia
+  agendado.
 - **Repetição por dependente** — cada confirmação (`comunicado_deliveries`)
   agenda a próxima exibição (período em dias, dias da semana e horário em
   America/Recife) até completar `repeats_total` confirmações.
 - **Confirmação / entrega** (`comunicado_deliveries`) — `delivered_count` +
   `last_confirmed_at` por (comunicado, dependente); `last_confirmed_at` é a
   referência do cálculo da próxima ocorrência.
-- **Devido** — primeiro aviso sem entrega registrada quando `now >=` primeira
-  ocorrência (a partir de `created_at`, **sem intervalo** no 1º ciclo) **ou**
+- **Devido** — primeiro aviso sem entrega registrada quando `now >=` a 1ª
+  ocorrência (slot de hoje ou próximo, **sem intervalo** no 1º ciclo) **ou**
   próxima ocorrência vencida (derivado no servidor via `getDueComunicados`); sem
   cron e sem Realtime — o "disparo" agendado só é calculado num render
   server-side (abertura/troca de endpoint/refresh após confirmar).

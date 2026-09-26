@@ -39,10 +39,11 @@ endpoint ou após confirmar.
 
 ### Regras de negócio (fixadas com o usuário)
 
-- **A 1ª exibição respeita a agenda** (não é imediata): o aviso aparece no
-  **primeiro slot agendado** (dia da semana em `repeat_weekdays` + `repeat_time`)
-  a partir do momento da publicação (`created_at`), **sem somar o intervalo**
-  nesse primeiro ciclo — um horário futuro não é "adiantado".
+- **1ª exibição em "slot de hoje ou próximo"** (regra do usuário): num dia
+  agendado, se o horário de hoje já passou o aviso é devido de imediato (aparece
+  no próximo render); se ainda não chegou, espera o horário de hoje; em dia não
+  agendado, vai para o próximo dia agendado. O intervalo de repetição não conta
+  nesse primeiro ciclo.
 - **Repetição é por dependente.** Cada "Confirmar" soma `delivered_count`, grava
   `last_confirmed_at` e agenda a próxima exibição via
   `nextComunicadoOccurrence(after, agenda)` (referência = `last_confirmed_at` +
@@ -51,8 +52,8 @@ endpoint ou após confirmar.
   `repeats_total`, o dependente para de receber.
 - **Sem cron/background no projeto:** o "disparo agendado" é mero cálculo
   server-side no `getDueComunicados()` (usado no render de cada tela e no
-  refresh do overlay). "Devido" = **sem** linha de entrega e `now >=` primeira
-  ocorrência (a partir de `created_at`, **intervalo 0** no primeiro ciclo) **ou**
+  refresh do overlay). "Devido" = **sem** linha de entrega e `now >=` a 1ª
+  ocorrência (slot de hoje ou próximo, intervalo 0 no primeiro ciclo) **ou**
   `now >= próxima ocorrência` de `last_confirmed_at` (repetições). **Sem
   Realtime:** um aviso só aparece num novo render server-side (atualizar página,
   trocar de endpoint ou após confirmar) — o horário passado do dia não é pulado,

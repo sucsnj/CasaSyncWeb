@@ -12,6 +12,7 @@ import {
   COMUNICADO_MAX_REPEATS,
   COMUNICADO_TIME_PATTERN,
   comunicadoSchedule,
+  firstComunicadoOccurrence,
   nextComunicadoOccurrence,
   toDueComunicado,
   type Comunicado,
@@ -109,7 +110,8 @@ export type ComunicadoInput = {
 /**
  * ADMIN cria um comunicado (rascunho, `published = false`). Publicar é um passo
  * à parte (`setComunicadoPublished`); na publicação ele passa a ser "devido"
- * para os dependentes da casa no próximo slot agendado (agenda do comunicado).
+ * para os dependentes da casa conforme a 1ª exibição (regra "slot de hoje ou
+ * próximo" — ver `getDueComunicados`).
  */
 export async function createComunicado(
   input: ComunicadoInput
@@ -303,12 +305,13 @@ export async function deleteComunicado(
  * usado no render server-side das telas do dependente — a fila só muda em
  * refresh/troca de endpoint (re-render) e após confirmar.
  *
- * A 1ª exibição TAMBÉM respeita a agenda (não é mais imediata) — ela ocorre no
- * primeiro slot agendado (weekday + horário em America/Recife) a partir da
- * publicação (`created_at`), sem somar o intervalo nesse primeiro ciclo.
+ * 1ª exibição pela regra "slot de hoje ou próximo" (definida pelo usuário):
+ * num dia agendado, horário de hoje já passou → devido já (próximo render);
+ * horário de hoje ainda não chegou → deve esperar; hoje não é dia agendado →
+ * próximo dia agendado.
  *
- * - sem linha de entrega → devido quando `now >= primeira ocorrência` a partir
- *   de `created_at` (intervalo ignorado na 1ª exibição);
+ * - sem linha de entrega → devido quando `now >= firstComunicadoOccurrence`
+ *   (slot de hoje ou próximo; intervalo ignorado na 1ª exibição);
  * - `delivered_count >= repeats_total` → encerrado para este dependente;
  * - senão, devido quando `now >= próxima ocorrência` a partir da última
  *   confirmação (`last_confirmed_at`, somando o intervalo).
@@ -356,19 +359,24 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
 
     if (deliveredCount >= comunicado.repeats_total) continue
 
-    // Referência da próxima ocorrência: última confirmação (repetição) ou a
-    // publicação (1ª exibição). Na 1ª, o intervalo NÃO entra no cálculo — o
-    // comunicado aparece no próximo slot agendado (weekday + horário) a partir
-    // de `created_at`, então um horário futuro não é "adiantado".
-    const reference = delivery?.last_confirmed_at
-      ? new Date(delivery.last_confirmed_at)
-      : new Date(comunicado.created_at)
     const schedule = comunicadoSchedule(comunicado)
-    const next = delivery
-      ? nextComunicadoOccurrence(reference, schedule)
-      : nextComunicadoOccurrence(reference, { ...schedule, repeatIntervalDays: 0 })
-    if (now.getTime() >= next.getTime()) {
-      due.push(toDueComunicado(comunicado, deliveredCount))
+
+    if (delivery) {
+      // Repetição: próxima ocorrência a partir da última confirmação
+      // (`last_confirmed_at`; as escritas sempre preenchem — fallback o agora).
+      const lastConfirmed = delivery.last_confirmed_at
+        ? new Date(delivery.last_confirmed_at)
+        : new Date()
+      const next = nextComunicadoOccurrence(lastConfirmed, schedule)
+      if (now.getTime() >= next.getTime()) {
+        due.push(toDueComunicado(comunicado, deliveredCount))
+      }
+    } else {
+      // 1ª exibição: "slot de hoje ou próximo" (regra do usuário).
+      const first = firstComunicadoOccurrence(now, schedule)
+      if (now.getTime() >= first.getTime()) {
+        due.push(toDueComunicado(comunicado, deliveredCount))
+      }
     }
   }
 

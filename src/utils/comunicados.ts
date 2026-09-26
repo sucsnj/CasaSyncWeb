@@ -5,9 +5,11 @@
  * - SEM tempo real (decisão de produto): o comunicado só é exibido no render
  *   server-side das telas do dependente — na atualização da página, troca de
  *   endpoint ou após confirmar. Não há Realtime nem sinal por notificação.
- * - A 1ª exibição respeita a agenda (não é imediata): aparece no primeiro
- *   slot agendado (dia da semana + horário em America/Recife) a partir do
- *   momento da publicação — um horário futuro não é "adiantado".
+ * - 1ª exibição em "slot de hoje ou próximo" (regra do usuário): num dia
+ *   agendado, se o horário de hoje já passou o comunicado aparece de imediato
+ *   no próximo render; se ainda não chegou, espera o horário de hoje. Num dia
+ *   não agendado, aparece no próximo dia agendado. O intervalo de repetição
+ *   não conta nesse primeiro ciclo.
  * - Repetição é POR DEPENDENTE: cada confirmação agenda a próxima exibição
  *   conforme o período (dias), os dias da semana e o horário configurados;
  *   quando o dependente completa `repeats_total` confirmações, para de receber.
@@ -114,6 +116,30 @@ export function recifeWeekday(instant: Date): number {
 }
 
 /**
+ * Instante do "slot" (HH:MM em America/Recife) do mesmo dia-calendário (Recife)
+ * de `instant`. Usado como candidato inicial das ocorrências.
+ */
+function slotOf(instant: Date, time: string): number {
+  const { hour, minute } = hourMinute(time)
+  // Data-calendário (Recife) de `instant`, obtida somando o offset (+3h) e
+  // lendo os campos UTC; `hour:minute` vira o instante de parede: como local
+  // = UTC − 3h, `UTC = local + 3h`, então SOMA-se o offset ao slot "como UTC".
+  const shift = instant.getTime() + RECIFE_UTC_OFFSET_MS
+  const wall = new Date(shift)
+  return (
+    Date.UTC(
+      wall.getUTCFullYear(),
+      wall.getUTCMonth(),
+      wall.getUTCDate(),
+      hour,
+      minute,
+      0,
+      0
+    ) + RECIFE_UTC_OFFSET_MS
+  )
+}
+
+/**
  * Próxima ocorrência agendada de um comunicado, DADO o instante da última
  * confirmação (`after`):
  *
@@ -121,16 +147,14 @@ export function recifeWeekday(instant: Date): number {
  *   candidato   = primeiro instante >= referência cujo dia da semana está em
  *                 `repeatWeekdays` e cujo relógio local (Recife) é `HH:MM`
  *
- * O helper agenda a 1ª exibição e as repetições. Para a 1ª, o chamador passa
- * uma agenda com `repeatIntervalDays: 0` e `after` = momento da publicação:
- * o resultado é o primeiro slot (dia da semana + horário) >= a publicação. As
- * repetições seguem com `after` = última confirmação e intervalo real.
+ * Usado para as REPETIÇÕES (`after` = última confirmação e intervalo real).
+ * Para a 1ª exibição use `firstComunicadoOccurrence` (regra "slot de hoje ou
+ * próximo").
  */
 export function nextComunicadoOccurrence(
   after: Date,
   schedule: ComunicadoSchedule
 ): Date {
-  const { hour, minute } = hourMinute(schedule.repeatTime)
   const weekdays = schedule.repeatWeekdays.length > 0
     ? schedule.repeatWeekdays
     : COMUNICADO_DEFAULT_WEEKDAYS
@@ -140,21 +164,7 @@ export function nextComunicadoOccurrence(
     reference = new Date(after.getTime() + schedule.repeatIntervalDays * 86_400_000)
   }
 
-  // Candidato de hoje em horário de parede (Recife): converte a meia-noite local
-  // para instante (subtrai o offset fixo) e soma o horário configurado.
-  const shift = reference.getTime() + RECIFE_UTC_OFFSET_MS
-  const wall = new Date(shift)
-  let candidateMs =
-    Date.UTC(
-      wall.getUTCFullYear(),
-      wall.getUTCMonth(),
-      wall.getUTCDate(),
-      hour,
-      minute,
-      0,
-      0
-    ) - RECIFE_UTC_OFFSET_MS
-
+  let candidateMs = slotOf(reference, schedule.repeatTime)
   if (candidateMs <= reference.getTime()) {
     candidateMs += 86_400_000
   }
@@ -169,6 +179,36 @@ export function nextComunicadoOccurrence(
   }
 
   return new Date(candidateMs)
+}
+
+/**
+ * "Deadline" da 1ª exibição de um comunicado (regra "slot de hoje ou próximo",
+ * definida pelo usuário):
+ *
+ * - hoje é dia agendado e o horário de hoje ainda não chegou → o aviso espera
+ *   o horário de hoje (retorna o slot de hoje);
+ * - hoje é dia agendado e o horário de hoje já passou → o aviso aparece logo
+ *   no próximo render (retorna `now`);
+ * - hoje NÃO é dia agendado → próximo dia agendado (retorna o slot desse dia).
+ *
+ * O intervalo de repetição não conta no primeiro ciclo.
+ */
+export function firstComunicadoOccurrence(
+  now: Date,
+  schedule: ComunicadoSchedule
+): Date {
+  const weekdays = schedule.repeatWeekdays.length > 0
+    ? schedule.repeatWeekdays
+    : COMUNICADO_DEFAULT_WEEKDAYS
+
+  if (weekdays.includes(recifeWeekday(now))) {
+    const todaySlotMs = slotOf(now, schedule.repeatTime)
+    return now.getTime() >= todaySlotMs
+      ? new Date(now.getTime())
+      : new Date(todaySlotMs)
+  }
+
+  return nextComunicadoOccurrence(now, { ...schedule, repeatIntervalDays: 0 })
 }
 
 /** Fuso do agendamento, exposto para testes/registro. */
