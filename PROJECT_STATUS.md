@@ -1,9 +1,27 @@
 # CasaSync Web — PROJECT STATUS
 
+## Ajustes de UI — conquistas do dependente e navegação do header (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Conquistas na visão do DEPENDENT (`achievements-dependent.tsx`):**
+  - A **métrica deixou de ser exibida** — removido o subtítulo com `METRIC_LABEL[metric_type]` dos cards; os rótulos de `METRIC_LABELS` agora são usados **apenas** pela UI ADMIN (form e cards).
+  - O **multiplicador por nível não aparece mais** para o dependente — removido o chip `×{mult} por nível` (continua visível só no form/configuração do ADMIN). A recompensa exibida (`+{N} pts`) segue sendo o valor real do nível atual (`achievementRewardAtLevel`).
+  - **Destaque no título:** o nome da conquista ganhou `text-base font-bold text-slate-900` com `leading-snug` (antes `text-sm font-semibold`), virando o elemento principal do card após a saída do subtítulo.
+- **Navegação do header em telas grandes (`dashboard-nav.tsx`):** a nav central de desktop deixou de ser `absolute left-1/2 -translate-x-1/2` (centralizada no **viewport**) e passou a ser item **in-flow** com `flex-1 justify-center` entre a marca e o cluster de ações — antes, em telas largas (container `max-w-5xl` centrado), a nav se estendia por cima do sino/pontos/avatar e sobrepunha o item **"Conquistas"** (último à direita).
+
+### Verificação
+`npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- Sem mudança de schema/banco/actions: ajustes client-side de exibição e layout.
+- Requer deploy para valer online.
+
+---
+
 ## Conquistas autônomas — estatísticas por dependente, métricas novas e concessão manual (concluída — SQL aplicado no banco)
 
 ### O que foi implementado
-- **Novas métricas (união de 8 em `src/utils/achievements.ts`):** `TASKS_APPROVED`, `TASKS_REJECTED`, `REWARDS_CLAIMED`, `CUSTOM_REWARDS_APPROVED`, `APP_LOGIN_DAYS`, `STREAK_LOGIN_DAYS`, `EARNED_POINTS` (volátil, sem coluna) e `MANUAL` (concessão). **`COMPLETED_TASKS` foi renomeada para `TASKS_APPROVED`** (migração abaixo). Rótulos em `METRIC_LABELS` — a UI ADMIN (select de métrica no form) e dependente (subtítulo dos cards) passaram a usar o mapa.
+- **Novas métricas (união de 8 em `src/utils/achievements.ts`):** `TASKS_APPROVED`, `TASKS_REJECTED`, `REWARDS_CLAIMED`, `CUSTOM_REWARDS_APPROVED`, `APP_LOGIN_DAYS`, `STREAK_LOGIN_DAYS`, `EARNED_POINTS` (volátil, sem coluna) e `MANUAL` (concessão). **`COMPLETED_TASKS` foi renomeada para `TASKS_APPROVED`** (migração abaixo). Rótulos em `METRIC_LABELS` — usados pela **UI ADMIN** (select de métrica no form e nos cards); a visão do DEPENDENT não exibe a métrica (removida nos ajustes de UI).
 - **`dependent_stats` (tabela nova, RLS sem policies):** uma linha por dependente+casa com `tasks_approved_count`, `tasks_rejected_count`, `rewards_claimed_count`, `custom_rewards_approved_count`, `app_login_days_count`, `streak_login_days`, `last_login_day`. Iniciadas **zeradas** (sem backfill). O mapa métrica→coluna vive em **`src/utils/dependent-stats.ts`** (módulo puro — valores não-função não saem de arquivos `'use server'`). Fora da publication Realtime (a UI continua via `dependent_achievements`, que segue na publication).
 - **Dispatcher `registerAchievementProgress` (mesma assinatura — zero paralelismo):** `MANUAL` → no-op; `EARNED_POINTS` → soma incremental via `syncAchievementProgress`; demais → `incrementDependentStat` (lazy insert ou update atômico com guard `.eq(column, valor lido)` + 1 retry) e depois `evaluateAchievements`.
 - **`evaluateAchievements` (deriva progresso do contador absoluto):** repetível → `contador − (nível−1) × objetivo` (o excedente consumido são os ciclos já resgatados); única → `min(contador, objetivo)`; `progress = existing ? max(existing.current_progress, raw) : raw` (histórico pré-estatísticas **nunca diminui**); `unlocked_at` só marcado no cruzamento e quando ausente. Helper compartilhado `syncAchievementProgress` em `src/utils/achievement-progress.ts`.
@@ -54,7 +72,7 @@ where metric_type = 'COMPLETED_TASKS';
 ### O que foi implementado
 - **Imagem como ícone:** as `achievements` ganharam a coluna `image_url`; no form do ADMIN há novos **chips de slug + `ImageUpload`** (pasta `achievements/` no bucket `casasync-media`, owner = `house_id`). Quando `image_url` está definida, **substitui o ícone de símbolo** nos cards (ADMIN e dependente; conquistas **secretas** não desbloqueadas continuam ocultas, sem revelar a imagem). `deleteAchievement` remove a imagem do storage **best-effort** (`removeAchievementImage`).
 - **Nível máximo configurável (`max_level`, default 10):** campo "Nível máximo (repetível)" no form (1–1000, desabilitado para conquistas únicas). **A cada ciclo o dependente ganha 1 nível**; ao atingir o cap, a conquista **segue repetível** — o nível fica travado no máximo e a recompensa daquele nível é paga a cada novo ciclo. Conquista **única** continua resgatando só no nível 1 (server clampa `max_level = 1` quando `is_repeatable = false`).
-- **Multiplicador por nível (`level_multiplier`, numeric default 1):** `recompensa no nível N = reward_points × N × level_multiplier` (helper puro `achievementRewardAtLevel` em `src/utils/achievements.ts`, redondado). O crédito do resgate (`claimAchievementReward`) usa o valor do **nível atual** do dependente; a UI dependente mostra a recompensa por nível e o chip `×{mult} por nível` quando ≠ 1.
+- **Multiplicador por nível (`level_multiplier`, numeric default 1):** `recompensa no nível N = reward_points × N × level_multiplier` (helper puro `achievementRewardAtLevel` em `src/utils/achievements.ts`, redondado). O crédito do resgate (`claimAchievementReward`) usa o valor do **nível atual** do dependente; a UI dependente mostra a recompensa por nível (`+{N} pts`) — o multiplicador **não é exibido** para o dependente, só no form/visão do ADMIN.
 - **Sem mudança em `dependent_achievements`:** `level`/`current_progress`/`unlocked_at` seguem como estão; o cap fica só na leitura (helper `maxAchievementLevel`).
 
 ### SQL aplicado no Supabase (registro — aplicado pelo usuário com sucesso)

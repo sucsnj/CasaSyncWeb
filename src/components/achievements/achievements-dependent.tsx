@@ -9,7 +9,6 @@ import { claimAchievementReward } from '@/actions/achievements'
 import {
   achievementRewardAtLevel,
   maxAchievementLevel,
-  METRIC_LABELS,
 } from '@/utils/achievements'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { AchievementIcon } from './achievement-icon'
@@ -29,8 +28,6 @@ export type AchievementView = {
   achievement: Achievement
   progress: DependentAchievementProgress | null
 }
-
-const METRIC_LABEL: Record<string, string> = METRIC_LABELS
 
 export function AchievementsDependent({
   houseId,
@@ -216,11 +213,8 @@ export function AchievementsDependent({
                 </span>
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-slate-800">
+                <p className="truncate text-base font-bold leading-snug text-slate-900">
                   {achievement.title}
-                </p>
-                <p className="truncate text-sm text-slate-500">
-                  {METRIC_LABEL[achievement.metric_type]}
                 </p>
               </div>
               <span className={cn(
