@@ -331,12 +331,16 @@ export async function deleteAchievement(
  * e `EARNED_POINTS` (amount = pontos creditados); `rejectCompletedTask` para
  * `TASKS_REJECTED`; `approveRedemption` para `REWARDS_CLAIMED`;
  * `resolveRewardSuggestion` (aprovado) para `CUSTOM_REWARDS_APPROVED`.
+ *
+ * `actorId` (opcional) é quem disparou — alimenta a notificação de desbloqueio
+ * (`ACHIEVEMENT_UNLOCKED`) e exclui o autor da lista de ADMINs notificados.
  */
 export async function registerAchievementProgress(
   houseId: string,
   profileId: string,
   metricType: AchievementMetricType,
-  amount: number
+  amount: number,
+  actorId?: string
 ): Promise<void> {
   if (metricType === 'MANUAL') return
 
@@ -348,11 +352,11 @@ export async function registerAchievementProgress(
         unlockedAt:
           existing?.unlocked_at ?? (progress >= achievement.target_count ? new Date().toISOString() : null),
       }
-    })
+    }, { actorId })
     return
   }
 
-  await incrementDependentStat(houseId, profileId, metricType, amount)
+  await incrementDependentStat(houseId, profileId, metricType, amount, actorId)
 }
 
 /**
@@ -456,7 +460,7 @@ export async function adjustAchievementProgress(
 
       return { progress, unlockedAt }
     },
-    achievementId
+    { onlyAchievementId: achievementId, actorId: auth.adminId }
   )
 
   // Relê a linha para devolver o valor autoritativo: o ADMIN aplica na UI sem

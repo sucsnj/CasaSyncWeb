@@ -96,10 +96,12 @@ Restrições herdadas do projeto:
   pontos de resgate de conquistas/recompensas (senão conquistas alimentariam a
   própria conquista). Se um dia quiser que resgates contem, é um novo
   `metric_type` (ex.: `REDEEMED_POINTS`).
-- **Sem notificação `ACHIEVEMENT_UNLOCKED`** — o desbloqueio já é visível na
+- ~~**Sem notificação `ACHIEVEMENT_UNLOCKED`**~~ — o desbloqueio já é visível na
   própria página (barra cheia + botão de resgate); criar tipo novo no sino e no
-  Realtime seria escopo adicional sem pedido. Novos tipos de notificação ficam
-  para quando houver demanda.
+  Realtime seria escopo adicional sem pedido. **Superado pela emenda (2026):** o
+  desbloqueio passou a notificar o **dependente** ("você desbloqueou…") e os
+  **ADMINs** da casa, com o autor excluído da lista — ver `notifyUnlocked` em
+  `src/utils/achievement-progress.ts`.
 - **Recompensa plana** (`reward_points` por claim, resgatável de novo em
   repetíveis): escala por `target_count`/repetição; sem curva exponencial.
 - **`updateAchievement` não recalcula progresso retroativamente** — mudar

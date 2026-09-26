@@ -18,6 +18,7 @@ import {
   RotateCcw,
   ShoppingBag,
   Trash2,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -65,6 +66,10 @@ const TYPE_META: Record<
   SUGGESTION_REJECTED: { icon: Lightbulb, chip: 'bg-red-100 text-red-700' },
   QUICK_MESSAGE: { icon: MessageSquare, chip: 'bg-violet-100 text-violet-700' },
   PENALTY: { icon: Flame, chip: 'bg-red-100 text-red-700' },
+  ACHIEVEMENT_UNLOCKED: {
+    icon: Trophy,
+    chip: 'bg-amber-100 text-amber-700',
+  },
 }
 
 function metaFor(type: string) {

@@ -326,7 +326,8 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     activeHouse.id,
     redemption.profile_id,
     'REWARDS_CLAIMED',
-    1
+    1,
+    auth.adminId
   )
 
   revalidatePath('/rewards')
@@ -622,7 +623,8 @@ export async function resolveRewardSuggestion(
       activeHouse.id,
       suggestion.profile_id,
       'CUSTOM_REWARDS_APPROVED',
-      1
+      1,
+      auth.adminId
     )
   }
 

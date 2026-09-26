@@ -1,5 +1,25 @@
 # CasaSync Web — PROJECT STATUS
 
+## Conquista desbloqueada vai para a central de notificações (dependente + ADMINs) — decisão revertida (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Novo tipo de notificação `ACHIEVEMENT_UNLOCKED`** (18º tipo em `src/types/notifications.ts`): entra no sino (`TYPE_META` em `notifications-bell.tsx` — ícone `Trophy`, chip âmbar) e no toast (`TYPE_STYLE: 'success'` em `realtime-toast-listener.tsx`). **Sem SQL novo:** `notifications.type` é `text` sem CHECK no banco (só incluir o valor caso exista alguma constraint com CHECK).
+- **Emissor no gargalo único de escrita:** `syncAchievementProgress` (`src/utils/achievement-progress.ts`) passou a detectar a transição **"sem `unlocked_at` → com `unlocked_at`"** em cada gravação confirmada e a notificar via `notifyUnlocked`: uma linha para o **dependente** ("Conquista desbloqueada!" / `Você desbloqueou "X". Vá resgatar a recompensa.`) e uma para os **ADMINs** da casa ("Conquista desbloqueada" / `Fulano desbloqueou "X".`), com `link: '/achievements'`. Best-effort (`try/catch` + `console.error`) — notificação nunca derruba a ação principal; o nome do dependente é resolvido **lazy** (query em `profiles` só quando houve desbloqueio).
+- **Cobre todas as métricas:** automática (`TASKS_APPROVED`, `TASKS_REJECTED`, `REWARDS_CLAIMED`, `CUSTOM_REWARDS_APPROVED`, `APP_LOGIN_DAYS`, `STREAK_LOGIN_DAYS`), `EARNED_POINTS` e a **concessão/retirada manual** do tutor. Também cobre o **nascimento da linha já desbloqueada** (lazy insert em que o objetivo é atingido de primeira: ex.: `EARNED_POINTS` com muita pontuação) — a notificação só sai se o insert/update foi confirmado; e **não** dispara em `claimAchievementReward` (o rollover do resgate limpa o `unlocked_at`, não é desbloqueio).
+- **Exclusão do autor (`actorId`):** o 5º param de `syncAchievementProgress` virou objeto de opções `{ onlyAchievementId?, actorId? }` (o `onlyAchievementId` do ajuste manual continuou, agora nomeado). O `actorId` é repassado por `registerAchievementProgress(…, actorId?)` → `incrementDependentStat(…, actorId?)` → `evaluateAchievements(…, actorId?)` e vale como `actor_id` da linha + `excludeUserId` do fã-out para os ADMINs (quem agiu **não** é notificado da própria ação). Os 5 call sites de ADMIN passaram a enviar `auth.adminId` (`approveTask`, `adminCompleteTask`, `rejectCompletedTask`, `approveRedemption`, `resolveRewardSuggestion`); `registerLoginDay` não envia (o próprio dependente é o autor no acesso diário, então os ADMINs são avisados normalmente). Sem `actorId`, o fallback é o próprio dependente.
+- **Emenda de decisão (ADR-0015 estava "sem notificação"):** marcado como `~~strikethrough~~` + "Superado pela emenda (2026)" no ADR e nas três listas que afirmavam o contrário (`AGENTS.md` ×2, `PROJECT_STATUS.md`).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Mais de uma conquista desbloqueada na mesma ação → uma notificação por conquista** (ex.: uma aprovação que cruza um `TASKS_APPROVED` e um `EARNED_POINTS`); não há agrupamento.
+- O **dependente sempre é notificado**, inclusive quando o gatilho foi ele mesmo (dias de acesso) — aqui a notificação é a recompensa em si, não "a outra parte da ação".
+- Push: `notifyUser`/`notifyHouse` já disparam Web Push por conta própria (o dependente com o app fechado recebe push do desbloqueio).
+- Requer deploy para valer online.
+
+---
+
 ## Revisão de conquistas pelo tutor — a concessão manual passou a conceder **e retirar** (concluída — sem mudança de schema)
 
 ### O que foi implementado
@@ -171,7 +191,7 @@ alter table public.achievements add column if not exists level_multiplier numeri
 - **UI:** `achievements/achievement-icon.tsx` (`AchievementIcon` + `ICON_MAP`, 12 slugs Lucide), `achievements/achievements-admin.tsx` (form de criação/edição controlado com chips de ícone + checkboxes repetível/secreta, seção de progresso por dependente por card, delete com `Modal` de confirmação; sem `router.refresh` — Realtime cobre), `achievements/achievements-dependent.tsx` (cards com barra/pill "N/N"; secreta não desbloqueada → card oculto "Conquista secreta" que só revela ao desbloquear; `handleClaim` otimista + `router.refresh()`).
 - **Nav:** item **"Conquistas"** (ícone `Trophy`) adicionado em `dashboard-nav.tsx` (ADMIN tem **5** itens; DEPENDENT **4** — o slot extra da bottom nav só existe com `< 4` itens).
 - **Limpeza:** exclusão de conquista apaga o progresso (FK `on delete cascade` no SQL); `expelMember`/`deleteDependentAccount`/`deleteHouse` (`src/actions/houses.ts`) removem linhas de `dependent_achievements` (e `deleteHouse` remove as `achievements` da casa) no fluxo de limpeza.
-- **Decisões de escopo (ADR-0015):** progresso conta apenas **aprovações** (não débitos); `EARNED_POINTS` conta só créditos de tarefa aprovada (sem loop com resgates de recompensa); **sem notificação `ACHIEVEMENT_UNLOCKED`**; `restoreTask`/`adminCompleteTask` no caminho do crédito também registram/registram progresso apenas no crédito real.
+- **Decisões de escopo (ADR-0015):** progresso conta apenas **aprovações** (não débitos); `EARNED_POINTS` conta só créditos de tarefa aprovada (sem loop com resgates de recompensa); **notificação `ACHIEVEMENT_UNLOCKED` no desbloqueio** (dependente + ADMINs da casa, autor excluído dos ADMINs — ver seção no topo do documento; as *decisões originais* diziam "sem notificação", superadas); `restoreTask`/`adminCompleteTask` no caminho do crédito também registram/registram progresso apenas no crédito real.
 
 ### SQL aplicado no Supabase (registro — o usuário aplicou com sucesso; verificado via probe: tabelas existem e um insert service-role reversível passou)
 ```sql
@@ -828,7 +848,7 @@ Mesma mecânica da fase 1 (`house_settings` jsonb por `(house_id, key)`, escrita
 ### O que foi feito
 - **Docs sincronizadas com o banco (nada pendente):** `AGENTS.md`, `README.md` e `docs/schema.md` deixaram de marcar `rewards.active`, `notifications.image_url`/`message_id` e o bucket/pasta `messages` como "a aplicar/pendente" — tudo **já aplicado** no Supabase (confirmado; os blocos de SQL em `PROJECT_STATUS.md` seguem como **registro histórico**). `docs/schema.md` perdeu as caixas "A aplicar" e documenta `notifications.type` como `text` **sem CHECK** no banco.
 - **Removido `src/app/auth/callback/route.ts`:** sem uso desde que o login com Google foi removido (nada o referenciava; `src/app/auth/` deixou de existir).
-- **Contagem de notificações corrigida:** são **17** tipos em `src/types/notifications.ts` (o `QUICK_MESSAGE` foi adicionado; antes constava 16).
+- **Contagem de notificações corrigida:** são **17** tipos em `src/types/notifications.ts` (o `QUICK_MESSAGE` foi adicionado; antes constava 16). *Atualizado depois: com o `ACHIEVEMENT_UNLOCKED` são **18** (seção no topo).*
 - **Types seguem espelho manual atualizado** (`src/types/database.ts` já contém `rewards.active` e `notifications.image_url`/`message_id`) — mantido sem regeneração via CLI.
 - **Evolução futura anotada (não feita):** migrar `supabase.auth.getUser()` → `getClaims()` no `updateSession` (docs atuais do Supabase preferem `getClaims()` no proxy — validar assinatura do JWT a cada request).
 - Material de ensino (skill `teach`) mantido como está.
@@ -1052,7 +1072,7 @@ alter table public.rewards add column if not exists active boolean not null defa
 - **Tabela `notifications`** (1 linha por destinatário): `house_id`, `recipient_id`, `actor_id` (nullable), `type`, `title`, `body`, `link` (nullable), `read_at` (nullable; `null` = não lida), `created_at`.
 - **Registro best-effort** (`src/utils/notifications.ts`): `notifyUser` (um destinatário) e `notifyHouse` (resolve todos os ADMINs ou todos os DEPENDENTEs da casa e exclui quem agiu). Falha ao gravar **nunca** derruba a ação principal (crédito/débito de pontos, aprovações etc.).
 - **Destinatário = "o outro lado" da ação:** o dependente recebe tudo que os ADMINs fazem nas tarefas/resgates/sugestões dele; **todos os ADMINs membros** recebem tudo que o dependente faz. Quem agiu não recebe a própria ação.
-- **Eventos cobertos:** criação/conclusão/aprovação/devolução/restauração de tarefa, `NOT_DELIVERED`, pedido e resolução de adiamento, criação de recompensa, pedido e resolução de resgate, criação e resolução de sugestão — integrados nas actions existentes de `src/actions/tasks.ts` e `src/actions/rewards.ts` (17 tipos em `src/types/notifications.ts`).
+- **Eventos cobertos:** criação/conclusão/aprovação/devolução/restauração de tarefa, `NOT_DELIVERED`, pedido e resolução de adiamento, criação de recompensa, pedido e resolução de resgate, criação e resolução de sugestão — integrados nas actions existentes de `src/actions/tasks.ts` e `src/actions/rewards.ts` (18 tipos em `src/types/notifications.ts`).
 - **Gerenciamento** (`src/actions/notifications.ts`): `markNotificationRead`, `markAllNotificationsRead`, `deleteNotification`, `deleteAllNotifications`, `purgeReadNotifications` — escopo sempre `recipient_id = user.id` (derivado da sessão; service-role).
 - **Retenção:** lidas apagadas após **5 dias** por limpeza lazy em `getMyNotifications` (sem `pg_cron`); `READ_RETENTION_DAYS` em `src/utils/notifications.ts`.
 - **UI:** `NotificationsBell` (`src/components/notifications/notifications-bell.tsx`) no cabeçalho (`src/components/dashboard/dashboard-nav.tsx`), ao lado do avatar/pontos: badge de não lidas, painel em `Modal`, "marcar todas", "apagar todas" e apagar individual; clique marca lida e abre o `link` (`/tasks`/`/rewards`).
@@ -1484,7 +1504,7 @@ src/
 │  └─ supabase/                # server.ts, client.ts, admin.ts, middleware.ts
 ├─ types/
 │  ├─ database.ts              # schema tipado (espelho manual)
-│  └─ notifications.ts         # NotificationType (17 tipos)
+│  └─ notifications.ts         # NotificationType (18 tipos)
 ├─ hooks/                      # use-postgres-changes, use-profile-points
 └─ lib/
    └─ utils.ts                 # cn() (é a lib habitada; componentes ui usam pkg `cn`)
@@ -1619,7 +1639,7 @@ Sem saber se o CLD é invocável por modelo (`disable-model-invocation: true`), 
 ### O que foi implementado
 - **Toast Provider (`src/app/layout.tsx`)**: instalado e configurado `sonner` com `Toaster` no `RootLayout`. Estilo consistente com o app: fundo branco com blur, bordas arredondadas (`rounded-xl`), sombra, ícones por tipo (success/error/info/warning).
 - **Listener Global em Tempo Real (`src/components/notifications/realtime-toast-listener.tsx`)**: componente client incluído nos layouts do Dashboard (admin e dependent). Escuta `INSERT` na tabela `notifications` filtrando por `recipient_id=eq.{userId}` via `usePostgresChanges`. Ao receber uma nova notificação, dispara automaticamente o Toast correspondente (`toast[style]`) usando o `title` e `body` gravados no banco.
-- **Mapeamento de tipos para estilo visual**: cada `NotificationType` (17 tipos: TASK_CREATED, TASK_APPROVED, REDEMPTION_APPROVED, QUICK_MESSAGE, etc.) mapeia para `success`/`error`/`info`/`warning` com rótulo amigável.
+- **Mapeamento de tipos para estilo visual**: cada `NotificationType` (18 tipos: TASK_CREATED, TASK_APPROVED, REDEMPTION_APPROVED, QUICK_MESSAGE, etc.) mapeia para `success`/`error`/`info`/`warning` com rótulo amigável.
 - **Gatilhos de Toast em Server Actions / Formulários**: adicionado `toast.success`/`toast.error`/`toast.info` nos handlers das principais ações:
   - **Admin (Tarefas)**: criar, aprovar, desaprovar, concluir+creditar, marcar não entregue, restaurar, resolver adiamento.
   - **Dependente (Tarefas)**: concluir, pedir adiamento.

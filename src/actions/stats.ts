@@ -35,14 +35,17 @@ function recifeDay(offsetDays: number): string {
 /**
  * Incrementa o contador de `metricType` do dependente em `dependent_stats`
  * (lazy insert da linha) e re-sincroniza as conquistas da casa que medem essa
- * métrica via `evaluateAchievements`. BEST-EFFORT: nunca lança — uma falha aqui
- * não derruba a ação principal; o progresso volta na próxima ocorrência.
+ * métrica via `evaluateAchievements`. `actorId` é quem disparou (o ADMIN que
+ * aprovou/concedeu) — usado na notificação de desbloqueio. BEST-EFFORT: nunca
+ * lança — uma falha aqui não derruba a ação principal; o progresso volta na
+ * próxima ocorrência.
  */
 export async function incrementDependentStat(
   houseId: string,
   profileId: string,
   metricType: AchievementMetricType,
-  amount = 1
+  amount = 1,
+  actorId?: string
 ): Promise<void> {
   const column = DEPENDENT_STAT_COLUMNS[metricType]
   if (!column) return
@@ -110,7 +113,7 @@ export async function incrementDependentStat(
     return
   }
 
-  await evaluateAchievements(houseId, profileId, metricType)
+  await evaluateAchievements(houseId, profileId, metricType, actorId)
 }
 
 /**
@@ -124,12 +127,14 @@ export async function incrementDependentStat(
  * - ÚNICA: progresso = min(contador, objetivo), sem cap de display.
  *
  * `unlocked_at` só é marcado quando o progresso cruza o objetivo e não está já
- * definido. BEST-EFFORT.
+ * definido — e essa transição dispara a notificação de desbloqueio
+ * (`actorId` = quem disparou). BEST-EFFORT.
  */
 export async function evaluateAchievements(
   houseId: string,
   profileId: string,
-  metricType: AchievementMetricType
+  metricType: AchievementMetricType,
+  actorId?: string
 ): Promise<void> {
   const column = DEPENDENT_STAT_COLUMNS[metricType]
   if (!column) return
@@ -166,7 +171,7 @@ export async function evaluateAchievements(
       existing?.unlocked_at ?? (progress >= target ? new Date().toISOString() : null)
 
     return { progress, unlockedAt }
-  })
+  }, { actorId })
 }
 
 /**

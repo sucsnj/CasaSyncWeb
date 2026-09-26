@@ -27,6 +27,7 @@ export type NotificationType =
   | 'SUGGESTION_REJECTED'
   | 'QUICK_MESSAGE'
   | 'PENALTY'
+  | 'ACHIEVEMENT_UNLOCKED'
 
 export type NotificationItem = {
   id: string
