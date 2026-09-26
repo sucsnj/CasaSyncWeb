@@ -68,8 +68,8 @@ export function DashboardNav({
             <span className="text-lg font-bold tracking-tight">CasaSync</span>
           </Link>
 
-          {/* Navegação central — desktop */}
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex">
+          {/* Navegação central — desktop (in-flow, centrada entre marca e ações) */}
+          <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
             {items.map((item) => {
               const active = activeFor(item.href, pathname)
               return (

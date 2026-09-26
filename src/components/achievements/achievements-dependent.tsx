@@ -245,11 +245,6 @@ export function AchievementsDependent({
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-bold text-amber-700">
                 +{reward} pts
               </span>
-              {achievement.level_multiplier !== 1 ? (
-                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                  ×{achievement.level_multiplier} por nível
-                </span>
-              ) : null}
               {unlocked && !claimed ? (
                 <span className="flex items-center gap-1 text-xs font-semibold text-amber-700">
                   <PartyPopper className="size-4" /> Desbloqueada!
