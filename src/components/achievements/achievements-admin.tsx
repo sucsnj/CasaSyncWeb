@@ -124,10 +124,17 @@ export function AchievementsAdmin({
     filter: `house_id=eq.${houseId}`,
     onUpsert: (row) => {
       setProgress((prev) => {
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? row : item))
-          : [...prev, row]
+        // Reconcilia por (conquista, dependente): a linha pode ter nascido de um
+        // ajuste otimista (id sintético) e precisa ser substituída pela real.
+        const index = prev.findIndex(
+          (item) =>
+            item.achievement_id === row.achievement_id &&
+            item.profile_id === row.profile_id
+        )
+        if (index === -1) return [...prev, row]
+        const next = [...prev]
+        next[index] = row
+        return next
       })
     },
     onDelete: (id) => {
@@ -272,21 +279,83 @@ export function AchievementsAdmin({
     }
   }
 
+  /**
+   * Aplica o `+1`/`−1` no estado local na hora (sem esperar o Realtime, que nem
+   * sempre entrega o próprio write) — a UI responde no clique. O `unlocked_at` e
+   * o `level` ficam por conta do valor autoritativo devolvido pela action.
+   */
+  function applyOptimisticProgress(
+    achievementId: string,
+    profileId: string,
+    delta: 1 | -1
+  ) {
+    setProgress((prev) => {
+      const index = prev.findIndex(
+        (item) =>
+          item.achievement_id === achievementId && item.profile_id === profileId
+      )
+
+      if (index === -1) {
+        if (delta < 0) return prev
+        return [
+          ...prev,
+          {
+            id: `optimistic:${achievementId}:${profileId}`,
+            achievement_id: achievementId,
+            profile_id: profileId,
+            level: 1,
+            current_progress: delta,
+            unlocked_at: null,
+          },
+        ]
+      }
+
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        current_progress: Math.max(0, next[index].current_progress + delta),
+      }
+      return next
+    })
+  }
+
   async function handleAdjust(
     achievement: Achievement,
     profileId: string,
     delta: 1 | -1
   ) {
     if (adjustingKey) return
+    const snapshot = progress
     setAdjustingKey(`${achievement.id}:${profileId}:${delta}`)
+    applyOptimisticProgress(achievement.id, profileId, delta)
     try {
       const res = await adjustAchievementProgress(achievement.id, profileId, delta)
       if (!res.ok) {
+        setProgress(snapshot)
         toast.error(res.error)
         return
       }
+
+      // Confirma com o estado real do servidor (destrava o chip, o nível e a
+      // barra exatamente como ficaram gravados).
+      const saved = res.data?.progress
+      if (saved) {
+        setProgress((prev) => {
+          const index = prev.findIndex(
+            (item) =>
+              item.achievement_id === achievement.id &&
+              item.profile_id === profileId
+          )
+          if (index === -1) return prev
+          const next = [...prev]
+          next[index] = { ...next[index], ...saved }
+          return next
+        })
+      }
+
       toast.success(res.message ?? 'Progresso ajustado.')
     } catch {
+      setProgress(snapshot)
       toast.error('Falha ao ajustar o progresso.')
     } finally {
       setAdjustingKey(null)

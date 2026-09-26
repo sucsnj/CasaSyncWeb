@@ -372,11 +372,17 @@ export async function registerAchievementProgress(
  * O `level` (histórico de resgates) nunca é alterado por este ajuste, e retirar
  * exige progresso existente (sem linha ou com 0, nada a retirar).
  */
+export type AchievementProgressSnapshot = {
+  level: number
+  current_progress: number
+  unlocked_at: string | null
+}
+
 export async function adjustAchievementProgress(
   achievementId: string,
   profileId: string,
   amount = 1
-): Promise<ActionResult> {
+): Promise<ActionResult<{ progress: AchievementProgressSnapshot }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -453,9 +459,27 @@ export async function adjustAchievementProgress(
     achievementId
   )
 
+  // Relê a linha para devolver o valor autoritativo: o ADMIN aplica na UI sem
+  // depender do Realtime (que nem sempre entrega o próprio write) e sem precisar
+  // recarregar a página.
+  const { data: updated, error: readError } = await admin
+    .from('dependent_achievements')
+    .select('level, current_progress, unlocked_at')
+    .eq('achievement_id', achievementId)
+    .eq('profile_id', profileId)
+    .maybeSingle()
+
+  if (readError || !updated) {
+    return {
+      ok: false,
+      error: 'Não foi possível registrar o ajuste. Tente novamente.',
+    }
+  }
+
   revalidatePath('/achievements')
   return {
     ok: true,
+    data: { progress: updated },
     message: amount > 0 ? 'Progresso concedido.' : 'Progresso retirado.',
   }
 }
