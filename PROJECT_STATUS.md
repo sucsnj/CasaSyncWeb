@@ -1,5 +1,24 @@
 # CasaSync Web — PROJECT STATUS
 
+## Lint zerado — imports mortos removidos e a regra `no-img-element` desligada (concluída)
+
+### O que foi feito
+- **`npm run lint` termina em 0 warnings.** Antes: 20 warnings (18 `no-img-element` + 2 `no-unused-vars`).
+- **Imports mortos removidos (código real, não configuração):** o `import { House } from 'lucide-react'` de `src/app/(auth)/login/page.tsx` e de `src/app/(auth)/register/page.tsx` — o ícone só aparecia citado dentro de um comentário JSX. Os comentários que mencionam `<House/>` seguem lá (comentário não depende do import).
+- **Regra `@next/next/no-img-element` desligada no `eslint.config.mjs`** (bloco `rules` depois de `...nextTs` — no flat config o último bloco vence a `'warn'` do `@next/eslint-plugin-next`): as 18 ocorrências são **deliberadas** — 15 URLs públicas do Storage (avatars, casas, recompensas, tarefas, conquistas, mensagens) e 3 do ícone do app em `/public/icons`. A decisão de usar `<img>` continua a do **ADR-0005**; o que mudou foi a forma de registrá-la (config em vez de ruído no lint).
+- **Estado limpo travado:** o script virou `"lint": "eslint --max-warnings 0"`, então qualquer warning novo (inclusive regra que venha a ser adicionada/atualizada no `eslint-config-next` num upgrade) **quebra** o comando em vez de passar despercebido.
+
+### Verificação
+`npm run lint` ✓ (**0 problems**, `exit=0`) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Sem código de app adicionado** — a limpeza é exclusão de 2 imports + 5 linhas de config. Nenhuma das alternativas descartadas entrou: componente `StorageImage` (1 arquivo novo + 15 trocas), `eslint-disable` por arquivo (13 comentários) ou migração para `next/image` (`images.remotePatterns` amarrado ao host do Supabase + `width`/`height` em cada uso + otimizador na frente de conteúdo do usuário — contraria o ADR-0005).
+- Se surgir um asset **LCP-crítico** (ex.: um banner grande na home), aí sim: `next/image` + `images.remotePatterns` no `next.config.ts` **e** reativar a regra no config.
+- **Atenção em upgrade de dependência:** o próximo `npm run lint` vermelho pode ser uma regra nova do `eslint-config-next` em vez de código novo — aí se avalia caso a caso (ou se desliga a regra nova com comentário, como aqui).
+- Requer deploy apenas para o efeito das **imagens de login/cadastro** (remoção do import não muda render; a logo continua a mesma).
+
+---
+
 ## Formulário de conquista abre com foco automático (concluída — sem mudança de schema)
 
 ### O que foi implementado

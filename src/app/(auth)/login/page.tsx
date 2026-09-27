@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { House } from 'lucide-react'
 import { LoginForm } from '@/components/auth/login-form'
 
 export const metadata: Metadata = {
