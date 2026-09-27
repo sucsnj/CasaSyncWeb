@@ -10,6 +10,7 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { hasClaimableAchievement } from '@/utils/achievement-progress'
 import {
   getHouseExtensionRulesSettings,
   getHouseQuickMessageSettings,
@@ -91,11 +92,14 @@ export default async function TasksPage() {
 
   // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
   // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
-  const [notifications, activeHouse, dependentHouse] = await Promise.all([
-    getMyNotifications(user.id),
-    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
-    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-  ])
+  const [notifications, activeHouse, dependentHouse, hasClaimable] =
+    await Promise.all([
+      getMyNotifications(user.id),
+      isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+      isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+      // Item "Conquistas" da nav dourado quando há resgate disponível.
+      isAdmin ? Promise.resolve(false) : hasClaimableAchievement(user.id),
+    ])
 
   const quickMessageSettings = !isAdmin && dependentHouse
     ? await getHouseQuickMessageSettings(dependentHouse.id)
@@ -189,6 +193,7 @@ export default async function TasksPage() {
         notifications={notifications}
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
         quickMessageSettings={quickMessageSettings}
+        hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

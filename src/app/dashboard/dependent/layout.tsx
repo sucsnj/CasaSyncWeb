@@ -1,5 +1,6 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
+import { hasClaimableAchievement } from '@/utils/achievement-progress'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { getMyNotifications } from '@/utils/notifications'
 import { registerLoginDay } from '@/actions/stats'
@@ -25,9 +26,11 @@ export default async function DependentDashboardLayout({
   children: React.ReactNode
 }) {
   const { user, profile } = await getSessionProfile()
-  const [notifications, house] = await Promise.all([
+  const [notifications, house, hasClaimable] = await Promise.all([
     user ? getMyNotifications(user.id) : Promise.resolve([]),
     user ? getDependentHouse(user.id) : Promise.resolve(null),
+    // Item "Conquistas" da nav dourado quando há resgate disponível.
+    user ? hasClaimableAchievement(user.id) : Promise.resolve(false),
   ])
   const quickMessageSettings = house
     ? await getHouseQuickMessageSettings(house.id)
@@ -58,6 +61,7 @@ export default async function DependentDashboardLayout({
         notifications={notifications}
         role="DEPENDENT"
         quickMessageSettings={quickMessageSettings}
+        hasClaimableAchievement={hasClaimable}
       />
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}

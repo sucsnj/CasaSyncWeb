@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { PartyPopper } from 'lucide-react'
@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
   achievementRewardAtLevel,
+  isAchievementClaimable,
   maxAchievementLevel,
 } from '@/utils/achievements'
+import { setClaimableAchievements } from '@/hooks/use-claimable-achievement'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
@@ -70,6 +72,22 @@ export function AchievementsDependent({
       )
     },
   })
+
+  // Publica "há resgate disponível?" para o badge dourado do item "Conquistas"
+  // da nav: é esta tela que tem a lista completa (inclusive `is_repeatable`),
+  // então o valor é exato e muda junto com o resgate (otimista) e com o
+  // Realtime — sem esperar `router.refresh()`.
+  const hasClaimable = useMemo(
+    () =>
+      views.some((view) =>
+        isAchievementClaimable(view.progress, view.achievement.is_repeatable)
+      ),
+    [views]
+  )
+
+  useEffect(() => {
+    setClaimableAchievements(hasClaimable)
+  }, [hasClaimable])
 
   async function handleClaim(view: AchievementView) {
     if (claimingId) return
@@ -165,7 +183,11 @@ export function AchievementsDependent({
         const level = progress?.level ?? 1
         const unlocked = progress?.unlocked_at !== undefined && progress?.unlocked_at !== null
         const claimed = !achievement.is_repeatable && level > 1
-        const claimable = unlocked && !claimed
+        // Mesma regra do badge dourado da nav e do guard do resgate.
+        const claimable = isAchievementClaimable(
+          progress,
+          achievement.is_repeatable
+        )
         const target = achievement.target_count
         const maxLevel = maxAchievementLevel(
           achievement.is_repeatable,

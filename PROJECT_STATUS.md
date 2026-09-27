@@ -1,5 +1,24 @@
 # CasaSync Web — PROJECT STATUS
 
+## Item "Conquistas" da nav fica **dourado** quando há resgate disponível (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Regra única de "disponível para resgate":** novo helper puro **`isAchievementClaimable(progress, isRepeatable)`** (`src/utils/achievements.ts` — desbloqueado **e** ainda não resgatado: repetível → basta `unlocked_at` (resgatável a cada ciclo, vale nos níveis acima do cap); única → só no `level === 1`, mesma regra do guard `.eq('level', 1)` de `claimAchievementReward`). Passou a ser a fonte da verdade nos **cards do dependente** (substituiu o `unlocked && !claimed` inline), no cálculo do servidor e no badge da nav.
+- **Badge dourado na navegação:** `DashboardNav` ganhou a prop **`hasClaimableAchievement?: boolean`**; quando verdadeira, o item `/achievements` fica **dourado** (`bg-amber-400 text-slate-900` no desktop; ícone com chip `bg-amber-400` + label `text-amber-300` na bottom nav) — com **prioridade sobre o destaque de item ativo** (condicionais via `cn`, não `data-*`, para não depender da precedência do CSS). Só o DEPENDENT recebe a prop (ADMIN não resgata → nunca dourado).
+- **Cálculo no servidor:** `hasClaimableAchievement(profileId)` (`src/utils/achievement-progress.ts`, `React.cache` por request) — 1 query das linhas **já desbloqueadas** do dependente + 1 query da `is_repeatable` **das conquistas envolvidas** (não é derivável da linha de progresso). Entra no `Promise.all` que as telas já faziam, sem serializar: `/tasks`, `/rewards` e o layout `/dashboard/dependent`. Em `/achievements` **não há query extra** — a page reaproveita as `views` que já carrega e aplica o mesmo helper.
+- **Instantâneo (store de aba):** `src/hooks/use-claimable-achievement.ts` — store de módulo (`useSyncExternalStore` + `setClaimableAchievements`), necessário porque o `AchievementsDependent` (que publica, por ter a lista completa com `is_repeatable`) e o `DashboardNav` são **irmãos** na page, sem ancestral comum. O `AchievementsDependent` publica o valor derivado a cada mudança (resgate otimista e Realtime de `dependent_achievements`) → **resgatando a última conquista o item volta ao normal no mesmo instante**, sem esperar `router.refresh()`. A prop do servidor realinha o store quando chega um valor novo (navegação entre telas).
+- **Bônus de consistência na notificação de unlock:** `notifyUnlocked` passou a filtrar por `isAchievementClaimable` — uma conquista **única já resgatada** que o tutor re-desbloqueia não gera mais "Conquista desbloqueada!" (seria um desbloqueio sem recompensa possível).
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- O dourado só cobre o **próprio item "Conquistas"** da nav; não há badge/ contador além disso (por decisão de escopo).
+- Enquanto o dependente está **fora** de `/achievements`, um desbloqueio novo (ex.: o tutor concedendo `MANUAL`) acende o dourado na **próxima navegação** — o Realtime do `dependent_achievements` que atualiza o valor é assinado pelo componente de conquistas, que só existe nessa tela. Na tela de conquistas é instantâneo.
+- Requer deploy para valer online.
+
+---
+
 ## Conquista desbloqueada vai para a central de notificações (dependente + ADMINs) — decisão revertida (concluída — sem mudança de schema)
 
 ### O que foi implementado

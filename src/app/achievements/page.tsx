@@ -9,6 +9,7 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
+import { isAchievementClaimable } from '@/utils/achievements'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -90,6 +91,10 @@ export default async function AchievementsPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
+  // Item "Conquistas" da nav dourado quando há resgate disponível — derivado
+  // das views que o próprio render carrega (mesma regra dos cards).
+  let hasClaimable = false
+
   let content: React.ReactNode
 
   if (isAdmin) {
@@ -149,6 +154,10 @@ export default async function AchievementsPage() {
           ) ?? null,
       }))
 
+      hasClaimable = views.some((view) =>
+        isAchievementClaimable(view.progress, view.achievement.is_repeatable)
+      )
+
       const dueComunicados = await getDueComunicados()
 
       content = (
@@ -175,6 +184,7 @@ export default async function AchievementsPage() {
         notifications={notifications}
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
         quickMessageSettings={quickMessageSettings}
+        hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

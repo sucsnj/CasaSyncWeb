@@ -1,6 +1,7 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { notifyHouse, notifyUser } from '@/utils/notifications'
-import type { AchievementMetricType } from './achievements'
+import { isAchievementClaimable, type AchievementMetricType } from './achievements'
 
 /**
  * Meteria de uma conquista, no shape mínimo que o sync precisa (`title` entra
@@ -45,8 +46,66 @@ export type SyncAchievementOptions = {
   actorId?: string
 }
 
-/** Conquistas que ficaram desbloqueadas nesta gravação (título p/ a notificação). */
-type UnlockedAchievement = { id: string; title: string }
+/**
+ * O dependente tem alguma conquista **desbloqueada e ainda não resgatada**?
+ * Alimenta o item "Conquistas" da nav (badge dourado = há resgate disponível).
+ *
+ * Só as linhas já desbloqueadas do próprio dependente entram na consulta
+ * (`unlocked_at` não nulo) e, para decidir entre repetível/única, uma segunda
+ * query busca a `is_repeatable` **das conquistas envolvidas** — não há como
+ * derivar isso da linha de progresso. Memoizado por request (`React.cache`).
+ */
+export const hasClaimableAchievement = cache(
+  async (profileId: string): Promise<boolean> => {
+    let admin: ReturnType<typeof createAdminClient>
+    try {
+      admin = createAdminClient()
+    } catch {
+      return false
+    }
+
+    try {
+      const { data: rows } = await admin
+        .from('dependent_achievements')
+        .select('achievement_id, level, unlocked_at')
+        .eq('profile_id', profileId)
+        .not('unlocked_at', 'is', null)
+
+      if (!rows?.length) return false
+
+      const { data: metas } = await admin
+        .from('achievements')
+        .select('id, is_repeatable')
+        .in(
+          'id',
+          rows.map((row) => row.achievement_id)
+        )
+
+      return rows.some((row) => {
+        const meta = metas?.find((item) => item.id === row.achievement_id)
+        return meta
+          ? isAchievementClaimable(row, meta.is_repeatable)
+          : false
+      })
+    } catch (err) {
+      console.error('[ACHIEVEMENTS] Falha ao verificar resgates disponíveis:', err)
+      return false
+    }
+  }
+)
+
+/**
+ * Conquistas que ficaram desbloqueadas nesta gravação. `level`/`isRepeatable`
+ * entram para não notificar o que não tem resgate disponível (única já resgatada
+ * que o tutor re-desbloqueou, por exemplo).
+ */
+type UnlockedAchievement = {
+  id: string
+  title: string
+  level: number
+  isRepeatable: boolean
+  unlockedAt: string
+}
 
 /**
  * Avisa o desbloqueio na central de notificações dos DOIS lados: o dependente
@@ -60,7 +119,14 @@ async function notifyUnlocked(
   actorId: string | undefined,
   unlocked: UnlockedAchievement[]
 ): Promise<void> {
-  if (unlocked.length === 0) return
+  // Só interessa o que virou recompensa resgatável (ver `isAchievementClaimable`).
+  const claimable = unlocked.filter((achievement) =>
+    isAchievementClaimable(
+      { level: achievement.level, unlocked_at: achievement.unlockedAt },
+      achievement.isRepeatable
+    )
+  )
+  if (claimable.length === 0) return
 
   try {
     const { data: profile } = await admin
@@ -71,7 +137,7 @@ async function notifyUnlocked(
 
     const dependentName = profile?.full_name ?? 'O dependente'
 
-    for (const achievement of unlocked) {
+    for (const achievement of claimable) {
       await notifyUser(admin, {
         houseId,
         recipientId: profileId,
@@ -192,7 +258,13 @@ export async function syncAchievementProgress(
         updated_at: now,
       })
       if (write.unlockedAt) {
-        insertedUnlocked.push({ id: achievement.id, title: achievement.title })
+        insertedUnlocked.push({
+          id: achievement.id,
+          title: achievement.title,
+          level: 1,
+          isRepeatable: achievement.is_repeatable,
+          unlockedAt: write.unlockedAt,
+        })
       }
     }
 
@@ -234,8 +306,14 @@ export async function syncAchievementProgress(
           break
         }
         if (updatedRows && updatedRows.length > 0) {
-          if (justUnlocked) {
-            unlocked.push({ id: achievement.id, title: achievement.title })
+          if (justUnlocked && write.unlockedAt) {
+            unlocked.push({
+              id: achievement.id,
+              title: achievement.title,
+              level: row.level,
+              isRepeatable: achievement.is_repeatable,
+              unlockedAt: write.unlockedAt,
+            })
           }
           break
         }

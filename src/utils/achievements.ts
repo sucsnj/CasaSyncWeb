@@ -72,3 +72,29 @@ export function maxAchievementLevel(
 ): number {
   return isRepeatable ? maxLevel : 1
 }
+
+/** Linha de progresso mínima para avaliar a disponibilidade de resgate. */
+export type ClaimableProgress = {
+  level: number | null
+  unlocked_at: string | null
+} | null
+
+/**
+ * Há recompensa **disponível para resgate**? Verdadeiro só quando a conquista
+ * está desbloqueada (`unlocked_at`) e ainda não foi resgatada:
+ * - REPETÍVEL: resgatável a cada ciclo — o resgate limpa o `unlocked_at`, então
+ *   basta estar desbloqueada (vale também nos níveis acima do cap);
+ * - ÚNICA: só no nível 1 — depois do resgate o `level` vai a 2 e vira
+ *   "Concluída" (mesma regra do guard `.eq('level', 1)` de
+ *   `claimAchievementReward`).
+ *
+ * Fonte única da verdade: usada nos cards do dependente, no badge dourado da nav
+ * e no cálculo do servidor.
+ */
+export function isAchievementClaimable(
+  progress: ClaimableProgress,
+  isRepeatable: boolean
+): boolean {
+  if (!progress?.unlocked_at) return false
+  return isRepeatable || (progress.level ?? 1) === 1
+}

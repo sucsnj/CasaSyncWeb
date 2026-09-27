@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Modal } from '@/components/ui/modal'
+import { useClaimableAchievement } from '@/hooks/use-claimable-achievement'
 import type { NotificationRow } from '@/types/notifications'
 import type { QuickMessageSettings } from '@/utils/settings'
 
@@ -37,6 +38,7 @@ export function DashboardNav({
   notifications,
   role,
   quickMessageSettings,
+  hasClaimableAchievement,
 }: {
   items: NavItem[]
   userName?: string | null
@@ -45,9 +47,12 @@ export function DashboardNav({
   notifications?: NotificationRow[]
   role?: 'ADMIN' | 'DEPENDENT'
   quickMessageSettings?: QuickMessageSettings
+  /** Dependente com resgate de conquista disponível → item "Conquistas" dourado. */
+  hasClaimableAchievement?: boolean
 }) {
   const pathname = usePathname()
   const [showAccount, setShowAccount] = useState(false)
+  const claimable = useClaimableAchievement(hasClaimableAchievement)
   const initial = userName?.trim()?.[0]?.toUpperCase() ?? 'U'
   const brandHref = items[0]?.href ?? '/'
 
@@ -72,6 +77,9 @@ export function DashboardNav({
           <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
             {items.map((item) => {
               const active = activeFor(item.href, pathname)
+              // Ouro = há recompensa de conquista esperando resgate no item
+              // "Conquistas" (tem prioridade sobre o destaque de item ativo).
+              const gold = claimable && item.href === '/achievements'
               return (
                 <Link
                   key={item.href}
@@ -80,7 +88,9 @@ export function DashboardNav({
                   className={cn(
                     'rounded-xl px-3 py-2 text-sm font-medium text-blue-100 transition-all duration-200',
                     'hover:bg-white/10 hover:text-white active:scale-95',
-                    'data-[active=true]:bg-white/20 data-[active=true]:font-semibold data-[active=true]:text-white'
+                    gold
+                      ? 'bg-amber-400 font-semibold text-slate-900 shadow-sm hover:bg-amber-300 hover:text-slate-900'
+                      : 'data-[active=true]:bg-white/20 data-[active=true]:font-semibold data-[active=true]:text-white'
                   )}
                 >
                   {item.label}
@@ -127,6 +137,7 @@ export function DashboardNav({
           {items.map((item) => {
             const active = activeFor(item.href, pathname)
             const Icon = itemIcons[item.href as keyof typeof itemIcons] ?? CircleCheck
+            const gold = claimable && item.href === '/achievements'
             return (
               <Link
                 key={item.href}
@@ -135,14 +146,23 @@ export function DashboardNav({
                 data-active={active}
                 className={cn(
                   'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition-all duration-200 active:scale-95',
-                  active ? 'text-sky-400' : 'text-slate-400 hover:text-white'
+                  gold
+                    ? 'text-amber-300'
+                    : active
+                      ? 'text-sky-400'
+                      : 'text-slate-400 hover:text-white'
                 )}
               >
                 <span
                   data-active={active}
-                  className="flex size-9 items-center justify-center rounded-xl transition-colors data-[active=true]:bg-blue-600 data-[active=true]:text-white"
+                  className={cn(
+                    'flex size-9 items-center justify-center rounded-xl transition-colors',
+                    gold
+                      ? 'bg-amber-400 text-slate-900'
+                      : 'data-[active=true]:bg-blue-600 data-[active=true]:text-white'
+                  )}
                 >
-                  <Icon className="size-5" strokeWidth={active ? 2.25 : 2} />
+                  <Icon className="size-5" strokeWidth={active || gold ? 2.25 : 2} />
                 </span>
                 <span className="text-[0.7rem] font-medium leading-none">
                   {item.label}
