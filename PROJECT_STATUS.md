@@ -1,5 +1,39 @@
 # CasaSync Web — PROJECT STATUS
 
+## Formulário de conquista abre com foco automático (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Editar (e "Nova conquista") rola a tela até o form e põe o cursor no título:** o formulário vive no **topo** da lista, então editar um card mais abaixo abria o form fora de vista. Agora há `formRef` no `Card` do form (com `scroll-mt-24` para o header fixo de 4rem não cobrir) e `titleRef` no `Input` do título, e um `useEffect` em `[showForm, editingId]` faz `scrollIntoView({ behavior: 'smooth', block: 'start' })` + `focus({ preventScroll: true })` (o `preventScroll` evita que o foco brusco cancele a rolagem suave).
+- **`editingId` na dependência:** clicar em "Editar" em outro card com o form já aberto também recentraliza e refoca — não só na primeira abertura.
+- O foco também vale para o botão **"Nova conquista"** (mesmo form, mesmo efeito) — o botão já fica no topo, então ali o ganho é só o cursor no título.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- `Card`/`Input` são componentes de função com `...props` no elemento (React 19) — `ref` chega neles sem `forwardRef`.
+- Ao **salvar**, o form fecha e o foco não é devolvido a nada em especial (o `router.refresh()`/toast confirmam); se quiser, dá para focar o card salvo.
+- Requer deploy para valer online.
+
+---
+
+## Cards de conquista do ADMIN sem expandir/colapsar (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **O toggle de expandir/colapsar foi removido** do card de conquista em `/achievements` (visão ADMIN): saíram o **botão de chevron** (`ChevronDown`, que rotacionava com `expandedId`) e todo o estado `expandedId`/`setExpandedId` (inclusive a limpeza no `confirmDelete`).
+- **A seção "Progresso por dependente" passou a ser renderizada sempre** (o wrapper `{expandedId === achievement.id ? … : null}` virou render direto): nome, chip de nível (`Nível N/máx`), contador `progresso/objetivo`, chip "Desbloqueada"/"Concluída" e — nas conquistas `MANUAL` — os botões **"−1"/"+1"** ficam visíveis sem nenhum clique.
+- **Motivo:** o card já mostrava título, métrica, descrição e chips (objetivo/recompensa/multiplicador/repetibilidade/secreta) sempre; o único conteúdo escondido era o progresso por dependente, e esconder exigia um clique por conquista. Sem o estado, a lista fica com a altura total de uma vez.
+- Import `ChevronDown` removido; `cn` segue em uso no resto do arquivo (chips e demais condicionais). Sem mudança de actions, schema ou dados.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- A lista de conquistas do ADMIN agora é mais longa (uma linha por dependente por conquista, sempre visível) — em casas com muitos dependentes e muitas conquistas a rolagem fica maior; a alternativa seria um agrupamento por conquista com acordeão, que é justamente o que foi removido.
+- Requer deploy para valer online.
+
+---
+
 ## Conquista sigilosa agora revela **individualmente** (corrigido — sem mudança de schema)
 
 ### O que foi encontrado e corrigido

@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronDown, Minus, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Minus, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   adjustAchievementProgress,
@@ -98,8 +98,11 @@ export function AchievementsAdmin({
   const [form, setForm] = useState<AchievementForm>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [adjustingKey, setAdjustingKey] = useState<string | null>(null)
+  // O form fica no topo da lista: ao editar um card mais abaixo, a tela rola
+  // até ele e o foco cai no título (pronto para digitar).
+  const formRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
 
   // Realtime: conquistas/progresso criados/alterados por outro ADMIN ou pelas
   // aprovações de tarefas chegam ao vivo (confere também no `router.refresh`).
@@ -152,6 +155,15 @@ export function AchievementsAdmin({
     }
     return map
   }, [progress])
+
+  // Ao abrir o form (criar ou editar), a tela rola até ele — que fica no topo da
+  // lista, longe do card editado — e o foco cai no título, pronto para digitar.
+  // `editingId` na dependência cobre trocar de card em edição sem fechar o form.
+  useEffect(() => {
+    if (!showForm) return
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    titleRef.current?.focus({ preventScroll: true })
+  }, [showForm, editingId])
 
   function startCreate() {
     setForm(EMPTY_FORM)
@@ -269,7 +281,6 @@ export function AchievementsAdmin({
       setProgress((prev) =>
         prev.filter((item) => item.achievement_id !== target.id)
       )
-      if (expandedId === target.id) setExpandedId(null)
       toast.success(res.message ?? 'Conquista excluída.')
     } catch {
       toast.error('Falha ao excluir a conquista.')
@@ -388,7 +399,10 @@ export function AchievementsAdmin({
       </Card>
 
       {showForm ? (
-        <Card className="border-indigo-200 bg-indigo-50/30">
+        <Card
+          ref={formRef}
+          className="scroll-mt-24 border-indigo-200 bg-indigo-50/30"
+        >
           <div className="flex flex-col gap-4 p-4">
             <div className="flex items-center justify-between">
               <p className="font-semibold text-slate-800">
@@ -410,6 +424,7 @@ export function AchievementsAdmin({
                 <Label htmlFor="ach-title">Título</Label>
                 <Input
                   id="ach-title"
+                  ref={titleRef}
                   value={form.title}
                   maxLength={100}
                   onChange={(event) =>
@@ -672,27 +687,6 @@ export function AchievementsAdmin({
                       >
                         <Trash2 className="size-4" />
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() =>
-                          setExpandedId((current) =>
-                            current === achievement.id
-                              ? null
-                              : achievement.id
-                          )
-                        }
-                        aria-expanded={expandedId === achievement.id}
-                        aria-label="Ver progresso por dependente"
-                      >
-                        <ChevronDown
-                          className={cn(
-                            'size-4 transition-transform',
-                            expandedId === achievement.id && 'rotate-180'
-                          )}
-                        />
-                      </Button>
                     </div>
                   </div>
 
@@ -730,85 +724,65 @@ export function AchievementsAdmin({
                     ) : null}
                   </div>
 
-                  {expandedId === achievement.id ? (
-                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
-                      <p className="text-sm font-medium text-slate-700">
-                        Progresso por dependente
+                  {/* Progresso sempre visível: o toggle de expandir/colapsar foi
+                      removido — o tutor vê o estado de cada dependente sem
+                      clicar em nada. */}
+                  <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+                    <p className="text-sm font-medium text-slate-700">
+                      Progresso por dependente
+                    </p>
+                    {dependents.length === 0 ? (
+                      <p className="text-sm text-slate-500">
+                        Nenhum dependente vinculado à casa ainda.
                       </p>
-                      {dependents.length === 0 ? (
-                        <p className="text-sm text-slate-500">
-                          Nenhum dependente vinculado à casa ainda.
-                        </p>
-                      ) : (
-                        dependents.map((dependent) => {
-                          const entry = byProfile?.get(dependent.id)
-                          return (
-                            <div
-                              key={dependent.id}
-                              className="flex items-center justify-between gap-2 text-sm"
-                            >
-                              <span className="min-w-0 truncate text-slate-700">
-                                {dependent.full_name}
-                              </span>
-                              {entry ? (
-                                <span className="flex shrink-0 items-center gap-2">
-                                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                                    {achievement.is_repeatable
-                                      ? `Nível ${entry.level}/${achievement.max_level}`
-                                      : `Nível ${entry.level}`}
-                                  </span>
-                                  <span className="text-xs text-slate-500">
-                                    {entry.current_progress}/
-                                    {achievement.target_count}
-                                  </span>
-                                  {entry.unlocked_at ? (
-                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                                      {achievement.is_repeatable ||
-                                      entry.level === 1
-                                        ? 'Desbloqueada'
-                                        : 'Concluída'}
-                                    </span>
-                                  ) : null}
-                                  {achievement.metric_type === 'MANUAL' ? (
-                                    <span className="flex items-center gap-1">
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 w-7 p-0"
-                                        title="Retirar 1 do progresso (revoga o desbloqueio se ficar abaixo do objetivo)"
-                                        disabled={
-                                          adjustingKey !== null ||
-                                          entry.current_progress <= 0
-                                        }
-                                        onClick={() =>
-                                          handleAdjust(achievement, dependent.id, -1)
-                                        }
-                                      >
-                                        <Minus className="size-3.5" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 w-7 p-0"
-                                        title="Conceder 1 de progresso"
-                                        disabled={adjustingKey !== null}
-                                        onClick={() =>
-                                          handleAdjust(achievement, dependent.id, 1)
-                                        }
-                                      >
-                                        <Plus className="size-3.5" />
-                                      </Button>
-                                    </span>
-                                  ) : null}
+                    ) : (
+                      dependents.map((dependent) => {
+                        const entry = byProfile?.get(dependent.id)
+                        return (
+                          <div
+                            key={dependent.id}
+                            className="flex items-center justify-between gap-2 text-sm"
+                          >
+                            <span className="min-w-0 truncate text-slate-700">
+                              {dependent.full_name}
+                            </span>
+                            {entry ? (
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                                  {achievement.is_repeatable
+                                    ? `Nível ${entry.level}/${achievement.max_level}`
+                                    : `Nível ${entry.level}`}
                                 </span>
-                              ) : (
-                                <span className="flex shrink-0 items-center gap-2">
-                                  <span className="text-xs text-slate-400">
-                                    Sem progresso
+                                <span className="text-xs text-slate-500">
+                                  {entry.current_progress}/
+                                  {achievement.target_count}
+                                </span>
+                                {entry.unlocked_at ? (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    {achievement.is_repeatable ||
+                                    entry.level === 1
+                                      ? 'Desbloqueada'
+                                      : 'Concluída'}
                                   </span>
-                                  {achievement.metric_type === 'MANUAL' ? (
+                                ) : null}
+                                {achievement.metric_type === 'MANUAL' ? (
+                                  <span className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-7 p-0"
+                                      title="Retirar 1 do progresso (revoga o desbloqueio se ficar abaixo do objetivo)"
+                                      disabled={
+                                        adjustingKey !== null ||
+                                        entry.current_progress <= 0
+                                      }
+                                      onClick={() =>
+                                        handleAdjust(achievement, dependent.id, -1)
+                                      }
+                                    >
+                                      <Minus className="size-3.5" />
+                                    </Button>
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -822,15 +796,36 @@ export function AchievementsAdmin({
                                     >
                                       <Plus className="size-3.5" />
                                     </Button>
-                                  ) : null}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : (
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className="text-xs text-slate-400">
+                                  Sem progresso
                                 </span>
-                              )}
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  ) : null}
+                                {achievement.metric_type === 'MANUAL' ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    title="Conceder 1 de progresso"
+                                    disabled={adjustingKey !== null}
+                                    onClick={() =>
+                                      handleAdjust(achievement, dependent.id, 1)
+                                    }
+                                  >
+                                    <Plus className="size-3.5" />
+                                  </Button>
+                                ) : null}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
                 </div>
               </Card>
             )
