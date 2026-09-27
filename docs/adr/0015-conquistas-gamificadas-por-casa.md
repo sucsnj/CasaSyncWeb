@@ -80,9 +80,15 @@ Restrições herdadas do projeto:
   `supabase_realtime`. As ações e a rota leem por service role com escopo de
   sessão (mesmo padrão ADR-0006).
 - **Conquista secreta (`is_secret`):** aparece **sempre** no card do dependente
-  como "Conquista secreta" (sem título/descrição), revelando o conteúdo somente
-  quando `dependent_achievements` tem linha para aquele dependent(e desbloqueou) —
-  a "esposa não sabe do que se trata até desbloquear".
+  como "Conquista secreta" (sem título/descrição/ícone próprio), revelando o
+  conteúdo **individualmente**, quando aquele dependente desbloqueia **aquela**
+  conquista (`unlocked_at` da linha dele) — ou quando ela já foi resgatada
+  (`level > 1`, para a repetível não desaparecer de novo no rollover).
+  **Emenda:** a condição original era "tem linha em `dependent_achievements`",
+  o que **revelava todas as secretas de uma vez** — `syncAchievementProgress`
+  cria linha para *todas* as conquistas da métrica no primeiro evento (inclusive
+  as secretas), então bastava um acesso ao app para o desbloqueio em massa
+  ("a esposa não sabe do que se trata até desbloquear" virou "sabe de todas").
 - **UI:** `/achievements` role-aware reutilizando o padrão de componentes
   separados (ADMIN CRUD + progresso por dependente; DEPENDENT metas), nav com
   ícone `Trophy` (ADMIN passa a 5 itens), e `achievement-icon.tsx` (12 slugs

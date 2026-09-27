@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { PartyPopper } from 'lucide-react'
+import { PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
@@ -153,9 +153,18 @@ export function AchievementsDependent({
     <div className="grid gap-4 sm:grid-cols-2">
       {views.map((view) => {
         const { achievement, progress } = view
-        const lockedSecret = achievement.is_secret && !progress
 
-        if (lockedSecret) {
+        // Sigilosa revela **individualmente**, no desbloqueio dela: todas as
+        // conquistas da métrica ganham linha de progresso no primeiro evento
+        // (inclusive as secretas), então "ter linha" não revela nada — só o
+        // `unlocked_at` daquela conquista (ou já ter sido resgatada, para a
+        // repetível não sumir de novo no rollover).
+        const revealed =
+          !achievement.is_secret ||
+          (progress != null &&
+            (progress.unlocked_at !== null || progress.level > 1))
+
+        if (!revealed) {
           return (
             <Card
               key={achievement.id}
@@ -163,7 +172,7 @@ export function AchievementsDependent({
             >
               <div className="flex items-center gap-3">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
-                  <AchievementIcon icon={achievement.icon} className="size-5" />
+                  <Trophy className="size-5" />
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-800">

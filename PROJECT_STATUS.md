@@ -1,5 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
+## Conquista sigilosa agora revela **individualmente** (corrigido — sem mudança de schema)
+
+### O que foi encontrado e corrigido
+- **Sintoma:** ao desbloquear **uma** conquista sigilosa, **todas** as outras da casa apareciam de uma vez (título, descrição e imagem), expondo o que deveria continuar oculto.
+- **Causa raiz:** a condição de revelação era `achievement.is_secret && !progress` — bastava a linha existir em `dependent_achievements`. Mas `syncAchievementProgress` grava em **todas** as conquistas da casa com a métrica (comportamento correto para o progresso: 1 tarefa aprovada conta para toda conquista `TASKS_APPROVED`), criando a linha das secretas junto — ou seja, um único acesso ao app (`registerLoginDay` → `APP_LOGIN_DAYS`/`STREAK_LOGIN_DAYS` avaliam todas as conquistas da casa) já criava linhas para **todas** as secretas e as revelava em bloco, ainda com progresso parcial.
+- **Correção (`achievements-dependent.tsx`):** a revelação passou a ser **individual** — `!achievement.is_secret || (progress && (progress.unlocked_at !== null || progress.level > 1))`. Ou seja, só o `unlocked_at` **daquela** conquista revela (e `level > 1` cobre a repetível já resgatada, para ela não desaparecer de novo no rollover do `claimAchievementReward`, que limpa o `unlocked_at`). A revelação continua chegando **instantânea** pelo Realtime de `dependent_achievements` (o `UPDATE` da linha trocou o card oculto pelo revelado).
+- **Card oculto sem vazamento:** o card "Conquista secreta" não mostra mais o `icon`/`image_url` da conquista (mostrava o slug do próprio `AchievementIcon`) — agora é sempre um troféu genérico, coerente com o empty state.
+
+### Verificação
+`npm run lint` ✓ (só warnings `no-img-element` esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- O desbloqueio de uma sigilosa **notifica** com o título (`ACHIEVEMENT_UNLOCKED` no sino) — isso é o próprio momento da revelação, então é coerente com o card.
+- **Limite conhecido (aceito):** a revelação é de **exibição**. As linhas das conquistas (com título/descrição/imagem) continuam no payload RSC de `/achievements` para permitir a revelação instantânea pelo Realtime; quem inspecionar o payload vê as secretas. Blindar isso exigiria mascarar no servidor e buscar o conteúdo no desbloqueio (ou uma coluna `revealed_at`) — fora de escopo agora.
+- Requer deploy para valer online.
+
+---
+
 ## Item "Conquistas" da nav fica **dourado** quando há resgate disponível (concluída — sem mudança de schema)
 
 ### O que foi implementado
