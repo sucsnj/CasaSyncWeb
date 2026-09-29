@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { updateOwnProfile } from '@/actions/auth'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Label } from '@/components/ui/label'
 import {
   Card,
@@ -71,7 +71,7 @@ export function ProfileEditor({
           </div>
           <div className="grid gap-2">
             <Label htmlFor="profile-full-name">Nome completo</Label>
-            <Input
+            <ClearableInput
               id="profile-full-name"
               name="fullName"
               type="text"

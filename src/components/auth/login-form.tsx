@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { login } from '@/actions/auth'
 import { RegisterForm } from '@/components/auth/register-form'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -88,13 +89,14 @@ export function LoginForm({
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="username">Nome de usuário</Label>
-                  <Input
+                  <ClearableInput
                     id="username"
                     name="username"
                     type="text"
                     autoComplete="username"
                     placeholder="Seu nome de usuário"
                     required
+                    defaultValue=""
                   />
                 </div>
 

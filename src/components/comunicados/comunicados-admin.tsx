@@ -11,6 +11,7 @@ import {
 } from '@/actions/comunicados'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -255,7 +256,7 @@ export function ComunicadosAdmin({
                 <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-title">
                   Título
                 </label>
-                <Input
+                <ClearableInput
                   id="comunicado-title"
                   value={form.title}
                   onChange={(event) =>

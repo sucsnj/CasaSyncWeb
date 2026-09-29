@@ -18,6 +18,7 @@ import {
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
@@ -422,7 +423,7 @@ export function AchievementsAdmin({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="ach-title">Título</Label>
-                <Input
+                <ClearableInput
                   id="ach-title"
                   ref={titleRef}
                   value={form.title}
@@ -435,7 +436,7 @@ export function AchievementsAdmin({
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="ach-description">Descrição (opcional)</Label>
-                <Input
+                <ClearableInput
                   id="ach-description"
                   value={form.description}
                   maxLength={300}

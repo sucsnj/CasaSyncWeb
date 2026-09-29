@@ -1,5 +1,27 @@
 # CasaSync Web — PROJECT STATUS
 
+## X de limpar em todos os campos de texto (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **Novo componente `ClearableInput` (`src/components/ui/clearable-input.tsx`):** wrapper do `Input` (primitiva, estilo intacto) com um **botão `X` no fim** — apagar o que foi digitado vira um clique, sem selecionar tudo e apagar. O botão só **aparece com conteúdo**, é `type="button"` (não submete o form), tem `aria-label="Limpar campo"` e **devolve o foco ao campo** para continuar digitando. O input ganha `pr-11` só quando há texto, para o valor não passar por baixo do X.
+- **Trabalha nos dois modos de input, num lugar só:** em input **controlado** (`value` + `onChange`) o X dispara o `onChange` com valor vazio (todo handler do app lê só `event.target.value`); em input **não controlado** (os formulários que leem `FormData`) limpa o DOM e dispara um evento `input` nativo para o React e o form perceberem a mudança. O prop `onClear` sobrescreve os dois caminhos. O `ref` externo continua chegando no `<input>` interno (usado pelo foco automático do form de conquistas).
+- **Aplicado em 20 campos** (busca, títulos/descrições de formulário e identificação):
+  - **Buscas:** `rewards-admin.tsx` e `rewards-dependent.tsx` (`type="search"`) — o **X nativo do navegador foi escondido** em `src/app/globals.css` (`input[type="search"]::-webkit-search-cancel-button`). Motivo: o botão nativo (`::-webkit-search-cancel-button`) só existe em **Blink/WebKit** e varia entre plataformas (Firefox e alguns Android WebView não o exibem), então o `ClearableInput` é que garante o mesmo campo em todo navegador — além de evitar o X duplicado no Chrome;
+  - **Títulos/descrições:** tarefa (nova), recompensa (criar/editar), sugestão de recompensa, conquista (título + descrição), comunicado (título);
+  - **Identificação:** nome da casa (criar/editar), PIN da casa, nome/usuário do dependente (criar/editar), descrição do ajuste de pontos, nome completo (perfil), usuário e nome no login/cadastro.
+- **Onde deliberadamente NÃO foi aplicado:** numéricos (custo/pontos/objetivo/nível/multiplicador), data/hora (a tarefa já tem botões "Amanhã/+2h/Limpar"), **senha** e PIN de pontos (papel do botão é o input; o padrão para credencial é mostrar/ocultar) e **`textarea`** (descrições, motivo do adiamento, mensagem rápida) — lá o `type`/o botão já fazem esse papel, e o `textarea` do projeto não tem primitiva, então um wrapper exigiria|stylear cada caso à mão.
+- **Ajuste de layout junto:** a dica do autocomplete ("as sugestões combinam as palavras…") estava empurrando o dropdown "Você quis dizer..." para baixo dela — o `<ul>` das sugestões passou a ser posicionado por um wrapper `relative` **só do input**, então abre logo abaixo dele, sobre a dica.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- O botão é `position: absolute` dentro de um wrapper `relative`: em célula de **grid** ou em `flex-col` ele ocupa a largura toda sem quebrar o alinhamento (o `Input` segue `w-full`).
+- Em input controlado, o X dispara um `onChange` sintético com apenas `target.value` — suficiente para todos os handlers do projeto, mas um handler que use `event.currentTarget`/`event.name` precisaria do `onClear` explícito.
+- Requer deploy para valer online.
+
+---
+
 ## Autocomplete de tarefas agora combina **palavras/tags** (ordem indiferente) (implementado — sem mudança de schema)
 
 ### O que foi implementado

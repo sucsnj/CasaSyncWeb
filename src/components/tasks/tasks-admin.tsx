@@ -32,6 +32,7 @@ import { DebouncedField } from './debounced-field'
 // estado e bloco de formulário abaixo.
 // import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
@@ -540,55 +541,59 @@ export function TasksAdmin({
               onSubmit={handleCreate}
               className="grid gap-3 md:grid-cols-2 md:items-start"
             >
-              <div className="relative grid gap-2">
+              <div className="grid gap-2">
                 <Label htmlFor="task-title">Título</Label>
-                <Input
-                  id="task-title"
-                  name="title"
-                  required
-                  value={title}
-                  onChange={(event) => {
-                    setTitle(event.target.value)
-                    setSuggestionsOpen(true)
-                    // Editar o título manualmente sai do modo "reutilizar".
-                    setReuseTask(null)
-                    setConfirmDuplicate(false)
-                  }}
-                  placeholder="Ex.: Arrumar o quarto"
-                />
+                {/* O dropdown é posicionado por este wrapper (não pela célula
+                    inteira), para abrir logo abaixo do input, sobre a dica. */}
+                <div className="relative">
+                  <ClearableInput
+                    id="task-title"
+                    name="title"
+                    required
+                    value={title}
+                    onChange={(event) => {
+                      setTitle(event.target.value)
+                      setSuggestionsOpen(true)
+                      // Editar o título manualmente sai do modo "reutilizar".
+                      setReuseTask(null)
+                      setConfirmDuplicate(false)
+                    }}
+                    placeholder="Ex.: Arrumar o quarto"
+                  />
 
-                {/* Autocomplete "Você quis dizer..." — combinação de palavras do
-                    catálogo da casa, até 3 sugestões (melhor combinação 1º). */}
-                {suggestions.length > 0 ? (
-                  <ul className="absolute top-full left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-                    {suggestions.map((suggestion) => (
-                      <li key={suggestion.id}>
-                        <button
-                          type="button"
-                          onClick={() => applySuggestion(suggestion)}
-                          className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
-                        >
-                          <span className="truncate text-sm font-medium text-slate-800">
-                            {suggestion.title}
-                          </span>
-                          <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <span
-                              className={cn(
-                                'rounded-full px-2 py-0.5 font-medium',
-                                taskChipByStatus[suggestion.status].className
-                              )}
-                            >
-                              {taskChipByStatus[suggestion.status].label}
+                  {/* Autocomplete "Você quis dizer..." — combinação de palavras do
+                      catálogo da casa, até 3 sugestões (melhor combinação 1º). */}
+                  {suggestions.length > 0 ? (
+                    <ul className="absolute top-full left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                      {suggestions.map((suggestion) => (
+                        <li key={suggestion.id}>
+                          <button
+                            type="button"
+                            onClick={() => applySuggestion(suggestion)}
+                            className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-slate-50"
+                          >
+                            <span className="truncate text-sm font-medium text-slate-800">
+                              {suggestion.title}
                             </span>
-                            {assigneeName(suggestion.assigned_to) ? (
-                              <span>· {assigneeName(suggestion.assigned_to)}</span>
-                            ) : null}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+                            <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                              <span
+                                className={cn(
+                                  'rounded-full px-2 py-0.5 font-medium',
+                                  taskChipByStatus[suggestion.status].className
+                                )}
+                              >
+                                {taskChipByStatus[suggestion.status].label}
+                              </span>
+                              {assigneeName(suggestion.assigned_to) ? (
+                                <span>· {assigneeName(suggestion.assigned_to)}</span>
+                              ) : null}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
                 <p className="text-xs text-slate-500">
                   As sugestões combinam as palavras digitadas, em qualquer
                   ordem — até um caractere serve (&quot;q&quot; encontra

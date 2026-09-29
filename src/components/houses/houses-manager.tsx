@@ -21,6 +21,7 @@ import {
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -440,7 +441,7 @@ export function HousesManager({
               >
                 <div className="grid gap-2">
                   <Label htmlFor="house-name">Nome da casa</Label>
-                  <Input
+                  <ClearableInput
                     id="house-name"
                     name="houseName"
                     type="text"
@@ -469,13 +470,14 @@ export function HousesManager({
               >
                 <div className="grid gap-2">
                   <Label htmlFor="house-pin">PIN da casa</Label>
-                  <Input
+                  <ClearableInput
                     id="house-pin"
                     name="pin"
                     type="text"
                     placeholder="Ex.: ABC123"
                     autoComplete="off"
                     required
+                    defaultValue=""
                   />
                   <p className="text-xs text-muted-foreground">
                     Você passa a controlar essa casa junto com o administrador
@@ -624,24 +626,26 @@ export function HousesManager({
             >
               <div className="grid gap-2">
                 <Label htmlFor="dependent-name">Nome completo</Label>
-                <Input
+                <ClearableInput
                   id="dependent-name"
                   name="dependentName"
                   type="text"
                   placeholder="Ex.: Joana Silva"
                   required
+                  defaultValue=""
                 />
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="dependent-username">Nome de usuário</Label>
-                <Input
+                <ClearableInput
                   id="dependent-username"
                   name="dependentUsername"
                   type="text"
                   autoComplete="username"
                   placeholder="ex.: joana_silva"
                   required
+                  defaultValue=""
                 />
               </div>
 
@@ -856,7 +860,7 @@ export function HousesManager({
             <form onSubmit={handleSaveHouse} className="flex flex-col gap-3">
               <div className="grid gap-2">
                 <Label htmlFor="edit-house-name">Nome da casa</Label>
-                <Input
+                <ClearableInput
                   id="edit-house-name"
                   name="houseName"
                   type="text"
@@ -928,7 +932,7 @@ export function HousesManager({
           <form onSubmit={handleSaveDependent} className="flex flex-col gap-3">
             <div className="grid gap-2">
               <Label htmlFor="edit-dependent-name">Nome completo</Label>
-              <Input
+              <ClearableInput
                 id="edit-dependent-name"
                 name="dependentName"
                 type="text"
@@ -938,7 +942,7 @@ export function HousesManager({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-dependent-username">Nome de usuário</Label>
-              <Input
+              <ClearableInput
                 id="edit-dependent-username"
                 name="dependentUsername"
                 type="text"
@@ -1062,7 +1066,7 @@ export function HousesManager({
 
             <div className="grid gap-2">
               <Label htmlFor="member-reason">Descrição do ajuste</Label>
-              <Input
+              <ClearableInput
                 id="member-reason"
                 name="reason"
                 type="text"
@@ -1071,6 +1075,7 @@ export function HousesManager({
                 disabled={pointsNewValue >= pointsMember.points}
                 required={pointsNewValue < pointsMember.points}
                 suppressHydrationWarning
+                defaultValue=""
               />
               <p className="text-xs text-muted-foreground">
                 Obrigatório apenas quando o novo total for menor que o saldo

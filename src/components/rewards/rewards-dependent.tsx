@@ -9,6 +9,7 @@ import { useProfilePoints } from '@/hooks/use-profile-points'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
@@ -257,10 +258,11 @@ export function RewardsDependent({
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input
+          <ClearableInput
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            onClear={() => setSearch('')}
             placeholder="Buscar recompensa..."
             aria-label="Buscar recompensa"
             className="pl-10"
@@ -273,11 +275,12 @@ export function RewardsDependent({
               <form onSubmit={handleSuggest} className="grid gap-3">
                 <div className="grid gap-2">
                   <Label htmlFor="suggestion-title">Recompensa</Label>
-                  <Input
+                  <ClearableInput
                     id="suggestion-title"
                     name="title"
                     required
                     placeholder="Ex.: um passeio no parque"
+                    defaultValue=""
                   />
                 </div>
                 <div className="grid gap-2">

@@ -16,6 +16,7 @@ import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
@@ -352,12 +353,13 @@ export function RewardsAdmin({
                 <form onSubmit={handleCreate} className="grid gap-3">
                   <div className="grid gap-2">
                     <Label htmlFor="reward-title">Título</Label>
-                    <Input
-                      id="reward-title"
-                      name="title"
-                      required
-                      placeholder="Ex.: 1h de videogame"
-                    />
+                  <ClearableInput
+                    id="reward-title"
+                    name="title"
+                    required
+                    placeholder="Ex.: 1h de videogame"
+                    defaultValue=""
+                  />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -423,10 +425,11 @@ export function RewardsAdmin({
 
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <Input
+            <ClearableInput
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onClear={() => setSearch('')}
               placeholder="Buscar recompensa..."
               aria-label="Buscar recompensa"
               className="pl-10"
@@ -733,7 +736,7 @@ export function RewardsAdmin({
           <form onSubmit={handleSaveEdit} className="grid gap-3">
             <div className="grid gap-2">
               <Label htmlFor="edit-reward-title">Título</Label>
-              <Input
+              <ClearableInput
                 id="edit-reward-title"
                 name="title"
                 required

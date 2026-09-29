@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { registerAdmin } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -68,19 +69,20 @@ export function RegisterForm() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="grid gap-2">
             <Label htmlFor="full-name">Nome completo</Label>
-            <Input
+            <ClearableInput
               id="full-name"
               name="fullName"
               type="text"
               autoComplete="name"
               placeholder="Seu nome"
               required
+              defaultValue=""
             />
           </div>
 
           <div className="grid gap-2">
             <Label htmlFor="username">Nome de usuário</Label>
-            <Input
+            <ClearableInput
               id="username"
               name="username"
               type="text"
@@ -88,6 +90,7 @@ export function RegisterForm() {
               placeholder="ex.: joao_silva (3-24 caracteres)"
               minLength={3}
               required
+              defaultValue=""
             />
           </div>
 
