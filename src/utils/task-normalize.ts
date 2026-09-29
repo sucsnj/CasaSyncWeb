@@ -6,9 +6,9 @@
  *
  * O módulo também concentra a **busca por combinação de palavras** do
  * autocomplete ("Você quis dizer..."): as palavras do título funcionam como
- * tags — a ordem não importa, cada palavra da busca com 3+ caracteres precisa
- * aparecer no título (exata, no início ou como trecho: "quar" → "quartos",
- * "zin" → "cozinha") e as candidatas saem da melhor combinação para a pior.
+ * tags — a ordem não importa, cada palavra da busca precisa aparecer no título
+ * (exata, no início ou como trecho: "quar" → "quartos", "ozi" → "cozinha") e as
+ * candidatas saem da melhor combinação para a pior.
  */
 export function normalizeTaskTitle(value: string): string {
   return value
@@ -19,13 +19,18 @@ export function normalizeTaskTitle(value: string): string {
     .trim()
 }
 
-/** Regra do produto: cada palavra da busca precisa ter 3 caracteres ou mais. */
+/**
+ * Regra do produto: tamanho mínimo de uma palavra da busca, em caracteres.
+ * Hoje é **1** — vale um único caractere ("q" → "quarto"), então atalhos
+ * ("os", "e") também entram na combinação; a ordenação por qualidade
+ * (exata > prefixo > trecho) é o que mantém a melhor sugestão no topo.
+ */
 export const MIN_MATCH_WORD_LENGTH = 1
 
 /**
  * Palavras pesquisáveis de um texto (já normalizado): minúsculas, sem acentos e
- * apenas as com `MIN_MATCH_WORD_LENGTH`+ caracteres. Palavras curtas ("o", "e",
- * "de") são deixadas de fora de propósito — combiná-las geraria falso positivo.
+ * apenas as com `MIN_MATCH_WORD_LENGTH`+ caracteres (hoje, todas). Palavra
+ * isolada do texto não sobrevive ao `normalizeTaskTitle`, que colapsa espaços.
  */
 export function searchWords(value: string): string[] {
   return normalizeTaskTitle(value)
@@ -105,11 +110,11 @@ function compareRanks(a: TaskTitleRank, b: TaskTitleRank): number {
  * Autocomplete por **combinação de palavras**: dado o que o ADMIN digitou
  * ("quarto limpar"), devolve até `limit` itens do catálogo que têm **todas** as
  * palavras da busca, independentemente da ordem, do melhor para o pior
- * ("Limpar todo o Quarto"). Termos incompletos valem ("ozi" → "cozinha").
+ * ("Limpar todo o Quarto"). Termos incompletos valem ("ozi" → "cozinha") e,
+ * com `MIN_MATCH_WORD_LENGTH = 1`, até um caractere só ("q" → "quarto").
  *
- * Cada palavra da busca precisa de 3+ caracteres; sem nenhuma palavra válida
- * (`"a b c"`, por ex.) não há sugestão. Genérico no item para não acoplar ao
- * tipo `Task` (client e servidor podem usar a mesma regra).
+ * Só uma busca **vazia** não gera sugestão. Genérico no item para não acoplar
+ * ao tipo `Task` (client e servidor podem usar a mesma regra).
  */
 export function searchTasksByWords<T>(
   query: string,

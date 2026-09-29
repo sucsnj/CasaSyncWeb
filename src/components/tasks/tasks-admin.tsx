@@ -146,10 +146,10 @@ export function TasksAdmin({
   const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
 
   // Autocomplete "Você quis dizer...": combinação de palavras do catálogo todo
-  // da casa, independente da ordem, com termos incompletos ("ozi" → cozinha) e
-  // no mínimo 3 caracteres por palavra. Até 3 sugestões, melhor combinação
-  // primeiro (ver `searchTasksByWords`). Roda em memória (o catálogo já está no
-  // estado) — uma consulta ao banco por tecla só adicionaria latência.
+  // da casa, independente da ordem, aceitando trechos (inclusive de 1
+  // caractere: "q" → "quarto") — até 3 sugestões, melhor combinação primeiro
+  // (ver `searchTasksByWords`). Roda em memória (o catálogo já está no estado) —
+  // uma consulta ao banco por tecla só adicionaria latência.
   const suggestions = useMemo(
     () =>
       suggestionsOpen
@@ -590,9 +590,9 @@ export function TasksAdmin({
                   </ul>
                 ) : null}
                 <p className="text-xs text-slate-500">
-                  As sugestões combinam as palavras digitadas (3+ letras cada),
-                  em qualquer ordem — trechos valem: &quot;ozi&quot; encontra
-                  &quot;cozinha&quot;.
+                  As sugestões combinam as palavras digitadas, em qualquer
+                  ordem — até um caractere serve (&quot;q&quot; encontra
+                  &quot;quarto&quot;).
                 </p>
               </div>
 
