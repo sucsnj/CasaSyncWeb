@@ -1,5 +1,28 @@
 # CasaSync Web — PROJECT STATUS
 
+## Autocomplete de tarefas agora combina **palavras/tags** (ordem indiferente) (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **Busca por combinação de palavras** no "Você quis dizer..." do form de nova tarefa (ADMIN): antes era `includes` do título inteiro (ex.: digitar "varrer sala" só encontrava quem tivesse a frase exata nessa ordem). Agora o que importa é a **combinação das palavras** (tags) do título, **em qualquer ordem**, com a melhor combinação primeiro.
+- **Regras (`src/utils/task-normalize.ts`, módulo puro reusado pelo autocomplete):**
+  - cada palavra digitada precisa de **3+ caracteres** (`MIN_MATCH_WORD_LENGTH`); "o", "e", "de" são ignorados de propósito (combiná-los geraria falso positivo constante);
+  - o termo casa com uma palavra do título por **igualdade** (3), **início/prefixo** (2 — "quar" → "quartos") ou **trecho** (1 — "ozi"/"zin"/"nha" → "cozinha");
+  - **todas** as palavras precisam casar (`rankTaskTitle` devolve `null` no primeiro termo que falta) — por isso "varrer sala" **não** puxa "Varrer a cozinha";
+  - a ordem das sugestões é: mais palavra exata > título mais curto (combinação mais específica) > casa mais na frente; até 3 itens, como antes.
+- **Exemplos validados:** "quarto limpar" → *Limpar todo o Quarto* · "varrer sala" → *Varrer o quintal e sala* (e não *Varrer a cozinha*) · "varrer quar" → *Varrer todos os quartos* (e não *Arrumar todo o seu quarto*) · "zin"/"nha"/"ozi" → *Varrer a cozinha*.
+- **Reaproveitamento e escopo:** `normalizeTaskTitle` continua sendo a normalização única (mesma nos dois lados); o novo `searchTasksByWords<T>(query, items, getTitle, limit)` é **genérico** (não acopla ao tipo `Task`) e roda em **`useMemo`** no `tasks-admin.tsx`. **Sem consulta ao banco:** o catálogo da casa já está inteiro no estado do form (carregado no servidor e mantido pelo Realtime) — uma query por tecla só adicionaria latência. O **guard de duplicidade** (soft block no client + título normalizado no `createTask`) segue exigindo **igualdade**: são duas regras diferentes.
+- **UI:** uma linha de dica sob o input do título explica a regra ao tutor ("combina as palavras digitadas (3+ letras cada), em qualquer ordem — trechos valem: 'ozi' encontra 'cozinha'"). As sugestões continuam com chip de status + nome do pupilo e o clique segue preenchendo o form (ou entrando em "Reativar" quando a tarefa é `APPROVED`).
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). *Os exemplos acima foram conferidos executando o módulo puro com `node --experimental-strip-types` (script temporário fora do repo, sem dependência nova e sem teste configurado no projeto).*
+
+### Pontos de atenção
+- **Tags = palavras do título:** não há coluna de tags no banco (nem SQL novo) — "tag" aqui é a palavra normalizada do título. Se um dia o tutor quiser tags curtas separadas do nome ("quarto" em "Limpar o quarto"), aí sim é uma coluna nova + migration.
+- Ponteiros curtos ambíguos podem apontar para várias tarefas ("sala" casa com "salão"/"salada"); a ordem resolve pelo contexto das outras palavras e pelo tamanho do título.
+- Requer deploy para valer online.
+
+---
+
 ## Lint zerado — imports mortos removidos e a regra `no-img-element` desligada (concluída)
 
 ### O que foi feito

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   adminCompleteTask,
@@ -16,7 +16,7 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
-import { normalizeTaskTitle } from '@/utils/task-normalize'
+import { normalizeTaskTitle, searchTasksByWords } from '@/utils/task-normalize'
 import {
   datetimeLocalToIso,
   isoToDateTimeLocalValue,
@@ -145,23 +145,23 @@ export function TasksAdmin({
   const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
 
-  // Autocomplete "Você quis dizer...": título normalizado >= 3 chars, lista até
-  // 3 tarefas da casa (catálogo todo) cujo título normalizado CONTÉM o digitado.
-  const normalizedTitle = normalizeTaskTitle(title)
-  const suggestions =
-    normalizedTitle.length >= 3 && suggestionsOpen
-      ? tasks
-        .filter(
-          (task) =>
-            task.title &&
-            normalizeTaskTitle(task.title).includes(normalizedTitle)
-        )
-        .slice(0, 3)
-      : []
+  // Autocomplete "Você quis dizer...": combinação de palavras do catálogo todo
+  // da casa, independente da ordem, com termos incompletos ("ozi" → cozinha) e
+  // no mínimo 3 caracteres por palavra. Até 3 sugestões, melhor combinação
+  // primeiro (ver `searchTasksByWords`). Roda em memória (o catálogo já está no
+  // estado) — uma consulta ao banco por tecla só adicionaria latência.
+  const suggestions = useMemo(
+    () =>
+      suggestionsOpen
+        ? searchTasksByWords(title, tasks, (task) => task.title, 3)
+        : [],
+    [suggestionsOpen, title, tasks]
+  )
 
   // Soft block por pupilo: tarefa ATIVA (PENDING/IN_PROGRESS/NOT_DELIVERED) com
   // o MESMO título normalizado para o MESMO assigned_to. Ignora a própria tarefa
   // em modo "Reativar". Fora de um gesto de confirmação explícita.
+  const normalizedTitle = normalizeTaskTitle(title)
   const ACTIVE_STATUSES: Task['status'][] = [
     'PENDING',
     'IN_PROGRESS',
@@ -557,8 +557,8 @@ export function TasksAdmin({
                   placeholder="Ex.: Arrumar o quarto"
                 />
 
-                {/* Autocomplete "Você quis dizer..." — catálogo da casa toda,
-                    título normalizado >= 3 chars, até 3 sugestões. */}
+                {/* Autocomplete "Você quis dizer..." — combinação de palavras do
+                    catálogo da casa, até 3 sugestões (melhor combinação 1º). */}
                 {suggestions.length > 0 ? (
                   <ul className="absolute top-full left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
                     {suggestions.map((suggestion) => (
@@ -589,6 +589,11 @@ export function TasksAdmin({
                     ))}
                   </ul>
                 ) : null}
+                <p className="text-xs text-slate-500">
+                  As sugestões combinam as palavras digitadas (3+ letras cada),
+                  em qualquer ordem — trechos valem: &quot;ozi&quot; encontra
+                  &quot;cozinha&quot;.
+                </p>
               </div>
 
               <div className="grid gap-2">
