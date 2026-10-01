@@ -13,7 +13,7 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
-import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
 import type { Tables } from '@/types/database'
 
@@ -227,7 +227,11 @@ export default async function RewardsPage() {
               created_at: suggestion.created_at,
             }))}
           />
-          <ComunicadoOverlay initialQueue={dueComunicados} />
+          <AlertQueueOverlay
+            userId={user.id}
+            initialQueue={dueComunicados}
+            initialNotifications={notifications}
+          />
         </>
       )
     }

@@ -1,5 +1,27 @@
 # CasaSync Web — PROJECT STATUS
 
+## Fila de alertas única do dependente: comunicados + penalização, com comprovação de leitura (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **Uma fila só, FIFO, sem prioridade:** tudo que exige confirmação do dependente entra na **mesma** fila — os **comunicados publicados** e o **alerta de penalização** (`PENALTY`). A ordem é a natural por data de criação (`created_at` do comunicado / da notificação): **a penalização não tem prioridade** e não pula a fila. O modal próprio `penalty-dialog.tsx` foi **removido** (`src/components/notifications/penalty-dialog.tsx`) junto com o overlay antigo de comunicados (`src/components/comunicados/comunicado-overlay.tsx`).
+- **Novo componente `AlertQueueOverlay` (`src/components/alerts/alert-queue-overlay.tsx`):** portal `z-[120]` (acima do `Modal` z-[100]), itens **um-a-um**, foco preso no campo de confirmação (comunicado) ou no botão (penalização), **Esc bloqueado** (capture em `keydown`), scroll do documento travado e Tab ciclando só dentro da janela. Props: `userId` + `initialQueue` (`getDueComunicados()` no render) + `initialNotifications` (notificações não lidas no render). Quando há mais de um item, mostra "Item 1 de N".
+- **Ganho de cobertura:** como a penalização passou a viver no mesmo overlay, ela **também aparece em `/tasks` e `/rewards`** (antes a `PenaltyDialog` só era montada no layout `/dashboard/dependent`). Montagem nos mesmos 4 pontos de antes: layout dependente e as branches dependentes de `/tasks`, `/rewards`, `/achievements`.
+- **Comprovação de leitura do comunicado (trava de leitura):** confirmar exige **digitar ao menos 3 palavras do próprio aviso** — do título **ou** da descrição, em qualquer ordem, sem diferenciar maiúsculas/minúsculas ou acentos; palavras repetidas não contam e termos de 1 caractere são ignorados. O predicado puro **`matchedAlertWords`** (novo `src/utils/alert-queue.ts`) habilita o botão na UI (com contador "N de 3") e **o servidor revalida** em `confirmComunicadoDelivery(id, typedPhrase)` — que relê título/descrição do comunicado e **recusa** se não bater (fail closed). A **penalização não tem esse passo**: basta "Entendi" (`markNotificationRead`).
+- **Fila de comunicados sem tempo real (decisão de produto mantida), fila de penalidades com Realtime:** os comunicados vêm do servidor no render de cada tela e saem da fila **na hora** ao confirmar (estado local, sem esperar round-trip — o `refreshDue()` do overlay antigo deixou de existir). As penalizações também nascem no render, mas **acompanham o Realtime de `notifications`** (filter `recipient_id=eq.<userId>`): penalidade nova entra na fila e uma já marcada como lida no sino sai.
+- **Descrição do comunicado com mínimo de 30 caracteres:** `COMUNICADO_MIN_DESCRIPTION = 30` / `COMUNICADO_MAX_DESCRIPTION = 500` em `src/utils/comunicados.ts` (usadas pela action e pelo form), validação fail-closed com `.trim()` no `validateComunicadoFields`; no `comunicados-admin.tsx` o campo ganhou `minLength`, rótulo "mínimo 30 caracteres" e contador vivo. Motivo: aviso de 1–2 palavras não dá contexto para a comprovação de leitura.
+- **Hidratacao do overlay:** o portal só é montado após a hidratação (`useSyncExternalStore` com snapshot `false` no servidor / `true` no cliente, mesmo padrão do `FormattedDateTime`) — montar a árvore com `typeof document` divergia do servidor quando a fila tinha itens.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Limite conhecido/aceito:** o comunicado confirmado fica marcado como confirmado **na montagem atual** do overlay — se a mesma ocorrência voltar a ser devida sem recarregar a página, ela não reaparece até o overlay remontar. Na prática a próxima ocorrência é sempre no dia/horário agendado seguinte.
+- Se o servidor **recusar** a confirmação (item obsoleto), o item **sai da fila** mesmo assim: insistir no mesmo item bloquearia a fila inteira.
+- Sem mudança de schema: nada de coluna, tabela ou migration nova (`docs/sql/comunicados.sql` continua aguardando aplicação pelo usuário).
+- Decisões registradas em **ADR-0017** (emendas de 2026).
+
+---
+
 ## X de limpar em todos os campos de texto (implementado — sem mudança de schema)
 
 ### O que foi implementado
@@ -189,7 +211,7 @@
   - **`comunicado_deliveries`** — `comunicado_id` (FK cascade), `profile_id` (FK cascade), `delivered_count`, `last_confirmed_at`; **UNIQUE (comunicado_id, profile_id)** — uma linha por (comunicado, dependente).
 - **Server Actions (`src/actions/comunicados.ts`):** `createComunicado` / `updateComunicado` (whitelist) / `setComunicadoPublished` / `deleteComunicado` — ADMIN da casa ativa (`assertAdminCanManage`, service-role), validação fail-closed (`validateComunicadoFields`: título 1–120, descrição 1–500, repeats 1–100, intervalo 0–365, ≥1 weekday 0–6 sem duplicados, `repeatTime` `/^([01]\d|2[0-3]):[0-5]\d$/`); `getDueComunicados()` (só DEPENDENT com casa; `[]` para ADMIN/sem casa; publicados **com agenda devida** por dependente — a 1ª ocorrência usa `created_at` sem intervalo, as repetições `last_confirmed_at` com intervalo); `confirmComunicadoDelivery` (guarda em `delivered_count` + `.select('id')` + 2 tentativas, cap em `repeats_total`; `ok:false` quando recusa). Revalidam `/dashboard/admin/comunicados`; a confirmação revalida também as rotas do dependente.
 - **UI ADMIN (`src/components/comunicados/comunicados-admin.tsx`)** em `/dashboard/admin/comunicados` (force-dynamic, role check + NoHouseCard): form criar/editar com chips de dia do agendamento + `<input type="time">` + repetição (total/intervalo), toggle **Publicar/Despublicar**, deletar com `Modal`, **Realtime de `comunicados`** (só a tela do ADMIN) e total de confirmações por aviso. Acesso pelo **card "Comunicados"** na visão geral do ADMIN (`/dashboard/admin`) — **sem item na nav** (ADMIN segue com 5 itens).
-- **Overlay bloqueante do DEPENDENT (`src/components/comunicados/comunicado-overlay.tsx`):** portal **`z-[120]`** (acima do `Modal` z-[100]), fila uma a uma, foco preso no botão **Confirmar**, **Esc bloqueado** (capture), scroll do documento travado; alimentado por `getDueComunicados()` **no render** (props: apenas `initialQueue` — sem `houseId`/`userId`); após confirmar, `refreshDue()` reavalia a fila; itens que o servidor recusa saem da fila; falha de rede mantém o item com toast (`excludedRef` evita re-exibição). Montado no layout dependente e nas branches dependentes de `/tasks`, `/rewards`, `/achievements`.
+- **Overlay bloqueante do DEPENDENT (`src/components/alerts/alert-queue-overlay.tsx` — substitui `comunicado-overlay.tsx`, removido):** ver a seção **no topo** ("Fila de alertas única do dependente") — fila única FIFO de comunicados + penalização, sem prioridade para a penalização, e comprovação de leitura (≥ 3 palavras do aviso) no comunicado. Montagem nos mesmos 4 pontos: layout dependente e branches dependentes de `/tasks`, `/rewards`, `/achievements`.
 - **Limpeza:** `comunicado_deliveries` fica **FORA** da publication e **sem policies client** (escritas/leituras service-role; o total do ADMIN atualiza via `revalidatePath`/`router.refresh()` pós-ação). `deleteComunicado` remove as deliveries (FK cascade); `deleteHouse` remove os comunicados (FK cascade em `comunicados`). Ver **ADR-0017**.
 
 ### SQL (docs/sql/comunicados.sql — aplicação pendente)
@@ -501,9 +523,9 @@ alter publication supabase_realtime add table public.dependent_achievements;
 - **UI ADMIN (`houses-manager.tsx:853-932`):** Modal "Alterar pontos" já continha campo "Descrição do ajuste" (`reason`) e PIN de pontos. O submit passa `reason` para a action.
 - **Notificação para o dependente:**
   - **Toast em tempo real** (`realtime-toast-listener.tsx:25`) — exibe "Penalidade Aplicada" com detalhes.
-  - **Balão flutuante persistente** (`penalty-dialog.tsx`) — modal não fechável por backdrop/Esc; só fecha ao clicar "Compreendi" (marca como lida via `markNotificationRead`). Parseia o body para exibir pontos e motivo.
+  - **Balão flutuante persistente** (`penalty-dialog.tsx`, **removido** — hoje a penalização entra na fila única de alertas, ver a seção no topo) — era um modal não fechável por backdrop/Esc; só fechava ao clicar "Compreendi" (marcava como lida via `markNotificationRead`). Parseava o body para exibir pontos e motivo.
   - **Sino de notificações** (`notifications-bell.tsx:67`) — tipo `PENALTY` com ícone Flame, chip vermelho.
-- **Layout dependente** (`dashboard/dependent/layout.tsx:49-52`) — inclui `PenaltyDialog` que monitora notificações `PENALTY` não lidas (inicial + Realtime).
+- **Layout dependente** (`dashboard/dependent/layout.tsx`) — hoje monta o `AlertQueueOverlay` (que monitora comunicados e notificações `PENALTY` não lidas, inicial + Realtime). **Histórico:** antes incluía o `PenaltyDialog`, que foi removido.
 
 ### Verificação
 `npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).

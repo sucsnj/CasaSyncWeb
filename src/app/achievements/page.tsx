@@ -15,7 +15,7 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
 import { AchievementsDependent } from '@/components/achievements/achievements-dependent'
-import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
 import {
   Card,
@@ -168,7 +168,11 @@ export default async function AchievementsPage() {
             userId={user.id}
             initialViews={views}
           />
-          <ComunicadoOverlay initialQueue={dueComunicados} />
+          <AlertQueueOverlay
+            userId={user.id}
+            initialQueue={dueComunicados}
+            initialNotifications={notifications}
+          />
         </>
       )
     }

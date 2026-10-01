@@ -17,8 +17,10 @@ import { Modal } from '@/components/ui/modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   COMUNICADO_DEFAULT_TIME,
+  COMUNICADO_MAX_DESCRIPTION,
   COMUNICADO_MAX_INTERVAL_DAYS,
   COMUNICADO_MAX_REPEATS,
+  COMUNICADO_MIN_DESCRIPTION,
   COMUNICADO_SHORT_DAY_LABELS,
   formatComunicadoTime,
   type Comunicado,
@@ -270,7 +272,7 @@ export function ComunicadosAdmin({
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-description">
-                  Descrição
+                  Descrição (mínimo {COMUNICADO_MIN_DESCRIPTION} caracteres)
                 </label>
                 <textarea
                   id="comunicado-description"
@@ -279,11 +281,23 @@ export function ComunicadosAdmin({
                     setForm((prev) => ({ ...prev, description: event.target.value }))
                   }
                   placeholder="O que os dependentes precisam ler e confirmar?"
-                  maxLength={500}
+                  minLength={COMUNICADO_MIN_DESCRIPTION}
+                  maxLength={COMUNICADO_MAX_DESCRIPTION}
                   required
                   rows={3}
                   className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 />
+                <p
+                  className={
+                    form.description.trim().length < COMUNICADO_MIN_DESCRIPTION
+                      ? 'text-xs text-slate-400'
+                      : 'text-xs text-slate-500'
+                  }
+                >
+                  {form.description.trim().length} de {COMUNICADO_MIN_DESCRIPTION}{' '}
+                  caracteres mínimos — o dependente precisa de contexto para
+                  confirmar que leu.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -13,6 +13,8 @@
  * - Repetição é POR DEPENDENTE: cada confirmação agenda a próxima exibição
  *   conforme o período (dias), os dias da semana e o horário configurados;
  *   quando o dependente completa `repeats_total` confirmações, para de receber.
+ * - Para confirmar, o dependente digita ao menos 3 palavras do aviso (regra de
+ *   leitura conferida — helper em `utils/alert-queue.ts`, revalidado no servidor).
  * - O "disparo" agendado é calculado no servidor (próxima abertura) — o app
  *   não usa cron/background.
  *
@@ -25,6 +27,14 @@ import type { Tables } from '@/types/database'
 
 export const COMUNICADO_MAX_REPEATS = 100
 export const COMUNICADO_MAX_INTERVAL_DAYS = 365
+
+/**
+ * Descrição é o texto que o dependente lê antes de confirmar: mínimo de 30
+ * caracteres (aviso de uma linha não justifica confirmação por digitação) e
+ * máximo de 500.
+ */
+export const COMUNICADO_MIN_DESCRIPTION = 30
+export const COMUNICADO_MAX_DESCRIPTION = 500
 
 export const COMUNICADO_DAY_LABELS = [
   'Domingo',
@@ -54,6 +64,11 @@ export type Comunicado = Tables<'comunicados'>
 /** Comunicado que o dependente precisa confirmar agora (view da fila/exibição). */
 export type DueComunicado = {
   id: string
+  /**
+   * `created_at` do comunicado: é o que ordena a fila de alertas (FIFO, junto
+   * com o alerta de penalização) — ver `utils/alert-queue.ts`.
+   */
+  createdAt: string
   title: string
   description: string
   repeatsTotal: number
@@ -67,6 +82,7 @@ export function toDueComunicado(
 ): DueComunicado {
   return {
     id: comunicado.id,
+    createdAt: comunicado.created_at,
     title: comunicado.title,
     description: comunicado.description,
     repeatsTotal: comunicado.repeats_total,

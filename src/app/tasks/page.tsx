@@ -21,7 +21,7 @@ import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
-import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
 import {
   Card,
@@ -177,7 +177,11 @@ export default async function TasksPage() {
             dueSoonHours={taskSlaSettings?.dueSoonHours}
             taskDecay={taskDecaySettings}
           />
-          <ComunicadoOverlay initialQueue={dueComunicados} />
+          <AlertQueueOverlay
+            userId={user.id}
+            initialQueue={dueComunicados}
+            initialNotifications={notifications}
+          />
         </>
       )
     }

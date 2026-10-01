@@ -8,10 +8,8 @@ import { RealtimePointsListener } from '@/components/dashboard/realtime-points-l
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
-import { PenaltyDialog } from '@/components/notifications/penalty-dialog'
-import { ComunicadoOverlay } from '@/components/comunicados/comunicado-overlay'
+import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
-import { NotificationItem } from '@/types/notifications'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -67,12 +65,14 @@ export default async function DependentDashboardLayout({
       {user && <PushNotificationsSetup userId={user.id} />}
       {user && <PushPermissionPrompt userId={user.id} />}
       {user && <RealtimePointsListener userId={user.id} />}
-      <PenaltyDialog
-        userId={user.id}
-        initialNotifications={notifications as NotificationItem[]}
-      />
-      {house ? (
-        <ComunicadoOverlay initialQueue={dueComunicados} />
+      {user ? (
+        // Fila bloqueante única do dependente: comunicados publicados e alertas de
+        // penalização, um por vez em FIFO (a penalização não tem prioridade).
+        <AlertQueueOverlay
+          userId={user.id}
+          initialQueue={house ? dueComunicados : []}
+          initialNotifications={notifications}
+        />
       ) : null}
       {children}
     </div>

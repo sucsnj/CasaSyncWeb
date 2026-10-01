@@ -10,7 +10,10 @@ create table if not exists public.comunicados (
   house_id uuid not null references public.houses(id) on delete cascade,
   created_by uuid references public.profiles(id) on delete set null,
   title text not null check (char_length(title) between 1 and 120),
-  description text not null check (char_length(description) between 1 and 500),
+  -- Descrição: mínimo de 30 caracteres (o aviso precisa dar contexto para a
+  -- comprovação de leitura do dependente) e máximo de 500. A action valida o
+  -- mesmo intervalo em `validateComunicadoFields` (fail closed, com `.trim()`).
+  description text not null check (char_length(btrim(description)) between 30 and 500),
   published boolean not null default false,
   repeats_total int not null default 1 check (repeats_total between 1 and 100),
   repeat_interval_days int not null default 0 check (repeat_interval_days between 0 and 365),

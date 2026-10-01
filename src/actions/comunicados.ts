@@ -8,8 +8,10 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import {
+  COMUNICADO_MAX_DESCRIPTION,
   COMUNICADO_MAX_INTERVAL_DAYS,
   COMUNICADO_MAX_REPEATS,
+  COMUNICADO_MIN_DESCRIPTION,
   COMUNICADO_TIME_PATTERN,
   comunicadoSchedule,
   firstComunicadoOccurrence,
@@ -18,6 +20,10 @@ import {
   type Comunicado,
   type DueComunicado,
 } from '@/utils/comunicados'
+import {
+  ALERT_TYPED_WORDS_REQUIRED,
+  hasTypedAlertConfirmation,
+} from '@/utils/alert-queue'
 import type { ActionResult } from './types'
 
 /**
@@ -61,9 +67,12 @@ function validateComunicadoFields(input: {
   if (input.title.trim().length > 120) {
     return 'Título muito longo (máximo 120 caracteres).'
   }
-  if (!input.description.trim()) return 'Informe a descrição do comunicado.'
-  if (input.description.trim().length > 500) {
-    return 'Descrição muito longa (máximo 500 caracteres).'
+  const descriptionLength = input.description.trim().length
+  if (descriptionLength < COMUNICADO_MIN_DESCRIPTION) {
+    return `A descrição precisa de pelo menos ${COMUNICADO_MIN_DESCRIPTION} caracteres (tem ${descriptionLength}).`
+  }
+  if (descriptionLength > COMUNICADO_MAX_DESCRIPTION) {
+    return `Descrição muito longa (máximo ${COMUNICADO_MAX_DESCRIPTION} caracteres).`
   }
   if (
     !Number.isInteger(input.repeatsTotal) ||
@@ -388,9 +397,15 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
  * é POR dependente: a contagem sobe até `repeats_total` (o servidor nunca deixa
  * ultrapassar, mesmo com a fila desatualizada) e cada confirmação vira o
  * `last_confirmed_at` que agenda a próxima repetição.
+ *
+ * `typedPhrase` é a **confirmação de leitura** (regra do usuário): o dependente
+ * precisa digitar ao menos `ALERT_TYPED_WORDS_REQUIRED` palavras do próprio
+ * comunicado (título ou descrição, sem diferenciar caixa/acento). Valida aqui,
+ * fail-closed — a UI só habilita o botão, mas um cliente adulterado não passa.
  */
 export async function confirmComunicadoDelivery(
-  comunicadoId: string
+  comunicadoId: string,
+  typedPhrase: string
 ): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
   if (!user || profile?.user_role !== 'DEPENDENT') {
@@ -409,12 +424,25 @@ export async function confirmComunicadoDelivery(
 
   const { data: comunicado } = await admin
     .from('comunicados')
-    .select('id, house_id, published, repeats_total')
+    .select('id, house_id, published, repeats_total, title, description')
     .eq('id', comunicadoId)
     .maybeSingle()
 
   if (!comunicado || comunicado.house_id !== house.id || !comunicado.published) {
     return { ok: false, error: 'Comunicado não está mais disponível.' }
+  }
+
+  if (
+    !hasTypedAlertConfirmation(
+      typedPhrase,
+      comunicado.title,
+      comunicado.description
+    )
+  ) {
+    return {
+      ok: false,
+      error: `Digite ao menos ${ALERT_TYPED_WORDS_REQUIRED} palavras do comunicado para confirmar a leitura.`,
+    }
   }
 
   const now = new Date().toISOString()
