@@ -10,6 +10,7 @@ const TYPE_STYLE: Record<string, 'success' | 'error' | 'info' | 'warning'> = {
   TASK_APPROVED: 'success',
   TASK_REJECTED: 'warning',
   TASK_NOT_DELIVERED: 'error',
+  TASK_ON_HOLD: 'info',
   TASK_RESTORED: 'info',
   EXTENSION_REQUESTED: 'info',
   EXTENSION_APPROVED: 'success',

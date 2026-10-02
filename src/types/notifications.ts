@@ -14,6 +14,7 @@ export type NotificationType =
   | 'TASK_APPROVED'
   | 'TASK_REJECTED'
   | 'TASK_NOT_DELIVERED'
+  | 'TASK_ON_HOLD'
   | 'TASK_RESTORED'
   | 'EXTENSION_REQUESTED'
   | 'EXTENSION_APPROVED'

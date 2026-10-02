@@ -10,6 +10,7 @@ import {
   rejectCompletedTask,
   resolveTaskExtension,
   restoreTask,
+  setTaskOnHold,
   updateTask,
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
@@ -42,9 +43,12 @@ import {
   ClipboardList,
   Clock3,
   ListTodo,
+  PauseCircle,
+  PlayCircle,
   X,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
 import {
   Card,
@@ -145,6 +149,8 @@ export function TasksAdmin({
   )
   const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
+  // "Em espera" (ON_HOLD): pausada pelo ADMIN, invisível para o dependente.
+  const heldTasks = tasks.filter((task) => task.status === 'ON_HOLD')
 
   // Autocomplete "Você quis dizer...": combinação de palavras do catálogo todo
   // da casa, independente da ordem, aceitando trechos (inclusive de 1
@@ -366,6 +372,46 @@ export function TasksAdmin({
     })
   }
 
+  function handleSetOnHold(task: Task, onHold: boolean) {
+    setFormError(null)
+    startTransition(async () => {
+      const result = await setTaskOnHold(task.id, onHold)
+      if (!result.ok) {
+        setFormError(result.error)
+        toast.error(result.error)
+        return
+      }
+
+      toast.success(
+        result.message ??
+          (onHold ? 'Tarefa colocada em espera' : 'Tarefa reativada')
+      )
+      // Prefere a linha autoritativa devolvida pela action (status, prazo e
+      // `decay_started_at` reais); o otimista cobre o intervalo até a resposta.
+      const fallback: Task = onHold
+        ? {
+            ...task,
+            status: 'ON_HOLD',
+            extension_requested: false,
+            extension_reason: null,
+            points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
+          }
+        : {
+            ...task,
+            status: 'PENDING',
+            due_date: new Date(
+              Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+            ).toISOString(),
+            extension_requested: false,
+            extension_reason: null,
+          }
+      setTasks((prev) =>
+        upsertTask(prev, result.data?.task ?? fallback)
+      )
+      router.refresh()
+    })
+  }
+
   function handleRestore(task: Task) {
     setFormError(null)
     startTransition(async () => {
@@ -418,8 +464,8 @@ export function TasksAdmin({
         toast.info('Pedido de adiamento rejeitado')
       }
 
-      // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar também
-      // devolve os pontos: zera a tarefa e reabre conforme o novo prazo.
+      // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar reabre a
+      // tarefa com 0 pontos conforme o novo prazo (a penalidade é definitiva).
       const restored =
         approve && task.status === 'NOT_DELIVERED'
           ? { points: 0, status: 'PENDING' as Task['status'] }
@@ -467,8 +513,8 @@ export function TasksAdmin({
     // Atualização determinística do card local: o auto-aceite do adiamento por
     // edição de prazo limpa as flags no banco; refletir aqui sem depender do
     // eco do Realtime. Só limpa se houver pedido pendente E o instante mudou.
-    // Numa tarefa "não entregue", mudar o prazo devolve os pontos: zera a
-    // tarefa e reabre conforme o novo prazo.
+    // Numa tarefa "não entregue", mudar o prazo reabre com 0 pontos: zera a
+    // tarefa conforme o novo prazo, sem devolver o que foi debitado.
     setTasks((prev) =>
       prev.map((item) => {
         if (item.id !== taskId) return item
@@ -926,8 +972,8 @@ export function TasksAdmin({
                           </p>
                           {isNotDelivered ? (
                             <p className="mt-1 text-xs text-blue-700">
-                              Aprovar devolve os pontos debitados e a tarefa passa a
-                              valer 0.
+                              A penalidade é definitiva: aprovar reabre a tarefa
+                              valendo 0, sem devolver os pontos debitados.
                             </p>
                           ) : null}
                           <div className="mt-2 flex flex-wrap gap-2">
@@ -994,8 +1040,9 @@ export function TasksAdmin({
                       {isNotDelivered ? (
                         <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
                           Tarefa marcada como não entregue — {currentPoints} pt(s) já
-                          debitado(s) do dependente. Aprovar um adiamento (or
-                          alterar o prazo) devolve os pontos e zera a tarefa.
+                          debitado(s) do dependente. A penalidade é definitiva: aprovar
+                          um adiamento (ou alterar o prazo) reabre a tarefa valendo 0
+                          pontos — os pontos debitados não voltam.
                         </p>
                       ) : (
                         <div className="flex flex-col gap-2 sm:flex-row">
@@ -1036,6 +1083,21 @@ export function TasksAdmin({
                           ) : null}
                         </div>
                       )}
+
+                      {/* Pausar: some da lista do dependente (vale também para a
+                          "não entregue" — a penalidade continua definitiva). */}
+                      {(savingStatuses[task.id] ?? 'idle') === 'idle' ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleSetOnHold(task, true)}
+                          disabled={pending}
+                          className="w-full text-slate-600"
+                        >
+                          <PauseCircle className="size-4" />
+                          {pending ? 'Colocando...' : 'Colocar em espera'}
+                        </Button>
+                      ) : null}
                     </>
                   ) : null}
                 </CardContent>
@@ -1044,6 +1106,157 @@ export function TasksAdmin({
           })
         )}
       </section>
+
+      {/* Tarefas pausadas: visíveis só para o ADMIN, com o botão de reativar
+          sempre à vista (fora do toggle), como o "Restaurar" das aprovadas. */}
+      {heldTasks.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+            <PauseCircle className="size-4 text-slate-400" />
+            Em espera
+          </h2>
+          {heldTasks.map((task) => {
+            const isExpanded = expandedIds.has(task.id)
+
+            return (
+              <Card
+                key={task.id}
+                className="border-l-4 border-l-slate-400"
+              >
+                <CardContent className="flex flex-col gap-1 py-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(task.id)}
+                      aria-expanded={isExpanded}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                        {task.title}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          isExpanded && 'rotate-180'
+                        )}
+                      />
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                          taskChipByStatus.ON_HOLD.className
+                        )}
+                      >
+                        {taskChipByStatus.ON_HOLD.label}
+                      </span>
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                          POINTS_PILL_CLASS
+                        )}
+                      >
+                        {task.points} pts
+                      </span>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleSetOnHold(task, false)}
+                        disabled={pending}
+                        className="min-h-9 shrink-0 text-slate-600"
+                      >
+                        <PlayCircle className="size-4" />
+                        {pending ? 'Reativando...' : 'Voltar para pendente'}
+                      </Button>
+                    </div>
+                  </div>
+                  {isExpanded ? (
+                    <>
+                      {task.image_url ? (
+                        <img
+                          src={task.image_url}
+                          alt=""
+                          className="mt-1 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                        />
+                      ) : null}
+
+                      {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
+                          edição: os mesmos campos do card pendente, com salvamento
+                          automático. O status continua sendo ON_HOLD — só o botão
+                          "Voltar para pendente" reativa. */}
+                      <div className="mt-2 grid gap-3 md:grid-cols-[1fr_auto]">
+                        <DebouncedField
+                          value={task.title}
+                          onSave={saveTitle(task.id)}
+                          placeholder="Título da tarefa"
+                        />
+
+                        <label className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-500">Atribuída a</span>
+                          <select
+                            value={task.assigned_to ?? ''}
+                            onChange={(event) => changeAssignee(task, event.target.value)}
+                            className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
+                          >
+                            <option value="">Sem atribuição</option>
+                            {assignees.map((assignee) => (
+                              <option key={assignee.id} value={assignee.id}>
+                                {assignee.full_name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <DebouncedField
+                        value={task.description ?? ''}
+                        onSave={saveDescription(task.id)}
+                        textarea
+                        placeholder="Descrição (opcional)"
+                      />
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-1">
+                          <span className="text-xs text-slate-500">Pontos</span>
+                          <DebouncedField
+                            value={String(task.points)}
+                            onSave={savePoints(task.id)}
+                            type="number"
+                          />
+                        </div>
+                        {/* Prazo não é editável aqui: a reativação SEMPRE calcula um
+                            prazo novo (agora + padrão da casa), então editar o
+                            campo agora seria descartado em silêncio. */}
+                        <div className="grid gap-1">
+                          <span className="text-xs text-slate-500">
+                            Prazo atual (temporário)
+                          </span>
+                          <p className="flex min-h-12 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                            {task.due_date ? (
+                              <FormattedDateTime iso={task.due_date} />
+                            ) : (
+                              'sem prazo'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        Em espera: invisível para o dependente (ele não vê, não
+                        conclui e não pede mais tempo). Você pode editar o que
+                        quiser; ao voltar, ela retorna como pendente com prazo
+                        novo e o decaimento reiniciado
+                        {task.points === 0
+                          ? ' — valendo 0 pontos (penalidade já aplicada).'
+                          : '.'}
+                      </p>
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">

@@ -1,5 +1,41 @@
 # CasaSync Web — PROJECT STATUS
 
+## Tarefa em espera (`ON_HOLD`) + penalidade de "não entregue" agora definitiva (implementado — SQL do enum aplicado)
+
+### O que foi implementado
+- **A penalidade virou definitiva (decisão do usuário):** aprovar um adiamento ou alterar o prazo de uma tarefa `NOT_DELIVERED` **reabre** a tarefa mas **não devolve mais** os pontos debitados. Saiu o `adjustPoints` positivo (e o rollback de reembolso) dos **dois** fluxos — `resolveTaskExtension` (aprovar) e `updateTask` (alteração de `due_date`). A reabertura segue fazendo `tasks.points = 0` + status equivalente ao novo prazo, então a tarefa volta a valer **0 pontos** e uma aprovação futura não credita nada. O texto do card `NOT_DELIVERED`, as notificações e as mensagens de retorno foram reescritos ("A penalidade é definitiva…"). O reembolso só em um dos fluxos seria brecha pela edição direta do prazo — por isso os dois.
+- **Novo status `ON_HOLD` ("em espera")** — uma nova transição "neutra" do ADMIN: pausar uma tarefa sem concluir, aprovar ou apagar.
+  - **Pode entrar:** `PENDING`, `IN_PROGRESS` e `NOT_DELIVERED` (tarefa concluída/aprovada é histórico — não faz sentido pausar). Guard `.in('status', […])` na própria transition.
+  - **Some do dependente por completo:** filtro `.neq('status','ON_HOLD')` no carregamento de `/tasks` (branch dependente) + as guards que já exigem `PENDING/IN_PROGRESS` em `completeTask`/`requestTaskExtension`; `updateTask` recusa com "Reative a tarefa antes de editá-la"; `markTaskNotDelivered` não aceita. O pedido de adiamento pendente é **descartado** na pausa (o dependente pede de novo quando a tarefa volta) e a tarefa **não** fica congelada para edição: `updateTask` edita normalmente (só a visibilidade some).
+  - **`NOT_DELIVERED` entra valendo 0:** pausar **não** é caminho para escapar da penalidade — o `points = 0` é gravado já na pausa.
+  - **Reativar:** `setTaskOnHold(taskId, false)` volta **sempre** para `PENDING` com **prazo novo** (agora + `task_sla.defaultDueDays` da casa) e **relógio do decaimento reiniciado** — mesmo ciclo do `restoreTask` — preservando `tasks.points` e **sem tocar no saldo** em nenhum dos dois sentidos.
+  - **Uma action só** (`setTaskOnHold(taskId, onHold)`) com guard no status (`.in(...)` ao pausar, `.eq('status','ON_HOLD')` ao reativar) — mesma defesa contra clique concorrente das demais actions; devolve a linha gravada (`data.task`) para a UI aplicar otimismo + reconciliação.
+  - **UI ADMIN** (`tasks-admin.tsx`): botão **"Colocar em espera"** (`PauseCircle`) no card pendente (também no `NOT_DELIVERED`) + nova seção **"Em espera"** com o botão **"Voltar para pendente"** (`PlayCircle`) sempre visível fora do toggle (como o "Restaurar" das aprovadas), accent/cinza em `task-styles.ts` e aviso no card expandido ("invisível para o dependente"; "valendo 0 pontos" quando `points === 0`).
+  - **Notificação ao dependente nos dois sentidos:** novo tipo **`TASK_ON_HOLD`** (sino com `PauseCircle` cinza + toast `info`) na pausa e reuso de `TASK_RESTORED` na reativação ("voltou para a sua lista com novo prazo").
+  - **Limpeza de membro:** `expelMember`/`deleteDependentAccount` passam a apagar também as tarefas `ON_HOLD` (é dado ativo da casa, não histórico) — evita órfãos que reapareceriam se o mesmo `username` fosse recriado.
+  - **Não toca** `dependent_stats`/conquistas: pausar não é aprovar nem rejeitar.
+
+### SQL (docs/sql/task_on_hold.sql — **aplicado pelo usuário**)
+```sql
+-- Status "em espera" (ON_HOLD) — tarefa pausada pelo ADMIN.
+-- Rodar sozinho no SQL Editor (o valor novo não pode ser usado na mesma transação).
+alter type public.task_status add value if not exists 'ON_HOLD';
+-- select unnest(enum_range(null::public.task_status)) as status;  -- confirmação
+```
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Enum no banco (aplicado pelo usuário):** o `alter type … add value if not exists 'ON_HOLD'` está no banco (confirmado por probe: `status=eq.ON_HOLD` respondia `22P02 invalid input value for enum task_status` **antes** da aplicação). `setTaskOnHold` passou a tratar `error` e "guard devolveu 0 linhas" como caminhos separados — o `console.error` registra o erro real e o `22P02` devolve *"O banco ainda não tem o status 'em espera'. Rode docs/sql/task_on_hold.sql no Supabase"* em vez de culpar outra pessoa. `src/types/database.ts` espelha o valor (espelho manual, sem `supabase gen types`).
+- **A pausa é invisibilidade, não bloqueio:** o dependente simplesmente não vê a tarefa. Se ninguém reativar, ela fica parada (sem prazo correndo de verdade — o prazo é recalculado na reativação).
+- **`ON_HOLD` não é "adiamento automático":** o prazo só muda quando o tutor reativa. Não há SLA/contagem regressiva para uma tarefa em espera.
+- **Edição liberada durante a pausa (emenda de 2026):** `updateTask` passou a aceitar `ON_HOLD` (só `COMPLETED`/`APPROVED` continuam imutáveis) e o card em espera ganhou os mesmos campos editáveis do pendente (título/descrição/responsável/pontos com debounce). O **prazo** ficou de fora de propósito: a reativação sempre calcula um prazo novo (agora + `task_sla.defaultDueDays`), então um campo de prazo ali seria descartado em silêncio — aparece como texto "Prazo atual (temporário)". Editar uma tarefa pausada **não** mexe no status, no saldo nem no `dependent_stats`; a decisão original ("edição congelada") está superada por esta.
+- A penalidade definitiva vale **também** para `updateTask`: quem tentasse burlar o "não entregue" editando o prazo direto não recupera nada.
+- **Depende de schema + requer deploy** para valer online.
+
+---
+
 ## Fila de alertas única do dependente: comunicados + penalização, com comprovação de leitura (implementado — sem mudança de schema)
 
 ### O que foi implementado
@@ -427,7 +463,7 @@ alter publication supabase_realtime add table public.dependent_achievements;
 
 ### O que foi implementado
 - **Nova Server Action `deleteDependentAccount(houseId, targetUserId)`** (`src/actions/houses.ts`): só o **autor da casa** (`getOwnedHouse`) exclui a conta **completa** de um membro `DEPENDENT`. Limpeza em **ordem explícita** (sem depender de cascade):
-  1. tarefas ativas (`PENDING/IN_PROGRESS/NOT_DELIVERED`) do dependente → delete;
+  1. tarefas ativas (`PENDING/IN_PROGRESS/NOT_DELIVERED/ON_HOLD`) do dependente → delete;
   2. tarefas `COMPLETED/APPROVED` da casa → **MANTIDAS** e apenas **desatribuídas** (`assigned_to`/`completed_by` → null) — histórico pertence à casa;
   3. resgates (pendentes e resolvidos) → delete (`reward_redemptions.profile_id` é NOT NULL — sem migração, o log de resgate não tem como ser retido);
   4. sugestões, notificações (`recipient_id`) e push subscriptions → delete;
@@ -1426,7 +1462,7 @@ A página `/` era prerenderizada como estática (`○ /` no build). No Vercel, r
 ### O que foi implementado
 - **Novo status `NOT_DELIVERED`** no enum `task_status`; chip vermelho "Não entregue" e borda-accent vermelha em `task-styles.ts` (badge de SLA "Atrasada" é omitido nesse status — o chip já comunica).
 - **`markTaskNotDelivered(taskId)`** (`src/actions/tasks.ts`): ADMIN marca uma tarefa **atrasada** (`due_date < now`, status `PENDING/IN_PROGRESS`) como não entregue. Transição guardada `.in('status', ['PENDING','IN_PROGRESS'])` (impede débito duplicado) e **debita `tasks.points`** de `profiles.points` via service role — o saldo **pode ficar negativo**. Falha no débito → rollback do status. Revalida `/tasks`, `/rewards` e `/dashboard/dependent`.
-- **Reversão (adiamento) devolve os pontos e zera a tarefa:** aprovar um adiamento (`resolveTaskExtension`) numa tarefa `NOT_DELIVERED` soma `tasks.points` de volta ao dependente, **zera `tasks.points`** e redefine o status para o equivalente ao novo prazo (futuro → `PENDING`); falha na devolução → rollback para `NOT_DELIVERED` com o pedido pendente. A **edição direta do prazo** (`updateTask`) tem o mesmo efeito (auto-aceite + devolução).
+- ~~**Reversão (adiamento) devolve os pontos e zera a tarefa:**~~ **Superado pela seção no topo ("penalidade definitiva"):** aprovar um adiamento (`resolveTaskExtension`) ou alterar o prazo (`updateTask`) numa tarefa `NOT_DELIVERED` **reabre** a tarefa com `tasks.points = 0` e o status equivalente ao novo prazo, mas **sem devolver** os pontos ao dependente.
 - **Guardas:** `completeTask` e `adminCompleteTask` rejeitam `NOT_DELIVERED` (não há "Concluir" nem "Concluir e creditar"); `updateTask` rejeita editar `points` de uma tarefa não entregue (os pontos só mudam pela reversão) e permite editar título/descrição/prazo/atribuição.
 - **UI ADMIN (`tasks-admin.tsx`):** tarefa `NOT_DELIVERED` permanece na seção Pendentes com chip vermelho; botão **"Marcar como não entregue"** aparece em tarefas abertas já atrasadas; no estado não entregue some o editor de pontos, o "Concluir e creditar" e o botão de marcar, restando a edição de prazo e o banner de adiamento (com aviso de que aprovar devolve os pontos). Atualizações otimistas tratam o débito/reversão.
 - **UI DEPENDENTE (`tasks-dependent.tsx`):** a tarefa continua em "Suas tarefas" com o chip "Não entregue", **sem** o botão "Concluir tarefa" e **mantendo** "Pedir mais tempo"; aviso "Marcada como não entregue. Peça mais tempo para reabrir a tarefa."

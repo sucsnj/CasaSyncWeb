@@ -808,7 +808,7 @@ export async function expelMember(
     .delete()
     .eq('house_id', houseId)
     .eq('assigned_to', targetUserId)
-    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED', 'ON_HOLD'])
   if (tasksError) {
     return { ok: false, error: 'Falha ao remover as tarefas ativas do membro.' }
   }
@@ -966,7 +966,7 @@ export async function deleteDependentAccount(
     .delete()
     .eq('house_id', houseId)
     .eq('assigned_to', targetUserId)
-    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED', 'ON_HOLD'])
   if (tasksActiveError) {
     return { ok: false, error: 'Falha ao remover as tarefas ativas do dependente.' }
   }

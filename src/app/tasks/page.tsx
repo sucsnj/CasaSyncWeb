@@ -158,6 +158,9 @@ export default async function TasksPage() {
         .select('*')
         .eq('house_id', dependentHouse.id)
         .eq('assigned_to', user.id)
+        // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
+        // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
+        .neq('status', 'ON_HOLD')
         .order('created_at', { ascending: false })
 
       const taskList = tasks ?? []

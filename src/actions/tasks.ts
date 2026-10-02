@@ -271,11 +271,21 @@ export async function updateTask(
     return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
   }
 
-  // Tarefas concluídas/aprovadas são imutáveis para o ADMIN editar. Uma tarefa
-  // "não entregue" continua editável — alterar o prazo equivale a aprovar um
-  // adiamento (devolve os pontos e zera a tarefa).
+  // Tarefas concluídas/aprovadas são imutáveis para o ADMIN editar. Das
+  // abertas, TODAS podem ser editadas: PENDING/IN_PROGRESS e ON_HOLD
+  // normalmente (pausar não congela a edição — só esconde a tarefa do
+  // dependente); uma "não entregue" também, mas alterar o prazo equivale a
+  // aprovar um adiamento (reabre a tarefa valendo 0 pontos; a penalidade é
+  // definitiva). O status nunca muda numa edição de tarefa em espera — só
+  // `setTaskOnHold(false)` reativa, e ele já recalcula prazo e decaimento.
   const isNotDelivered = task.status === 'NOT_DELIVERED'
-  if (!isNotDelivered && task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+  const isEditableStatus =
+    task.status === 'PENDING' ||
+    task.status === 'IN_PROGRESS' ||
+    isNotDelivered ||
+    task.status === 'ON_HOLD'
+
+  if (!isEditableStatus) {
     return { ok: false, error: 'Tarefa já concluída ou aprovada.' }
   }
 
@@ -285,7 +295,6 @@ export async function updateTask(
     status?: 'PENDING' | 'NOT_DELIVERED'
     decay_started_at?: string
   } = {}
-  let pointsToRestore = 0
   if ('title' in patch) {
     const title = patch.title?.trim()
     if (!title) return { ok: false, error: 'O título não pode ser vazio.' }
@@ -322,17 +331,10 @@ export async function updateTask(
       }
 
       // Tarefa não entregue: alterar o prazo tem o mesmo efeito de um adiamento
-      // aprovado — devolve os pontos debitados e zera a tarefa. O status passa a
-      // ser o equivalente ao novo prazo. Devolve o VALOR CORRENTE (decrescido),
-      // que para uma tarefa atrasada é estável (janela capada no prazo).
+      // aprovado — reabre a tarefa, mas a PENALIDADE É DEFINITIVA: os pontos
+      // debitados NÃO voltam e a tarefa passa a valer 0 (numa aprovação futura
+      // não credita nada). O status passa a ser o equivalente ao novo prazo.
       if (isNotDelivered) {
-        const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
-        pointsToRestore = getTaskCurrentPoints(
-          task.points,
-          getTaskDecayStart(task.created_at, task.decay_started_at),
-          task.due_date,
-          decaySettings
-        )
         updates.points = 0
         updates.status =
           nextDue && new Date(nextDue).getTime() < Date.now()
@@ -366,9 +368,9 @@ export async function updateTask(
   }
 
   // Decaimento: o relógio reinicia a cada EDIÇÃO (momento da edição vira o novo
-  // ponto de partida). Exceto quando o prazo mudou por um ADIAMENTO — o
-  // auto-aceite do pedido pendente ou a reversão direta de uma "não entregue" —
-  // que não deve afetar o decaimento.
+// ponto de partida). Exceto quando o prazo mudou por um ADIAMENTO — o
+// auto-aceite do pedido pendente ou a reabertura de uma "não entregue" — que
+// não deve afetar o decaimento.
   const isAdiamento =
     'due_date' in updates &&
     updates.due_date !== undefined &&
@@ -383,27 +385,6 @@ export async function updateTask(
 
   const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
   if (error) return { ok: false, error: 'Falha ao salvar a tarefa.' }
-
-  if (pointsToRestore > 0 && task.assigned_to) {
-    const restored = await adjustPoints(admin, task.assigned_to, pointsToRestore)
-    if (!restored) {
-      // Rollback: devolve a tarefa ao estado "não entregue".
-      await admin
-        .from('tasks')
-        .update({
-          status: 'NOT_DELIVERED',
-          points: pointsToRestore,
-          due_date: task.due_date,
-        })
-        .eq('id', taskId)
-      return { ok: false, error: 'Falha ao devolver os pontos. Prazo revertido.' }
-    }
-  }
-
-  if (pointsToRestore > 0) {
-    revalidatePath('/rewards')
-    revalidatePath('/dashboard/dependent')
-  }
 
   revalidatePath('/tasks')
   return { ok: true }
@@ -653,8 +634,8 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
 /**
  * ADMIN marca uma tarefa atrasada como "não entregue": debita do dependente os
  * pontos que a tarefa valeria (o saldo pode ficar negativo) e muda o status
- * para NOT_DELIVERED. A penalidade só é revertida por um adiamento aprovado
- * (que devolve os pontos e zera a tarefa).
+ * para NOT_DELIVERED. A penalidade é **definitiva**: um adiamento aprovado (ou a
+ * edição do prazo) reabre a tarefa com 0 pontos, mas não devolve o débito.
  */
 export async function markTaskNotDelivered(taskId: string): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
@@ -733,6 +714,176 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
   return {
     ok: true,
     message: `Tarefa marcada como não entregue (−${currentPoints} pts).`,
+  }
+}
+
+/**
+ * ADMIN pausa ("coloca em espera") ou reativa uma tarefa.
+ *
+ * Colocar em espera (`onHold: true`): só tarefas abertas (PENDING/IN_PROGRESS)
+ * ou não entregues (NOT_DELIVERED) aceitam a pausa. A tarefa fica INVISÍVEL
+ * para o dependente (não sai em nenhuma lista e as guards de `completeTask`/
+ * `requestTaskExtension` já exigem PENDING/IN_PROGRESS), o pedido de adiamento
+ * pendente é descartado e, se a tarefa era "não entregue", ela entra valendo 0
+ * pontos: a penalidade é definitiva, então nenhum fluxo futuro devolve o débito.
+ *
+ * Reativar (`onHold: false`): volta sempre para PENDING, com prazo novo
+ * (padrão da casa) e o relógio do decaimento reiniciado — mesmo padrão do
+ * `restoreTask`. Os pontos atuais são preservados (0 quando veio de "não
+ * entregue"), sem mexer no saldo do dependente.
+ */
+export async function setTaskOnHold(
+  taskId: string,
+  onHold: boolean
+): Promise<ActionResult<{ task: Task }>> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: task } = await admin
+    .from('tasks')
+    .select('house_id, status, assigned_to, title')
+    .eq('id', taskId)
+    .maybeSingle()
+
+  if (!task || task.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Tarefa não encontrada nesta casa.' }
+  }
+
+  if (onHold) {
+    if (
+      task.status !== 'PENDING' &&
+      task.status !== 'IN_PROGRESS' &&
+      task.status !== 'NOT_DELIVERED'
+    ) {
+      return {
+        ok: false,
+        error: 'Somente tarefas abertas ou não entregues podem ficar em espera.',
+      }
+    }
+
+    const { data: held, error } = await admin
+      .from('tasks')
+      .update({
+        status: 'ON_HOLD',
+        // Pedido de adiamento não faz sentido com a tarefa pausada — o
+        // dependente pede de novo quando ela voltar.
+        extension_requested: false,
+        extension_reason: null,
+        // Penalidade definitiva: uma "não entregue" entra em espera já valendo 0
+        // (o débito não volta em nenhum fluxo de reabertura).
+        ...(task.status === 'NOT_DELIVERED' ? { points: 0 } : {}),
+      })
+      .eq('id', taskId)
+      // guard: outra pessoa pode ter aprovado/concluído no meio do clique.
+      .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+      .select('*')
+      .single()
+
+    if (error) {
+      // O guard que falha devolve 0 linhas (sem erro); um erro aqui é de verdade
+      // — o caso comum é o enum sem `ON_HOLD` (22P02), que exige rodar
+      // `docs/sql/task_on_hold.sql` no Supabase.
+      console.error('[setTaskOnHold] falha ao gravar o status ON_HOLD:', error)
+      if (error.code === '22P02') {
+        return {
+          ok: false,
+          error:
+            'O banco ainda não tem o status "em espera". Rode docs/sql/task_on_hold.sql no Supabase.',
+        }
+      }
+      return { ok: false, error: 'Não foi possível colocar a tarefa em espera.' }
+    }
+
+    if (!held) {
+      return { ok: false, error: 'A tarefa mudou de estado por outra pessoa.' }
+    }
+
+    if (task.assigned_to) {
+      await notifyUser(admin, {
+        houseId: activeHouse.id,
+        recipientId: task.assigned_to,
+        actorId: auth.adminId,
+        type: 'TASK_ON_HOLD',
+        title: 'Tarefa em espera',
+        body: `"${task.title}" foi colocada em espera pelo tutor e volta para a sua lista quando for reativada.`,
+        link: '/tasks',
+      })
+    }
+
+    revalidatePath('/tasks')
+    revalidatePath('/dashboard/dependent')
+
+    return {
+      ok: true,
+      data: { task: held },
+      message: 'Tarefa colocada em espera (invisível para o dependente).',
+    }
+  }
+
+  if (task.status !== 'ON_HOLD') {
+    return { ok: false, error: 'Esta tarefa não está em espera.' }
+  }
+
+  // Prazo padrão de reativação derivado das settings da casa (agora + N dias).
+  const slaSettings = await getHouseTaskSlaSettings(activeHouse.id)
+  const nextDue = new Date(
+    Date.now() + slaSettings.defaultDueDays * 24 * 60 * 60 * 1000
+  ).toISOString()
+
+  const { data: released, error } = await admin
+    .from('tasks')
+    .update({
+      status: 'PENDING',
+      due_date: nextDue,
+      extension_requested: false,
+      extension_reason: null,
+      // Novo ciclo: o decaimento reinicia (mesmo padrão do restauro).
+      decay_started_at: new Date().toISOString(),
+    })
+    .eq('id', taskId)
+    .eq('status', 'ON_HOLD') // guard: impede reativar duas vezes
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('[setTaskOnHold] falha ao reativar a tarefa:', error)
+    if (error.code === '22P02') {
+      return {
+        ok: false,
+        error:
+          'O banco ainda não tem o status "em espera". Rode docs/sql/task_on_hold.sql no Supabase.',
+      }
+    }
+    return { ok: false, error: 'Não foi possível reativar a tarefa.' }
+  }
+
+  if (!released) {
+    return { ok: false, error: 'A tarefa já foi reativada por outra pessoa.' }
+  }
+
+  if (task.assigned_to) {
+    await notifyUser(admin, {
+      houseId: activeHouse.id,
+      recipientId: task.assigned_to,
+      actorId: auth.adminId,
+      type: 'TASK_RESTORED',
+      title: 'Tarefa reativada',
+      body: `"${task.title}" voltou para a sua lista com novo prazo.`,
+      link: '/tasks',
+    })
+  }
+
+  revalidatePath('/tasks')
+  revalidatePath('/dashboard/dependent')
+
+  return {
+    ok: true,
+    data: { task: released },
+    message: `Tarefa reativada: prazo reiniciado para +${slaSettings.defaultDueDays} dia(s).`,
   }
 }
 
@@ -1004,9 +1155,10 @@ export async function requestTaskExtension(
  * ADMIN aprova (usa o prazo atual, ou hoje, e soma `days` dias ao prazo) ou
  * rejeita o pedido de adiamento — em ambos os casos a flag é limpa.
  *
- * Se a tarefa estiver marcada como "não entregue", aprovar o adiamento devolve
- * ao dependente os pontos debitados (pode ser negativo na ida) e zera a tarefa,
- * que volta a valer 0 e é reaberta conforme o novo prazo.
+ * Se a tarefa estiver marcada como "não entregue", aprovar o adiamento reabre
+ * a tarefa com 0 pontos (ela volta a valer 0 e segue conforme o novo prazo),
+ * mas **não** devolve ao dependente os pontos já debitados: a penalidade é
+ * definitiva (ADR-0007, emenda 2026).
  */
 export async function resolveTaskExtension(
   taskId: string,
@@ -1023,7 +1175,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, title, created_at, decay_started_at'
+      'house_id, status, due_date, extension_requested, extension_reason, assigned_to, title'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -1062,6 +1214,8 @@ export async function resolveTaskExtension(
     const nextDue = new Date(base.getTime() + days * 24 * 60 * 60 * 1000)
     updates.due_date = nextDue.toISOString()
 
+    // Reabertura de uma tarefa "não entregue": os pontos debitados NÃO voltam
+    // (penalidade definitiva) e a tarefa passa a valer 0 pontos.
     if (isNotDelivered) {
       updates.points = 0
       updates.status =
@@ -1073,37 +1227,6 @@ export async function resolveTaskExtension(
 
   if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
 
-  if (approve && isNotDelivered && task.assigned_to) {
-    // Devolve o VALOR CORRENTE (decrescido) — o mesmo debitado em
-    // `markTaskNotDelivered`, estável porque a janela está capada no prazo.
-    // O relógio do decaimento NÃO reinicia: adiamento não afeta o decaimento.
-    const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
-    const currentPoints = getTaskCurrentPoints(
-      task.points,
-      getTaskDecayStart(task.created_at, task.decay_started_at),
-      task.due_date,
-      decaySettings
-    )
-    const restored = await adjustPoints(admin, task.assigned_to, currentPoints)
-    if (!restored) {
-      // Rollback: devolve a tarefa ao estado "não entregue" com o pedido pendente.
-      await admin
-        .from('tasks')
-        .update({
-          status: 'NOT_DELIVERED',
-          points: task.points,
-          due_date: task.due_date,
-          extension_requested: true,
-          extension_reason: task.extension_reason,
-        })
-        .eq('id', taskId)
-      return { ok: false, error: 'Falha ao devolver os pontos. Ação revertida.' }
-    }
-
-    revalidatePath('/rewards')
-    revalidatePath('/dashboard/dependent')
-  }
-
   if (task.assigned_to) {
     await notifyUser(admin, {
       houseId: activeHouse.id,
@@ -1112,13 +1235,17 @@ export async function resolveTaskExtension(
       type: approve ? 'EXTENSION_APPROVED' : 'EXTENSION_REJECTED',
       title: approve ? 'Adiamento aprovado' : 'Adiamento recusado',
       body: approve
-        ? `"${task.title}" ganhou +${days} dias.${isNotDelivered ? ' Pontos devolvidos.' : ''}`
+        ? `"${task.title}" ganhou +${days} dias.${isNotDelivered ? ' A tarefa foi reaberta valendo 0 pontos.' : ''}`
         : `Seu pedido de adiamento para "${task.title}" foi recusado.`,
       link: '/tasks',
     })
   }
 
   revalidatePath('/tasks')
+  if (approve && isNotDelivered) {
+    revalidatePath('/rewards')
+    revalidatePath('/dashboard/dependent')
+  }
 
   if (!approve) {
     return { ok: true, message: 'Pedido de adiamento rejeitado.' }
@@ -1127,7 +1254,7 @@ export async function resolveTaskExtension(
   return {
     ok: true,
     message: isNotDelivered
-      ? `Adiamento aprovado (+${days} dias). Pontos devolvidos e tarefa agora vale 0.`
+      ? `Adiamento aprovado (+${days} dias). Tarefa reaberta valendo 0 pontos.`
       : `Adiamento aprovado (+${days} dias).`,
   }
 }

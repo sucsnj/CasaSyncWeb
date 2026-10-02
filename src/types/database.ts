@@ -873,6 +873,7 @@ export interface Database {
         | 'COMPLETED'
         | 'APPROVED'
         | 'NOT_DELIVERED'
+        | 'ON_HOLD'
       redemption_status: 'PENDING' | 'APPROVED' | 'REJECTED'
     }
     CompositeTypes: {

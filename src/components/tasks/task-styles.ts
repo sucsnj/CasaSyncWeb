@@ -11,6 +11,7 @@ export const taskAccentByStatus = {
   COMPLETED: 'border-l-amber-400',
   APPROVED: 'border-l-emerald-500',
   NOT_DELIVERED: 'border-l-red-600',
+  ON_HOLD: 'border-l-slate-400',
 } as const
 
 export const taskChipByStatus = {
@@ -25,6 +26,7 @@ export const taskChipByStatus = {
     label: 'Não entregue',
     className: 'bg-red-100 text-red-700',
   },
+  ON_HOLD: { label: 'Em espera', className: 'bg-slate-100 text-slate-600' },
 } as const
 
 export const POINTS_PILL_CLASS = 'bg-amber-100 text-amber-700'
