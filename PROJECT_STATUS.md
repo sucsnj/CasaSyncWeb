@@ -71,7 +71,7 @@ alter type public.task_status add value if not exists 'ON_HOLD';
 ### Pontos de atenção
 - **Limite conhecido/aceito:** o comunicado confirmado fica marcado como confirmado **na montagem atual** do overlay — se a mesma ocorrência voltar a ser devida sem recarregar a página, ela não reaparece até o overlay remontar. Na prática a próxima ocorrência é sempre no dia/horário agendado seguinte.
 - Se o servidor **recusar** a confirmação (item obsoleto), o item **sai da fila** mesmo assim: insistir no mesmo item bloquearia a fila inteira.
-- Sem mudança de schema: nada de coluna, tabela ou migration nova (`docs/sql/comunicados.sql` continua aguardando aplicação pelo usuário).
+- Sem mudança de schema: nada de coluna, tabela ou migration nova (as 2 tabelas de `docs/sql/comunicados.sql` **já estão aplicadas** no banco).
 - Decisões registradas em **ADR-0017** (emendas de 2026).
 
 ---
@@ -260,7 +260,7 @@ alter type public.task_status add value if not exists 'ON_HOLD';
 - **Novo domínio de comunicados**: o ADMIN cria avisos para a casa ativa (título 1–120, descrição 1–500, agenda de repetição) e **publica** (`published`); os dependentes da casa **confirmam** em um overlay bloqueante. Sem cron — o "gatilho" é cálculo server-side na leitura.
 - **SEM tempo real (decisão de produto, 2026):** o tempo real de publicar→ver era desproporcional ao esforço (ver histórico: Fase 1 do Realtime direto não entregava e a Fase 2 usava notificação como canal). **Abandonado.** O comunicado só aparece no **render server-side** das telas do dependente — ao **atualizar a página, trocar de endpoint** ou após confirmar (`refreshDue()`). O overlay não tem mais subscriptions Realtime (nem de `comunicados`, nem de `notifications`); a única subscription que resta é a do `comunicados-admin.tsx` (tela de gestão do próprio ADMIN). O tipo de notificação `COMUNICADO_PUBLISHED` foi **removido** (união em `src/types/notifications.ts`, `TYPE_STYLE` do toast e `TYPE_META` do sino).
 - **1ª exibição em "slot de hoje ou próximo"** (regra do usuário — após o bug corrigido): não é mais sempre imediata à publicação. Num **dia agendado**, se o horário de hoje **já passou** o aviso aparece já no **próximo render**; se **ainda não chegou**, espera o **horário de hoje**. Em dia **não agendado**, aparece no **próximo dia agendado**. O **intervalo de repetição não conta** nesse primeiro ciclo. Repetição POR DEPENDENTE: cada confirmação agenda a próxima ocorrência (`last_confirmed_at`, somando o intervalo em dias, corta para o próximo weekday agendado e aplica o horário); ao completar `repeats_total` confirmações, para de aparecer. Helpers puros em **`src/utils/comunicados.ts`** (`recifeWeekday`/`nextComunicadoOccurrence`/`toDueComunicado`/`comunicadoSchedule`, módulo sem `'use server'`).
-- **Tabelas novas (SQL em `docs/sql/comunicados.sql` — registro; **aguardando aplicação pelo usuário** no dashboard Supabase):**
+- **Tabelas novas (SQL em `docs/sql/comunicados.sql` — registro; **já aplicadas no banco** pelo usuário):**
   - **`comunicados`** — `house_id`, `title`, `description`, `published` (default false = rascunho), `repeats_total` (1–100, N confirmações exigidas), `repeat_interval_days` (0–365; contagem do período), `repeat_weekdays` (int[] default todos, dias 0(dom)..6(sáb) do **agendamento**), `repeat_time` (**`time` default `'08:00'`** — horário do agendamento em **America/Recife**), `created_by` (FK set null), timestamps.
   - **`comunicado_deliveries`** — `comunicado_id` (FK cascade), `profile_id` (FK cascade), `delivered_count`, `last_confirmed_at`; **UNIQUE (comunicado_id, profile_id)** — uma linha por (comunicado, dependente).
 - **Server Actions (`src/actions/comunicados.ts`):** `createComunicado` / `updateComunicado` (whitelist) / `setComunicadoPublished` / `deleteComunicado` — ADMIN da casa ativa (`assertAdminCanManage`, service-role), validação fail-closed (`validateComunicadoFields`: título 1–120, descrição 1–500, repeats 1–100, intervalo 0–365, ≥1 weekday 0–6 sem duplicados, `repeatTime` `/^([01]\d|2[0-3]):[0-5]\d$/`); `getDueComunicados()` (só DEPENDENT com casa; `[]` para ADMIN/sem casa; publicados **com agenda devida** por dependente — a 1ª ocorrência usa `created_at` sem intervalo, as repetições `last_confirmed_at` com intervalo); `confirmComunicadoDelivery` (guarda em `delivered_count` + `.select('id')` + 2 tentativas, cap em `repeats_total`; `ok:false` quando recusa). Revalidam `/dashboard/admin/comunicados`; a confirmação revalida também as rotas do dependente.
@@ -268,7 +268,7 @@ alter type public.task_status add value if not exists 'ON_HOLD';
 - **Overlay bloqueante do DEPENDENT (`src/components/alerts/alert-queue-overlay.tsx` — substitui `comunicado-overlay.tsx`, removido):** ver a seção **no topo** ("Fila de alertas única do dependente") — fila única FIFO de comunicados + penalização, sem prioridade para a penalização, e comprovação de leitura (≥ 3 palavras do aviso) no comunicado. Montagem nos mesmos 4 pontos: layout dependente e branches dependentes de `/tasks`, `/rewards`, `/achievements`.
 - **Limpeza:** `comunicado_deliveries` fica **FORA** da publication e **sem policies client** (escritas/leituras service-role; o total do ADMIN atualiza via `revalidatePath`/`router.refresh()` pós-ação). `deleteComunicado` remove as deliveries (FK cascade); `deleteHouse` remove os comunicados (FK cascade em `comunicados`). Ver **ADR-0017**.
 
-### SQL (docs/sql/comunicados.sql — aplicação pendente)
+### SQL (docs/sql/comunicados.sql — já aplicado no banco)
 ```sql
 -- Resumo (arquivo completo em docs/sql/comunicados.sql):
 -- create table public.comunicados (… repeat_time time not null default '08:00:00' …);
@@ -285,7 +285,7 @@ alter type public.task_status add value if not exists 'ON_HOLD';
 `npm run lint` ✓ (só warnings pré-existentes `no-img-element`/`House` unused nos pages de auth) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo, `/dashboard/admin/comunicados` dinâmico).
 
 ### Pontos de atenção
-- **SQL pendente no Supabase** (aso 2 tabelas + índices + RLS; a policy `comunicados_select_members` e a publication `comunicados`, se já aplicadas no banco, ficam inofensivas e podem ser ignoradas — o app não depende delas).
+- **Nada pendente no Supabase:** as 2 tabelas + índices + RLS já estão aplicados. A policy `comunicados_select_members` e a publication `comunicados`, se existirem no banco, ficam inofensivas — o app não depende delas (o overlay do dependente é sem tempo real).
 - 1ª exibição em **"slot de hoje ou próximo"**: publicado num dia agendado com o horário **já passado** aparece de imediato no próximo render; **antes do horário**, espera o horário de hoje; dia **não agendado** → próximo dia agendado.
 - Sem tempo real: o ADMIN não vê o balão "abrir na hora" no dependente — refletir o aviso exige atualizar a tela/trocar de endpoint no celular.
 - Limite aceito: o total de confirmações do ADMIN não chega "ao vivo" (deliveries fora da publication) — atualiza via `revalidatePath`/`router.refresh()` pós-ação.

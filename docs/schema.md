@@ -208,7 +208,7 @@ Uma linha por dependente+casa; contadores iniciados em **0** (sem backfill). Os 
 | repeat_time | time | default `08:00:00`; relógio de parede em America/Recife |
 | created_at / updated_at | timestamptz | |
 
-RLS: SELECT por membro (policy `comunicados_select_members`); na publication Realtime (o overlay do dependente reavalia a fila). Escritas via service role (escopo da sessão). **SQL pendente de aplicação** — ver `docs/sql/comunicados.sql` e seção "Comunicados" do `PROJECT_STATUS.md`.
+RLS: policy de SELECT por membro e inclusion na publication Realtime são **inofensivas** (o overlay do dependente não assina `comunicados` — o módulo é sem tempo real; só o `comunicados-admin.tsx` assina). Escritas e leituras via service role (escopo da sessão). **Schema já aplicado no banco** — ver `docs/sql/comunicados.sql` e seção "Comunicados" do `PROJECT_STATUS.md`.
 
 ### comunicado_deliveries
 | coluna | tipo | notas |
