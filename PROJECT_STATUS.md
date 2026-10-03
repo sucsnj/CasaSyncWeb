@@ -1,5 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
+## Layout widescreen — shells em `max-w-7xl` e grades por breakpoint (concluída — sem mudança de schema)
+
+### O que foi implementado
+- **Shells mais largos (10 pontos):** todos os containers de página que usavam `max-w-5xl` passaram para **`max-w-7xl`** — layouts admin e dependente, `/tasks`, `/rewards`, `/achievements`, `/dashboard/admin/settings`, `/dashboard/admin/comunicados` (incluindo os retornos de "Nenhuma casa ativa") e o header do `DashboardNav`. As telas de auth (`max-w-md`) **não** foram tocadas.
+- **A largura extra virou colunas, não faixa vazia** (por container): visão geral do ADMIN `sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5`; dashboard do dependente com **saldo + tutores lado a lado** em `lg:grid-cols-2` (as ações continuam em `sm:grid-cols-2`); catálogo de recompensas do dependente `xl:grid-cols-3`; catálogo de conquistas do dependente `xl:grid-cols-3`; conquistas do ADMIN e comunicados `xl:grid-cols-2`; configurações `lg:grid-cols-2` com o banner `lg:col-span-2`; recompensas do ADMIN em coluna fixa + lista (`xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]`).
+- **Listas longas em 2 colunas:** as seções de tarefas (`tasks-admin.tsx` — pendentes/concluídas/aprovadas/em espera — e `tasks-dependent.tsx`) e de recompensas (`rewards-admin.tsx`, `rewards-dependent.tsx`) viraram `grid gap-3 xl:grid-cols-2`; o **heading interno** de cada uma ganhou `xl:col-span-2` (sem isso o título fica preso na 1ª coluna).
+- **Casas ficaram em 2 colunas:** `houses-manager.tsx` mantém `md:grid-cols-2` com o card de membros `md:col-span-2` — chegou a ser `xl:grid-cols-3`, mas em 3 colunas os formulários de casa/dependente ficam estreitos demais, então a casa continua com largura de comfortably 2 colunas.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Além disso, as classes novas foram conferidas **no CSS gerado** (`.next/static/chunks/*.css`) depois do build — ver abaixo.
+
+### Pontos de atenção
+- **Variantes `2xl:` NÃO geram CSS neste projeto (Tailwind `4.3.3`).** Descoberto ao conferir o bundle: as listas foram inicialmente escritas com `2xl:grid-cols-2`/`2xl:col-span-2` e o build passava (lint/typecheck/build não reclamam), mas **nenhum `.2xl\:` saía no CSS** — ou seja, o layout ficaria 1 coluna em toda tela, silenciosamente. Confirmado no pipeline real (`@tailwindcss/postcss` sobre `src/app/globals.css`) e também com `@source inline("xl:grid-cols-5 2xl:grid-cols-2 min-[1536px]:grid-cols-4")`, que descarta o scanner: **`xl:` e `min-[1536px]:` geram, `2xl:` não**. Todas as classes foram trocadas para `xl:`. **Não reintroduzir `2xl:`** — quem precisar do gatilho de 1536px usa `min-[1536px]:`.
+- **`lint`/`typecheck`/`build` não pegam classe não gerada.** Para conferir de verdade, buscar o nome escapado no CSS do bundle depois do build (`.xl\:grid-cols-2`, `.xl\:col-span-2`, `.max-w-7xl`, …). Registrado também no `AGENTS.md` §2.
+- **Validação visual não foi feita** (precisa de sessão/login) — o que passou foi build + inspeção do CSS gerado.
+
+---
+
 ## Tarefa em espera (`ON_HOLD`) + penalidade de "não entregue" agora definitiva (implementado — SQL do enum aplicado)
 
 ### O que foi implementado

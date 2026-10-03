@@ -35,7 +35,7 @@ export default async function AdminSettingsPage() {
 
   if (!activeHouse) {
     return (
-      <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+      <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
         <Card className="mx-auto max-w-md">
           <CardHeader>
             <CardTitle>Nenhuma casa ativa</CardTitle>
@@ -67,7 +67,7 @@ export default async function AdminSettingsPage() {
   ])
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
       <SettingsAdmin
         rewardPricing={rewardPricing}
         quickMessage={quickMessage}

@@ -327,7 +327,7 @@ export function RewardsAdmin({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
@@ -532,8 +532,8 @@ export function RewardsAdmin({
         </Card>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+      <section className="grid gap-3 xl:grid-cols-2">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <Lightbulb className="size-4 text-violet-500" />
           Sugestões dos dependentes
         </h2>
@@ -601,8 +601,8 @@ export function RewardsAdmin({
       </section>
 
       {dismissedSuggestions.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-sm font-semibold text-slate-500">
+        <section className="grid gap-3 xl:grid-cols-2">
+          <h2 className="font-heading text-sm font-semibold text-slate-500 xl:col-span-2">
             Sugestões resolvidas
           </h2>
           {dismissedSuggestions.map((suggestion) => (
@@ -632,8 +632,8 @@ export function RewardsAdmin({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+      <section className="grid gap-3 xl:grid-cols-2">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ClipboardList className="size-4 text-amber-500" />
           Solicitações de resgate
         </h2>
@@ -687,8 +687,8 @@ export function RewardsAdmin({
       </section>
 
       {resolvedRedemptions.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+        <section className="grid gap-3 xl:grid-cols-2">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <Layers className="size-4 text-slate-500" />
             Histórico
           </h2>

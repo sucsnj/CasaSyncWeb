@@ -821,8 +821,8 @@ export function TasksAdmin({
         ) : null}
       </Card>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+      <section className="grid gap-3 xl:grid-cols-2">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ListTodo className="size-4 text-blue-600" />
           Pendentes
         </h2>
@@ -1110,8 +1110,8 @@ export function TasksAdmin({
       {/* Tarefas pausadas: visíveis só para o ADMIN, com o botão de reativar
           sempre à vista (fora do toggle), como o "Restaurar" das aprovadas. */}
       {heldTasks.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+        <section className="grid gap-3 xl:grid-cols-2">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <PauseCircle className="size-4 text-slate-400" />
             Em espera
           </h2>
@@ -1258,8 +1258,8 @@ export function TasksAdmin({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+      <section className="grid gap-3 xl:grid-cols-2">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ClipboardList className="size-4 text-amber-500" />
           Concluídas — aguardando aprovação
         </h2>
@@ -1373,8 +1373,8 @@ export function TasksAdmin({
       </section>
 
       {approvedTasks.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+        <section className="grid gap-3 xl:grid-cols-2">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <CircleCheckBig className="size-4 text-emerald-500" />
             Aprovadas
           </h2>

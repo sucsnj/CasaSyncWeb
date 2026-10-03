@@ -636,7 +636,7 @@ export function AchievementsAdmin({
           </div>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-4 xl:grid-cols-2">
           {achievements.map((achievement) => {
             const byProfile = progressMap.get(achievement.id)
             return (

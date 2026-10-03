@@ -57,53 +57,55 @@ export default async function DependentDashboardPage() {
         </p>
       </header>
 
-      <Card className="border-0 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
-        <CardHeader>
-          <CardTitle className="text-white/90">Seu saldo</CardTitle>
-          <CardDescription className="text-white/85">
-            Pontos acumulados com tarefas aprovadas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="font-heading text-4xl font-bold tracking-tight text-white">
-            {profile?.points ?? 0} pts
-          </p>
-        </CardContent>
-      </Card>
-
-      {tutors.length > 0 ? (
-        <Card>
-          <CardHeader className="gap-3">
-            <CardTitle className="flex items-center gap-2">
-              <GraduationCap className="size-5 text-blue-600" />
-              {tutors.length > 1 ? 'Seus tutores' : 'Seu tutor'}
-            </CardTitle>
-            <CardDescription>
-              Responsáveis da sua casa — aprovam suas tarefas e resgates.
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-0 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
+          <CardHeader>
+            <CardTitle className="text-white/90">Seu saldo</CardTitle>
+            <CardDescription className="text-white/85">
+              Pontos acumulados com tarefas aprovadas.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {tutors.map((tutor) => (
-              <div key={tutor.id} className="flex items-center gap-3">
-                {tutor.avatar_url ? (
-                  <img
-                    src={tutor.avatar_url}
-                    alt=""
-                    className="size-14 shrink-0 rounded-full border-2 border-blue-200 object-cover"
-                  />
-                ) : (
-                  <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
-                    {(tutor.full_name ?? '?').charAt(0).toUpperCase()}
-                  </span>
-                )}
-                <p className="font-semibold text-slate-800">
-                  {tutor.full_name ?? 'Administrador'}
-                </p>
-              </div>
-            ))}
+          <CardContent>
+            <p className="font-heading text-4xl font-bold tracking-tight text-white">
+              {profile?.points ?? 0} pts
+            </p>
           </CardContent>
         </Card>
-      ) : null}
+
+        {tutors.length > 0 ? (
+          <Card>
+            <CardHeader className="gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="size-5 text-blue-600" />
+                {tutors.length > 1 ? 'Seus tutores' : 'Seu tutor'}
+              </CardTitle>
+              <CardDescription>
+                Responsáveis da sua casa — aprovam suas tarefas e resgates.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {tutors.map((tutor) => (
+                <div key={tutor.id} className="flex items-center gap-3">
+                  {tutor.avatar_url ? (
+                    <img
+                      src={tutor.avatar_url}
+                      alt=""
+                      className="size-14 shrink-0 rounded-full border-2 border-blue-200 object-cover"
+                    />
+                  ) : (
+                    <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
+                      {(tutor.full_name ?? '?').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <p className="font-semibold text-slate-800">
+                    {tutor.full_name ?? 'Administrador'}
+                  </p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {actions.map((action) => (

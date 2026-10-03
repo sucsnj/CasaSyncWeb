@@ -427,7 +427,7 @@ export function ComunicadosAdmin({
         </Card>
       ) : null}
 
-      <div className="grid gap-4">
+      <div className="grid gap-4 xl:grid-cols-2">
         {comunicados.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
