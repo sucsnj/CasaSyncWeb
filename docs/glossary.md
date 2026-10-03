@@ -54,12 +54,15 @@ em primeiro; siglas técnicas resolvidas no fim.
   `MANUAL`). Iniciam zeradas.
 - **Progresso (`dependent_achievements`)** — linha por (conquista, dependente):
   `level`, `current_progress`, `unlocked_at`. É a superfície de UI/Realtime;
-  derivada das estatísticas (ou somada no crédito p/ `EARNED_POINTS`).
+  escrita de forma incremental (métricas contadas em `dependent_stats`, crédito
+  p/ `EARNED_POINTS`, ajuste manual) e **limitada ao objetivo** — nunca passa de
+  `target_count`.
 - **Desbloqueio** — `current_progress ≥ target_count` marca `unlocked_at` e dá o
   botão de resgatar a recompensa ao dependente.
 - **Resgate de conquista** — creditar `reward_points × nível × multiplicador`
-  direto em `profiles.points`; repetível reinicia o ciclo (`level+1` até o cap,
-  rollover do excedente), única encerra.
+  direto em `profiles.points`; repetível reinicia o ciclo zerando o progresso
+  (`level+1` até o cap, cada ciclo exige o objetivo inteiro de novo — ADR-0019),
+  única encerra.
 
 ## Notificações e push
 - **Notificação interna** (`notifications`) — uma linha por destinatário;

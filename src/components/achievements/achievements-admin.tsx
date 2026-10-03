@@ -14,6 +14,8 @@ import {
   ACHIEVEMENT_ICONS,
   METRIC_LABELS,
   type AchievementMetricType,
+  applyAchievementProgress,
+  capAchievementProgress,
 } from '@/utils/achievements'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
@@ -299,7 +301,8 @@ export function AchievementsAdmin({
   function applyOptimisticProgress(
     achievementId: string,
     profileId: string,
-    delta: 1 | -1
+    delta: 1 | -1,
+    targetCount: number
   ) {
     setProgress((prev) => {
       const index = prev.findIndex(
@@ -316,7 +319,7 @@ export function AchievementsAdmin({
             achievement_id: achievementId,
             profile_id: profileId,
             level: 1,
-            current_progress: delta,
+            current_progress: capAchievementProgress(delta, targetCount),
             unlocked_at: null,
           },
         ]
@@ -325,7 +328,11 @@ export function AchievementsAdmin({
       const next = [...prev]
       next[index] = {
         ...next[index],
-        current_progress: Math.max(0, next[index].current_progress + delta),
+        current_progress: applyAchievementProgress(
+          next[index].current_progress,
+          targetCount,
+          delta
+        ),
       }
       return next
     })
@@ -339,7 +346,12 @@ export function AchievementsAdmin({
     if (adjustingKey) return
     const snapshot = progress
     setAdjustingKey(`${achievement.id}:${profileId}:${delta}`)
-    applyOptimisticProgress(achievement.id, profileId, delta)
+    applyOptimisticProgress(
+      achievement.id,
+      profileId,
+      delta,
+      achievement.target_count
+    )
     try {
       const res = await adjustAchievementProgress(achievement.id, profileId, delta)
       if (!res.ok) {
@@ -755,8 +767,11 @@ export function AchievementsAdmin({
                                     : `Nível ${entry.level}`}
                                 </span>
                                 <span className="text-xs text-slate-500">
-                                  {entry.current_progress}/
-                                  {achievement.target_count}
+                                  {capAchievementProgress(
+                                    entry.current_progress,
+                                    achievement.target_count
+                                  )}
+                                  /{achievement.target_count}
                                 </span>
                                 {entry.unlocked_at ? (
                                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -790,7 +805,13 @@ export function AchievementsAdmin({
                                       size="sm"
                                       className="h-7 w-7 p-0"
                                       title="Conceder 1 de progresso"
-                                      disabled={adjustingKey !== null}
+                                      disabled={
+                                        adjustingKey !== null ||
+                                        capAchievementProgress(
+                                          entry.current_progress,
+                                          achievement.target_count
+                                        ) >= achievement.target_count
+                                      }
                                       onClick={() =>
                                         handleAdjust(achievement, dependent.id, 1)
                                       }

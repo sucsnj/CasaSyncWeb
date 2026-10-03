@@ -7,7 +7,11 @@ import {
   type DependentStatColumns,
   type StatColumnName,
 } from '@/utils/dependent-stats'
-import type { AchievementMetricType } from '@/utils/achievements'
+import {
+  applyAchievementProgress,
+  capAchievementProgress,
+  type AchievementMetricType,
+} from '@/utils/achievements'
 
 type StatsRow = DependentStatColumns & {
   profile_id: string
@@ -36,7 +40,8 @@ function recifeDay(offsetDays: number): string {
  * Incrementa o contador de `metricType` do dependente em `dependent_stats`
  * (lazy insert da linha) e re-sincroniza as conquistas da casa que medem essa
  * métrica via `evaluateAchievements`. `actorId` é quem disparou (o ADMIN que
- * aprovou/concedeu) — usado na notificação de desbloqueio. BEST-EFFORT: nunca
+ * aprovou/concedeu) — usado na notificação de desbloqueio. `amount` é a
+ * ocorrência deste evento (vai para o progresso do ciclo em andamento). BEST-EFFORT: nunca
  * lança — uma falha aqui não derruba a ação principal; o progresso volta na
  * próxima ocorrência.
  */
@@ -113,18 +118,21 @@ export async function incrementDependentStat(
     return
   }
 
-  await evaluateAchievements(houseId, profileId, metricType, actorId)
+  await evaluateAchievements(houseId, profileId, metricType, amount, actorId)
 }
 
 /**
- * Re-sincroniza `dependent_achievements.current_progress` com o contador de
- * `dependent_stats` do dependente, para todas as conquistas da casa que medem
- * `metricType`:
+ * Re-sincroniza `dependent_achievements.current_progress` para todas as
+ * conquistas da casa que medem `metricType`:
  *
- * - REPETÍVEL: progresso do ciclo = contador − (nível−1) × objetivo (o excedente
- *   de cada ciclo consumido é o que já foi resgatado). Best-effort: progresso
- *   nunca diminui abaixo do registrado (preserva histórico pré-estatísticas).
- * - ÚNICA: progresso = min(contador, objetivo), sem cap de display.
+ * - REPETÍVEL: o progresso é **do ciclo em andamento**, somado a partir do valor
+ *   gravado e com **teto no objetivo** (`applyAchievementProgress`) — enquanto a
+ *   conquista está desbloqueada e não resgatada, o progresso fica congelado em
+ *   `N/N` e o excedente é descartado, então o ciclo seguinte só volta a contar
+ *   depois do resgate. Só a **primeira** ocorrência da conquista usa o contador
+ *   absoluto (histórico anterior conta, como nas únicas). Best-effort.
+ * - ÚNICA: progresso = `min(contador, objetivo)` (o teto é a própria regra),
+ *   preservando o piso histórico: nunca diminui abaixo do registrado.
  *
  * `unlocked_at` só é marcado quando o progresso cruza o objetivo e não está já
  * definido — e essa transição dispara a notificação de desbloqueio
@@ -134,6 +142,7 @@ export async function evaluateAchievements(
   houseId: string,
   profileId: string,
   metricType: AchievementMetricType,
+  amount = 1,
   actorId?: string
 ): Promise<void> {
   const column = DEPENDENT_STAT_COLUMNS[metricType]
@@ -159,13 +168,20 @@ export async function evaluateAchievements(
 
   await syncAchievementProgress(houseId, profileId, metricType, (achievement, existing) => {
     const target = achievement.target_count
-    const raw = achievement.is_repeatable
-      ? Math.max(0, counter - ((existing?.level ?? 1) - 1) * target)
-      : Math.min(counter, target)
 
-    const progress = existing
-      ? Math.max(existing.current_progress, raw)
-      : raw
+    let progress: number
+    if (achievement.is_repeatable && existing) {
+      // Ciclo em andamento: incremental com trava no objetivo.
+      progress = applyAchievementProgress(existing.current_progress, target, amount)
+    } else if (achievement.is_repeatable) {
+      // Primeira ocorrência: o histórico do contador alimenta o 1º ciclo.
+      progress = capAchievementProgress(counter, target)
+    } else {
+      progress = Math.min(
+        Math.max(existing?.current_progress ?? 0, counter),
+        target
+      )
+    }
 
     const unlockedAt =
       existing?.unlocked_at ?? (progress >= target ? new Date().toISOString() : null)
@@ -250,6 +266,6 @@ export async function registerLoginDay(
     return
   }
 
-  await evaluateAchievements(houseId, profileId, 'APP_LOGIN_DAYS')
-  await evaluateAchievements(houseId, profileId, 'STREAK_LOGIN_DAYS')
+  await evaluateAchievements(houseId, profileId, 'APP_LOGIN_DAYS', 1)
+  await evaluateAchievements(houseId, profileId, 'STREAK_LOGIN_DAYS', 1)
 }

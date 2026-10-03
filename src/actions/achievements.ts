@@ -12,6 +12,7 @@ import {
   ACHIEVEMENT_METRIC_TYPES,
   type AchievementMetricType,
   achievementRewardAtLevel,
+  applyAchievementProgress,
   maxAchievementLevel,
 } from '@/utils/achievements'
 import { syncAchievementProgress } from '@/utils/achievement-progress'
@@ -346,7 +347,11 @@ export async function registerAchievementProgress(
 
   if (metricType === 'EARNED_POINTS') {
     await syncAchievementProgress(houseId, profileId, metricType, (achievement, existing) => {
-      const progress = (existing?.current_progress ?? 0) + amount
+      const progress = applyAchievementProgress(
+        existing?.current_progress ?? 0,
+        achievement.target_count,
+        amount
+      )
       return {
         progress,
         unlockedAt:
@@ -449,9 +454,14 @@ export async function adjustAchievementProgress(
     profileId,
     'MANUAL',
     (achievementMeta, existing) => {
-      const current = existing?.current_progress ?? 0
-      const progress =
-        amount > 0 ? current + amount : Math.max(0, current - Math.abs(amount))
+      // `amount` positivo trava no objetivo (conquista já desbloqueada para em
+      // N/N); negativo tem piso 0 e, caindo abaixo do objetivo, limpa o
+      // `unlocked_at` — a revisão do tutor segue revogando o desbloqueio.
+      const progress = applyAchievementProgress(
+        existing?.current_progress ?? 0,
+        achievementMeta.target_count,
+        amount
+      )
 
       const unlockedAt =
         progress >= achievementMeta.target_count
@@ -492,8 +502,10 @@ export async function adjustAchievementProgress(
  * DEPENDENTE resgata a recompensa de pontos de uma conquista desbloqueada da
  * própria casa. O "nível" sobe a cada resgate:
  *
- * - REPETÍVEL: o contador zera (mantendo o excedente) e `unlocked_at` volta a
- *   `null` — a conquista pode ser re-desbloqueada no próximo ciclo.
+ * - REPETÍVEL: o ciclo recomeça em zero (o progresso é travado no objetivo, então
+ *   não há excedente a preservar) e `unlocked_at` volta a `null` — a conquista
+ *   pode ser re-desbloqueada no próximo ciclo, que exige o objetivo inteiro de
+ *   novo.
  * - NÃO repetível: só dá para resgatar uma vez no nível 1; depois disso vira
  *   "Concluída" (chip) e o botão some.
  *
@@ -521,9 +533,7 @@ export async function claimAchievementReward(
 
   const { data: achievement } = await admin
     .from('achievements')
-    .select(
-      'id, house_id, reward_points, target_count, is_repeatable, max_level, level_multiplier'
-    )
+    .select('id, house_id, reward_points, is_repeatable, max_level, level_multiplier')
     .eq('id', achievementId)
     .maybeSingle()
 
@@ -566,7 +576,7 @@ export async function claimAchievementReward(
     achievement.is_repeatable
       ? {
           level: nextLevel,
-          current_progress: Math.max(0, row.current_progress - achievement.target_count),
+          current_progress: 0,
           unlocked_at: null,
           updated_at: now,
         }

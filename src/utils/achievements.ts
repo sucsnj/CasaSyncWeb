@@ -73,6 +73,44 @@ export function maxAchievementLevel(
   return isRepeatable ? maxLevel : 1
 }
 
+/**
+ * Progresso de UM ciclo limitado ao objetivo (`0..target`).
+ *
+ * É a regra de **trava**: o progresso nunca passa do objetivo, então uma
+ * conquista desbloqueada e ainda não resgatada fica congelada em `N/N` e o
+ * excedente é descartado — o próximo ciclo só volta a contar depois do resgate.
+ * Também serve de teto na exibição (barra/`N/N`), protegendo contra linhas
+ * gravadas antes da trava. Piso em 0.
+ */
+export function capAchievementProgress(
+  progress: number,
+  target: number
+): number {
+  return Math.min(target, Math.max(0, progress))
+}
+
+/**
+ * Aplica a ocorrência (`amount`, com sinal) ao progresso de um ciclo:
+ * - **soma** trava no objetivo (`capAchievementProgress`) — é o que congela o
+ *   progresso enquanto o resgate está pendente;
+ * - **subtração** (revisão do tutor em conquistas `MANUAL`) tem piso em 0 e
+ *   continua valendo mesmo com a conquista desbloqueada — é o que permite
+ *   revogar o desbloqueio.
+ *
+ * Função pura (isomórfica): usada pelos três caminhos de escrita
+ * (`evaluateAchievements`, `EARNED_POINTS` e `adjustAchievementProgress`) para
+ * que a trava seja a mesma em todos.
+ */
+export function applyAchievementProgress(
+  current: number,
+  target: number,
+  amount: number
+): number {
+  return amount < 0
+    ? Math.max(0, current + amount)
+    : capAchievementProgress(current + amount, target)
+}
+
 /** Linha de progresso mínima para avaliar a disponibilidade de resgate. */
 export type ClaimableProgress = {
   level: number | null

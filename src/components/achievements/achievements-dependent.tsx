@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { PartyPopper, Trophy } from 'lucide-react'
+import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
   achievementRewardAtLevel,
+  capAchievementProgress,
   isAchievementClaimable,
   maxAchievementLevel,
 } from '@/utils/achievements'
@@ -105,14 +106,13 @@ export function AchievementsDependent({
           if (entry.achievement.id !== view.achievement.id || !entry.progress) {
             return entry
           }
-          const { target_count, is_repeatable } = view.achievement
+          const { is_repeatable } = view.achievement
+          // Resgate consumiu o ciclo inteiro: o próximo começa em 0 (o
+          // progresso era travado no objetivo, não havia excedente).
           const progress = is_repeatable
             ? {
                 level: nextLevel,
-                current_progress: Math.max(
-                  0,
-                  entry.progress.current_progress - target_count
-                ),
+                current_progress: 0,
                 unlocked_at: null as string | null,
               }
             : {
@@ -208,8 +208,18 @@ export function AchievementsDependent({
           achievement.level_multiplier
         )
         const percent = progress
-          ? Math.min(100, Math.round((progress.current_progress / target) * 100))
+          ? Math.min(
+              100,
+              Math.round(
+                (capAchievementProgress(progress.current_progress, target) / target) * 100
+              )
+            )
           : 0
+        // Exibição travada no objetivo (protege linhas gravadas antes da regra).
+        const shownProgress = capAchievementProgress(
+          progress?.current_progress ?? 0,
+          target
+        )
 
         return (
           <Card
@@ -284,10 +294,22 @@ export function AchievementsDependent({
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              <p className="text-xs text-slate-500">
-                {progress
-                  ? `${progress.current_progress} / ${target}`
-                  : `0 / ${target}`}
+              <p
+                className={cn(
+                  'text-xs',
+                  claimable
+                    ? 'flex items-center gap-1 font-semibold text-amber-700'
+                    : 'text-slate-500'
+                )}
+              >
+                {claimable ? (
+                  <>
+                    <Lock className="size-3.5 shrink-0" />
+                    {shownProgress} / {target} · travado até resgatar
+                  </>
+                ) : (
+                  `${shownProgress} / ${target}`
+                )}
               </p>
             </div>
 

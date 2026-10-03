@@ -54,7 +54,11 @@ ADR-0015/`ACHIEVEMENT_ICONS`).
 - Demais → `incrementDependentStat` (lazy insert ou update atômico com guard
   `.eq(column, valor lido)` + 1 retry) e depois `evaluateAchievements`.
 
-### `evaluateAchievements` (deriva o progresso do contador absoluto)
+### `evaluateAchievements` (progresso do contador absoluto)
+> **Superado pela emenda do ADR-0019** (a repetível virou incremental no valor
+> gravado, com teto; o `amount` da ocorrência virou parâmetro). O texto abaixo
+> descreve o modelo **original** deste ADR.
+
 Por conquista da casa que mede a métrica (contador lido fresco de
 `dependent_stats`):
 - **Repetível:** `progresso do ciclo = contador − (nível−1) × objetivo` (o
@@ -69,6 +73,8 @@ rollover do resgate subtrai o objetivo uma vez por ciclo, mas a fórmula usa o
 nível (travado) → os ciclos consumidos no cap são **subestimados**, desbloqueando
 a conquista um pouco antes. A **recompensa paga não muda** (é sempre a do nível
 travado); corrigir exigiria desacoplar count-consumido de level.
+*(Limitação deixou de existir no ADR-0019: o repetível não usa mais a fórmula de
+contador.)*
 
 ### Injeções (todas best-effort, no caminho da ação primária)
 - `approveTask` / `adminCompleteTask`: `TASKS_APPROVED` (1) + `EARNED_POINTS`

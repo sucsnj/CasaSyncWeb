@@ -55,7 +55,9 @@ Restrições herdadas do projeto:
   da aprovação); **lazy insert** para conquistas ainda sem linha; **update por
   linha com guard `.eq('current_progress', valor lido)` + 1 retry relendo** —
   duas aprovações concorrentes não perdem incremento. `current_progress` **não é
-  capado no banco** (a UI capa a barra em 100%; permite rollover natural).
+  capado no banco** (o teto vive no app — `capAchievementProgress`; a UI capa a
+  barra em 100%). ~~permite rollover natural~~ **superado pelo ADR-0019: o
+  progresso trava no objetivo e o excedente é descartado.**
 - **Resgate (`claimAchievementReward`)** — só DEPENDENT da própria casa; credita
   **direto em `profiles.points`** (mesmo ajuste simples de `approveTask`, sem
   serviço compartilhado) o valor **`reward_points × nível atual × level_multiplier`**
@@ -63,8 +65,9 @@ Restrições herdadas do projeto:
   lido (repetíveis) ou `level == 1` (não repetíveis); rollback da linha se o
   crédito falhar.
   - **Repetível:** `level+1` (cap em `max_level` — **no cap segue repetível**, com
-    o nível travado pagando a recompensa máxima) e rollover
-    `max(0, progress − target)`; `unlocked_at` volta a null → re-desbloqueia no
+    o nível travado pagando a recompensa máxima) e ~~rollover
+    `max(0, progress − target)`~~ **`current_progress = 0`** (ADR-0019: o ciclo
+    exige o objetivo inteiro de novo); `unlocked_at` volta a null → re-desbloqueia no
     próximo ciclo e pode resgatar de novo.
   - **Não repetível:** resgata **uma vez** no nível 1; depois vira chip
     "Concluída" (`level` 2 no banco) e o botão some.
