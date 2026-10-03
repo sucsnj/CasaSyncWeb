@@ -26,5 +26,5 @@ O efeito mais grave era no ciclo seguinte: como o excedente ficava guardado, o r
 - **Cada ciclo de uma repetível custa o objetivo inteiro de novo** depois do resgate: não existe mais "ciclo acumulado" por um período de tarefas forte em casa.
 - O contador em `dependent_stats` continua contando normalmente (não zera): ele alimenta as **únicas** e é a métrica bruta da casa. Só o progresso do ciclo é travado.
 - **Perde-se a recuperação automática** do modelo derivado: se a gravação do progresso falhar (`syncAchievementProgress` é best-effort), aquele evento não volta na próxima ocorrência — é o mesmo comportamento que `EARNED_POINTS`/`MANUAL` já tinham. Em compensação, a escrita continua com guard `.eq('current_progress', valor lido)` + 1 retry relendo, então concorrência não perde incremento.
-- **Sem mudança de schema.** A limpeza das linhas já gravadas acima do objetivo é opcional e está em `docs/sql/achievement_progress_cap.sql` (o app também se autocorrige na próxima ocorrência da métrica).
+- **Sem mudança de schema.** As linhas que já estavam gravadas acima do objetivo foram limpas com `docs/sql/achievement_progress_cap.sql` (UPDATE que limita cada linha à `target_count` da conquista); o app também se autocorrige na próxima ocorrência da métrica.
 - Conquistas **secretas** seguem revelando só no desbloqueio delas — a trava não mexe nisso.
