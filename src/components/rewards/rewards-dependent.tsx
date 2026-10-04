@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
@@ -341,7 +342,7 @@ export function RewardsDependent({
             Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
           </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 sm:items-start xl:grid-cols-3">
+          <CardColumns className="gap-x-3 sm:columns-2 xl:columns-3 [&>*]:mb-3">
             {filteredRewards.map((reward) => {
               const inactive = !reward.active
               const disabled =
@@ -413,7 +414,7 @@ export function RewardsDependent({
                 </Card>
               )
             })}
-          </div>
+          </CardColumns>
         )}
       </section>
 
