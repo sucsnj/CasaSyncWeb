@@ -1,5 +1,27 @@
 # CasaSync Web — PROJECT STATUS
 
+## Espaçamento das telas internas do ADMIN e ajustes na tela de Configurações (concluído — sem mudança de schema)
+
+### O que foi feito
+- **Causa do "recuo em relação à navbar" em Configurações e Comunicados: padding dobrado.** O `DashboardNav` é `fixed` com `h-16` (4rem), e o recuo correto vem do container do **layout** (`app/dashboard/admin/layout.tsx`, `pt-20`/`md:pt-24`). As páginas `/dashboard/admin/settings` e `/dashboard/admin/comunicados` **aninhadas nesse layout** traziam um segundo container com o mesmo padding — então o topo somava `80px + 80px` (mobile) e `96px + 96px` (desktop), e o conteúdo ficava ~96px abaixo da navbar em vez de ~16px. Removido o container redundante das duas páginas: agora elas só têm `<div className="flex flex-col gap-6">`, **igual a Visão geral** (`/dashboard/admin/page.tsx`) e a página de Casas, que já estavam no padrão.
+  - **Regra:** container com `p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6` só existe na **raiz** de uma rota (`/tasks`, `/rewards`, `/achievements` e os dois `layout.tsx` do dashboard). Página aninhada dentro de um layout **não** repete o padding — o layout já resolveu isso.
+- **Botões "Salvar" no fundo-direita do próprio card.** Os 8 cards de Configurações tinham o botão logo abaixo do último campo, então em cards de alturas diferentes ele ficava no meio do card. Como `Card` já é `flex flex-col` (primitiva shadcn), bastou `flex-1` no `CardContent` e `mt-auto` no wrapper do botão — agora ele encosta no fundo do **seu** card, e os botões de cards vizinhos ficam alinhados na mesma linha.
+- **Fuso: lista rolável com a diferença de horas visível.** O `<select>` nativo virou um **dropdown próprio** (`TimezoneSelect`) — são 19 fusos e a lista precisa mostrar a diferença de cada um em relação ao UTC (o nome da cidade sozinho não diz isso, e é o offset que torna a escolha visível). Cada opção mostra o rótulo **e o offset** (`Recife · UTC-03:00`, `Manaus · UTC-04:00`, `UTC`, `Lisboa · UTC+01:00`). Fecha no `Esc` e ao clicar fora, com `role="combobox"`/`listbox` + `aria-controls`/`aria-expanded`.
+  - **A lista é renderizada em portal (`document.body`) com `position: fixed`**, e não dentro do card. Dois motivos: a primitiva `Card` tem `overflow-hidden` (para o raio dos cantos e a imagem de topo), então uma lista `absolute` dentro dela era **recortada pelos limites do card** — nem abrir para cima resolveria; e being aninhada, ela ainda era limitada pelo fim da página.
+  - **Posicionamento calculado na abertura:** a lista abre **para baixo** quando há espaço e **para cima** quando não há (trocando de lado conforme o espaço real), com a altura máxima limitada ao que sobrou — assim nunca invade a barra de navegação inferior. Reposiciona em `scroll`/`resize` enquanto aberta. Com `fixed`, "abrir para cima" é ancorar `bottom` (só `top` cresceria para baixo).
+  - **A altura é expressa em número de itens, não em pixel solto:** as constantes `TZ_OPTION_HEIGHT` (56px) e `TZ_VISIBLE_ITEMS` (5) no próprio componente — 5 × 56 = 280px. Com `max-h` fixo a contagem mudava conforme a fonte que o navegador aplica (apareciam 3 em telas com fonte maior), porque a altura real do item varia.
+  - **Os offsets são calculados no servidor** (`houseTimezoneOptions(now)` em `src/utils/timezone.ts`) e repassados por prop, junto com o "Agora na casa: UTC-03:00": calcular offset via `Intl` **durante o render do client** criaria risco de hydration mismatch.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings** — a regra `jsx-a11y/role-has-required-aria-props` exigiu `aria-controls` no combobox) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas). Varredura confirmando que **nenhuma página aninhada** em `app/dashboard/**` tem mais `pt-20`/`pt-24`/`pb-24` (só `achievements`, `tasks`, `rewards` e os dois `layout.tsx` mantêm, que é o padrão). Classes novas conferidas no CSS gerado (`max-h-64`, `overflow-y-auto`, `rotate-180`, `mt-auto`, `flex-1`, `z-30`).
+
+### Pontos de atenção
+- **Não reintroduzir container com padding em página aninhada** — é a causa raiz do desalinhamento com a navbar. Se uma página nova do dashboard precisar de respiro, o espaço já vem do layout.
+- O dropdown do fuso é uma lista customizada (não `<select>` nativo): se um dia ele for replicado, manter o `Escape`/clique-fora e os papéis de ARIA.
+- Requer deploy para valer online.
+
+---
+
 ## Limite de adiamentos por tarefa + fuso visível (implementado — SQL a aplicar no banco)
 
 ### O que foi implementado

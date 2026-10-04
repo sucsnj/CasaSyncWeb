@@ -13,7 +13,7 @@ import {
   getHouseTimezoneSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
-import { formatZonedOffset } from '@/utils/timezone'
+import { formatZonedOffset, houseTimezoneOptions } from '@/utils/timezone'
 import {
   Card,
   CardContent,
@@ -39,7 +39,7 @@ export default async function AdminSettingsPage() {
 
   if (!activeHouse) {
     return (
-      <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+      <div className="flex flex-col gap-6">
         <Card className="mx-auto max-w-md">
           <CardHeader>
             <CardTitle>Nenhuma casa ativa</CardTitle>
@@ -85,11 +85,14 @@ export default async function AdminSettingsPage() {
   // Offset do fuso da casa, calculado NO SERVIDOR e repassado como texto: o
   // `<select>` só mostra o nome da cidade, então o offset é o que torna a escolha
   // visível de imediato. Texto estável (a página é `force-dynamic`) => sem risco
-  // de hydration mismatch.
-  const houseTimezoneOffset = formatZonedOffset(houseTimezone.timezone)
+  // de hydration mismatch. A lista inteira recebe o mesmo tratamento, porque o
+  // offset do CLIENTE viria de `Intl` no render — o que pode divergir do servidor.
+  const now = new Date()
+  const houseTimezoneOffset = formatZonedOffset(houseTimezone.timezone, now)
+  const timezoneOptions = houseTimezoneOptions(now)
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+    <div className="flex flex-col gap-6">
       <SettingsAdmin
         rewardPricing={rewardPricing}
         quickMessage={quickMessage}
@@ -101,6 +104,7 @@ export default async function AdminSettingsPage() {
         taskRules={taskRules}
         houseTimezone={houseTimezone}
         houseTimezoneOffset={houseTimezoneOffset}
+        timezoneOptions={timezoneOptions}
       />
     </div>
   )

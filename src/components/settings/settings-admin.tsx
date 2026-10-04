@@ -1,11 +1,14 @@
-'use client'
+﻿'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   BellRing,
   CalendarClock,
+  Check,
+  ChevronDown,
   Clock3,
   Coins,
   Globe,
@@ -39,7 +42,7 @@ import type {
   TaskRulesSettings,
   TaskSlaSettings,
 } from '@/utils/settings'
-import { HOUSE_TIMEZONE_OPTIONS } from '@/utils/timezone'
+import type { HouseTimezoneOption } from '@/utils/timezone'
 
 type SettingsAdminProps = {
   rewardPricing: RewardPricingSettings
@@ -53,6 +56,8 @@ type SettingsAdminProps = {
   houseTimezone: HouseTimezoneSettings
   /** Offset do fuso já formatado no servidor (ex.: `UTC-03:00`) — texto estável. */
   houseTimezoneOffset: string
+  /** Lista de fusos com o offset de cada um, calculada no servidor. */
+  timezoneOptions: HouseTimezoneOption[]
 }
 
 function Toggle({
@@ -130,6 +135,218 @@ function Field({
   )
 }
 
+/** Altura de uma opção do dropdown de fuso (2 linhas + padding). */
+const TZ_OPTION_HEIGHT = 56
+/**
+ * Quantos itens a lista mostra. A altura é expressa em **número de itens**, não
+ * em pixel solto: 5 × 56px = 280px. Com um `max-h` fixo a contagem mudava
+ * conforme a fonte que o navegador aplica (apareciam 3 em telas com fonte
+ * maior), porque a altura real do item varia.
+ */
+const TZ_VISIBLE_ITEMS = 5
+const TZ_LIST_HEIGHT = TZ_OPTION_HEIGHT * TZ_VISIBLE_ITEMS
+/** Folga entre o gatilho e a lista, e para as bordas da tela. */
+const TZ_GAP = 4
+const TZ_VIEWPORT_MARGIN = 8
+
+type DropdownPosition = {
+  left: number
+  width: number
+  maxHeight: number
+  /** Ancoragem pela borda superior (abre para baixo)… */
+  top?: number
+  /** …ou pela inferior (abre para cima). Com `fixed`, `top` sozinho cresce para
+   *  baixo; para subir de verdade é `bottom` que precisa ser ancorado. */
+  bottom?: number
+}
+
+/**
+ * Seletor de fuso horário como lista **rolável** (não `<select>` nativo): são 19
+ * fusos e a lista precisa mostrar a diferença de cada um em relação ao UTC —
+ * o nome da cidade sozinho não diz isso, e é justamente o offset que torna a
+ * escolha visível.
+ *
+ * **A lista é renderizada em portal (`document.body`) com `position: fixed`**, e
+ * não dentro do card. Dois motivos:
+ * - a primitiva `Card` tem `overflow-hidden` (para o raio dos cantos e a imagem
+ *   de topo), então uma lista `absolute` dentro dela era **recortada** pelos
+ *   limites do card — nem abrir para cima resolveria;
+ * - being aninhada, ela também era limitada pelo fim da página.
+ *
+ * O posicionamento é calculado na abertura: a lista abre **para baixo** quando
+ * há espaço e **para cima** quando não há (trocando de lado conforme o espaço
+ * real disponível), e a altura máxima é limitada ao espaço que sobrou — assim
+ * nunca invade a barra de navegação inferior.
+ *
+ * Os offsets chegam prontos por prop (calculados no servidor — ver
+ * `houseTimezoneOptions`), então nada aqui depende de `Intl` no client.
+ */
+function TimezoneSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string
+  options: HouseTimezoneOption[]
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<DropdownPosition | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const listboxId = useId()
+
+  // Fuso gravado fora da lista (ex.: casa migrada de outra configuração) continua
+  // selecionável em vez de o seletor "pular" para o primeiro item.
+  const allOptions = options.some((option) => option.value === value)
+    ? options
+    : [{ value, label: value, offset: '' }, ...options]
+
+  useEffect(() => {
+    if (!open) return
+
+    function place() {
+      const trigger = triggerRef.current
+      if (!trigger) return
+
+      const rect = trigger.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      const spaceBelow = viewportHeight - rect.bottom - TZ_GAP - TZ_VIEWPORT_MARGIN
+      const spaceAbove = rect.top - TZ_GAP - TZ_VIEWPORT_MARGIN
+
+      // Abre para baixo se couber a lista inteira; senão para cima, desde que
+      // haja mais espaço acima. Com pouco dos dois lados, ainda assim escolhe o
+      // maior e limita a altura ao que sobra (a lista rola).
+      const openUp = spaceBelow < TZ_LIST_HEIGHT && spaceAbove > spaceBelow
+      const available = Math.max(spaceBelow, spaceAbove)
+
+      setPosition(
+        openUp
+          ? {
+              left: rect.left,
+              width: rect.width,
+              maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
+              bottom: window.innerHeight - rect.top + TZ_GAP,
+            }
+          : {
+              left: rect.left,
+              width: rect.width,
+              maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
+              top: rect.bottom + TZ_GAP,
+            }
+      )
+    }
+
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node
+      // Fora do gatilho E fora da lista (que está no portal) = clique fora.
+      if (
+        !triggerRef.current?.contains(target) &&
+        !listRef.current?.contains(target)
+      ) {
+        setOpen(false)
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    place()
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    // Reposiciona enquanto aberto: a página pode rolar (o trigger se move) e a
+    // janela pode ser redimensionada.
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open])
+
+  const selected = allOptions.find((option) => option.value === value)
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex min-h-12 w-full items-center justify-between gap-2 rounded-xl border border-input bg-white px-3 py-2 text-left text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+      >
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{selected?.label ?? value}</span>
+          {selected?.offset ? (
+            <span className="text-xs text-slate-500">{selected.offset}</span>
+          ) : null}
+        </span>
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 text-slate-400 transition-transform',
+            open && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {open && position
+        ? createPortal(
+            <ul
+              ref={listRef}
+              id={listboxId}
+              role="listbox"
+              style={{
+                top: position.top,
+                bottom: position.bottom,
+                left: position.left,
+                width: position.width,
+                maxHeight: position.maxHeight,
+              }}
+              className="fixed z-50 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+            >
+              {allOptions.map((option) => (
+                <li key={option.value}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    onClick={() => {
+                      onChange(option.value)
+                      setOpen(false)
+                    }}
+                    className={cn(
+                      'flex min-h-14 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50',
+                      option.value === value && 'bg-slate-50 font-medium'
+                    )}
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">{option.label}</span>
+                      {option.offset ? (
+                        <span className="text-xs text-slate-500">
+                          {option.offset}
+                        </span>
+                      ) : null}
+                    </span>
+                    {option.value === value ? (
+                      <Check className="size-4 shrink-0 text-blue-600" />
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>,
+            document.body
+          )
+        : null}
+    </div>
+  )
+}
+
 export function SettingsAdmin({
   rewardPricing,
   quickMessage,
@@ -141,6 +358,7 @@ export function SettingsAdmin({
   taskRules,
   houseTimezone,
   houseTimezoneOffset,
+  timezoneOptions,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -358,7 +576,7 @@ export function SettingsAdmin({
             aprovado.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex min-w-0 flex-col">
               <span className="text-sm font-semibold text-slate-700">
@@ -445,10 +663,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void savePricing()}
               disabled={pending}
             >
@@ -472,7 +690,7 @@ export function SettingsAdmin({
             sino.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field
               label="Máximo de caracteres"
@@ -527,10 +745,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveQuick()}
               disabled={pending}
             >
@@ -554,7 +772,7 @@ export function SettingsAdmin({
             prazo acende o chip &quot;Prazo próximo&quot; (SLA).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Prazo padrão de criação/restauro"
@@ -595,10 +813,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveSla()}
               disabled={pending}
             >
@@ -623,7 +841,7 @@ export function SettingsAdmin({
             prazo da mesma tarefa pode ser esticado.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="grid gap-4 sm:max-w-xs">
             <Field
               label="Máximo de adiamentos"
@@ -722,10 +940,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveExtensions()}
               disabled={pending}
             >
@@ -749,7 +967,7 @@ export function SettingsAdmin({
             já lida fica no sino antes de ser apagada.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="flex flex-col gap-2">
             <span className="text-sm font-semibold text-slate-700">
               Silenciar por categoria
@@ -813,10 +1031,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveRetention()}
               disabled={pending}
             >
@@ -840,7 +1058,7 @@ export function SettingsAdmin({
             criação, o valor cai até o prazo (depois de vencida não perde mais).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex min-w-0 flex-col">
               <span className="text-sm font-semibold text-slate-700">
@@ -901,10 +1119,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveDecay()}
               disabled={pending}
             >
@@ -928,7 +1146,7 @@ export function SettingsAdmin({
             dependente crescer sem limite. Zero desliga cada limite.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Teto de pontos"
@@ -967,10 +1185,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveRules()}
               disabled={pending}
             >
@@ -994,7 +1212,7 @@ export function SettingsAdmin({
             são cobrados e o dia que conta na Streak.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-1 flex-col gap-4">
           <div className="flex flex-col gap-2">
             <label
               htmlFor="house-timezone"
@@ -1002,23 +1220,11 @@ export function SettingsAdmin({
             >
               Fuso da casa
             </label>
-            <select
-              id="house-timezone"
+            <TimezoneSelect
               value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              className="min-h-10 w-full rounded-xl border border-input bg-white px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {/* Uma casa com fuso fora da lista (gravado por outro caminho)
-                  continua selecionável em vez de cair no primeiro item. */}
-              {HOUSE_TIMEZONE_OPTIONS.some((option) => option.value === timezone) ? null : (
-                <option value={timezone}>{timezone}</option>
-              )}
-              {HOUSE_TIMEZONE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              options={timezoneOptions}
+              onChange={setTimezone}
+            />
             <p className="text-xs text-slate-500">
               Padrão: Recife. Só os horários de comunicados e a contagem de dias da
               Streak usam isso — o prazo das tarefas continua sendo o horário do
@@ -1040,10 +1246,10 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
+<div className="mt-auto flex justify-end">
+              <Button
+                type="button"
+                size="sm"
               onClick={() => void saveTimezone()}
               disabled={pending}
             >

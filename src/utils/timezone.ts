@@ -140,6 +140,30 @@ export function zonedWallClockToInstant(
   return firstPass
 }
 
+/** Uma opção do seletor de fuso: nome IANA, rótulo e offset já formatado. */
+export type HouseTimezoneOption = {
+  value: string
+  label: string
+  /** Offset no instante da leitura (ex.: `UTC-03:00`). */
+  offset: string
+}
+
+/**
+ * Lista do seletor de fuso **com o offset de cada um**, calculada no servidor e
+ * repassada como prop: como o offset depende de `Intl`, calculá-lo no cliente
+ * durante o render criaria risco de hydration mismatch. O rótulo mostra o
+ * offset porque o nome da cidade sozinho não diz a diferença para quem mora em
+ * outra região.
+ */
+export function houseTimezoneOptions(
+  instant: Date = new Date()
+): HouseTimezoneOption[] {
+  return HOUSE_TIMEZONE_OPTIONS.map((option) => ({
+    ...option,
+    offset: formatZonedOffset(option.value, instant),
+  }))
+}
+
 /**
  * Offset do fuso no formato curto de exibição (`"UTC-03:00"`, `"UTC+01:00"`).
  *
