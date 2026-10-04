@@ -47,6 +47,7 @@ import {
   PlayCircle,
   X,
 } from 'lucide-react'
+import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
@@ -827,8 +828,8 @@ export function TasksAdmin({
         ) : null}
       </Card>
 
-      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+      <section className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
           <ListTodo className="size-4 text-blue-600" />
           Pendentes
         </h2>
@@ -840,311 +841,77 @@ export function TasksAdmin({
             message="Tudo limpo por aqui! Crie o próximo desafio. 🎉"
           />
         ) : (
-          pendingTasks.map((task) => {
-            const sla = getTaskSlaStatus(
-              task.due_date,
-              new Date(),
-              dueSoonHours
-            )
-            const slaInfo = taskSlaBadge[sla]
-            const cardClass =
-              sla === 'normal'
-                ? cn('border-l-4', taskAccentByStatus[task.status])
-                : taskSlaCardClass[sla]
-            const isExpanded = expandedIds.has(task.id)
-            const isNotDelivered = task.status === 'NOT_DELIVERED'
-            // Valor corrente sob o decaimento (base − perdas desde o start do
-            // decaimento até agora/prazo).
-            const currentPoints = getTaskCurrentPoints(
-              task.points,
-              getTaskDecayStart(task.created_at, task.decay_started_at),
-              task.due_date,
-              decay
-            )
-
-            return (
-              <Card key={task.id} className={cardClass}>
-                <CardContent className="flex flex-col gap-3 py-3">
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(task.id)}
-                    aria-expanded={isExpanded}
-                    className="flex w-full flex-wrap items-center gap-2 text-left"
-                  >
-                    <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
-                      {task.title}
-                    </span>
-                    <span className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      {!isNotDelivered && slaInfo ? (
-                        <span
-                          className={cn(
-                            'rounded-full px-2.5 py-1 text-xs font-medium',
-                            slaInfo.className
-                          )}
-                        >
-                          {slaInfo.label}
-                        </span>
-                      ) : null}
-                      <span
-                        className={cn(
-                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                          taskChipByStatus[task.status].className
-                        )}
-                      >
-                        {taskChipByStatus[task.status].label}
-                      </span>
-                    </span>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                        POINTS_PILL_CLASS
-                      )}
-                    >
-                      {currentPoints < task.points ? (
-                        <>
-                          {currentPoints} pts{' '}
-                          <span className="font-normal line-through opacity-60">
-                            {task.points}
-                          </span>
-                        </>
-                      ) : (
-                        `${task.points} pts`
-                      )}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                        isExpanded && 'rotate-180'
-                      )}
-                    />
-                  </button>
-
-                  {isExpanded ? (
-                    <>
-                      {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
-                      {task.image_url ? (
-                        <img
-                          src={task.image_url}
-                          alt=""
-                          className="h-32 w-full rounded-xl border border-slate-200 object-cover"
-                        />
-                      ) : null}
-
-                      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                        <DebouncedField
-                          value={task.title}
-                          onSave={saveTitle(task.id)}
-                          placeholder="Título da tarefa"
-                          onSavingStatusChange={(status) => {
-                            setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
-                          }}
-                        />
-
-                        <label className="flex items-center gap-2 text-sm">
-                          <span className="text-slate-500">Atribuída a</span>
-                          <select
-                            value={task.assigned_to ?? ''}
-                            onChange={(event) => changeAssignee(task, event.target.value)}
-                            className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
-                          >
-                            <option value="">Sem atribuição</option>
-                            {assignees.map((assignee) => (
-                              <option key={assignee.id} value={assignee.id}>
-                                {assignee.full_name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <DebouncedField
-                        value={task.description ?? ''}
-                        onSave={saveDescription(task.id)}
-                        textarea
-                        placeholder="Descrição (opcional)"
-                        onSavingStatusChange={(status) => {
-                          setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
-                        }}
-                      />
-
-                      {task.extension_requested ? (
-                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                          <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
-                            <Clock3 className="size-4" />
-                            Pedido de adiamento
-                          </p>
-                          <p className="mt-1 text-sm text-blue-700">
-                            {task.extension_reason ?? 'Sem justificativa informada.'}
-                          </p>
-                          {isNotDelivered ? (
-                            <p className="mt-1 text-xs text-blue-700">
-                              A penalidade é definitiva: aprovar reabre a tarefa
-                              valendo 0, sem devolver os pontos debitados.
-                            </p>
-                          ) : null}
-                          {maxExtensions > 0 ? (
-                            <p className="mt-1 text-xs text-blue-700">
-                              Esta tarefa já teve {task.extension_count} de{' '}
-                              {maxExtensions} adiamento(s) da casa.
-                            </p>
-                          ) : null}
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {extensionDayOptions.map((days) => (
-                              <Button
-                                key={days}
-                                type="button"
-                                size="sm"
-                                disabled={pending}
-                                className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
-                                onClick={() => handleResolveExtension(task, true, days)}
-                              >
-                                Aprovar (+{days} {days === 1 ? 'dia' : 'dias'})
-                              </Button>
-                            ))}
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={pending}
-                              className="min-h-9 text-slate-600"
-                              onClick={() => handleResolveExtension(task, false)}
-                            >
-                              <X className="size-3.5" /> Rejeitar
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div
-                        className={cn(
-                          'grid gap-3',
-                          isNotDelivered ? 'grid-cols-1' : 'grid-cols-2'
-                        )}
-                      >
-                        {!isNotDelivered ? (
-                          <div className="grid gap-1">
-                            <span className="text-xs text-slate-500">Pontos</span>
-                            <DebouncedField
-                              value={String(task.points)}
-                              onSave={savePoints(task.id)}
-                              type="number"
-                              onSavingStatusChange={(status) => {
-                                setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
-                              }}
-                            />
-                          </div>
-                        ) : null}
-                        <div className="grid gap-1">
-                          <span className="text-xs text-slate-500">
-                            Data limite
-                          </span>
-                          <DebouncedField
-                            value={isoToDateTimeLocalValue(task.due_date)}
-                            onSave={saveDueDate(task.id)}
-                            type="datetime-local"
-                            onSavingStatusChange={(status) => {
-                              setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {isNotDelivered ? (
-                        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                          Tarefa marcada como não entregue — {currentPoints} pt(s) já
-                          debitado(s) do dependente. A penalidade é definitiva: aprovar
-                          um adiamento (ou alterar o prazo) reabre a tarefa valendo 0
-                          pontos — os pontos debitados não voltam.
-                        </p>
-                      ) : (
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          {/* Se estiver salvando/salvo, oculta o botão verde e exibe a mensagem de feedback */}
-                          {(savingStatuses[task.id] ?? 'idle') !== 'idle' ? (
-                            <div className="flex w-full items-center justify-center rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-medium sm:flex-1">
-                              {savingStatuses[task.id] === 'saving' && (
-                                <span className="text-slate-500 animate-pulse">⏳ Salvando alterações...</span>
-                              )}
-                              {savingStatuses[task.id] === 'saved' && (
-                                <span className="text-emerald-600 font-semibold">✓ Alterações salvas</span>
-                              )}
-                            </div>
-                          ) : (
-                            <Button
-                              type="button"
-                              onClick={() => handleAdminComplete(task)}
-                              disabled={pending}
-                              className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
-                            >
-                              {pending
-                                ? 'Concluindo...'
-                                : 'Aprovar Tarefa e Creditar'}
-                            </Button>
-                          )}
-
-                          {/* O botão 'Marcar como não entregue' também só aparece se não estiver editando */}
-                          {sla === 'overdue' && (savingStatuses[task.id] ?? 'idle') === 'idle' ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => handleMarkNotDelivered(task)}
-                              disabled={pending}
-                              className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
-                            >
-                              Marcar como não entregue
-                            </Button>
-                          ) : null}
-                        </div>
-                      )}
-
-                      {/* Pausar: some da lista do dependente (vale também para a
-                          "não entregue" — a penalidade continua definitiva). */}
-                      {(savingStatuses[task.id] ?? 'idle') === 'idle' ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => handleSetOnHold(task, true)}
-                          disabled={pending}
-                          className="w-full text-slate-600"
-                        >
-                          <PauseCircle className="size-4" />
-                          {pending ? 'Colocando...' : 'Colocar em espera'}
-                        </Button>
-                      ) : null}
-                    </>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })
-        )}
-      </section>
-
-      {/* Tarefas pausadas: visíveis só para o ADMIN, com o botão de reativar
-          sempre à vista (fora do toggle), como o "Restaurar" das aprovadas. */}
-      {heldTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
-            <PauseCircle className="size-4 text-slate-400" />
-            Em espera
-          </h2>
-          {heldTasks.map((task) => {
-            const isExpanded = expandedIds.has(task.id)
-
-            return (
-              <Card
-                key={task.id}
-                className="border-l-4 border-l-slate-400"
-              >
-                <CardContent className="flex flex-col gap-1 py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+          {pendingTasks.map((task) => {
+              const sla = getTaskSlaStatus(
+                task.due_date,
+                new Date(),
+                dueSoonHours
+              )
+              const slaInfo = taskSlaBadge[sla]
+              const cardClass =
+                sla === 'normal'
+                  ? cn('border-l-4', taskAccentByStatus[task.status])
+                  : taskSlaCardClass[sla]
+              const isExpanded = expandedIds.has(task.id)
+              const isNotDelivered = task.status === 'NOT_DELIVERED'
+              // Valor corrente sob o decaimento (base − perdas desde o start do
+              // decaimento até agora/prazo).
+              const currentPoints = getTaskCurrentPoints(
+                task.points,
+                getTaskDecayStart(task.created_at, task.decay_started_at),
+                task.due_date,
+                decay
+              )
+  
+              return (
+                <Card key={task.id} className={cardClass}>
+                  <CardContent className="flex flex-col gap-3 py-3">
                     <button
                       type="button"
                       onClick={() => toggleExpanded(task.id)}
                       aria-expanded={isExpanded}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex w-full flex-wrap items-center gap-2 text-left"
                     >
-                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                      <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
                         {task.title}
+                      </span>
+                      <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                        {!isNotDelivered && slaInfo ? (
+                          <span
+                            className={cn(
+                              'rounded-full px-2.5 py-1 text-xs font-medium',
+                              slaInfo.className
+                            )}
+                          >
+                            {slaInfo.label}
+                          </span>
+                        ) : null}
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                            taskChipByStatus[task.status].className
+                          )}
+                        >
+                          {taskChipByStatus[task.status].label}
+                        </span>
+                      </span>
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                          POINTS_PILL_CLASS
+                        )}
+                      >
+                        {currentPoints < task.points ? (
+                          <>
+                            {currentPoints} pts{' '}
+                            <span className="font-normal line-through opacity-60">
+                              {task.points}
+                            </span>
+                          </>
+                        ) : (
+                          `${task.points} pts`
+                        )}
                       </span>
                       <ChevronDown
                         className={cn(
@@ -1153,125 +920,363 @@ export function TasksAdmin({
                         )}
                       />
                     </button>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <span
-                        className={cn(
-                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                          taskChipByStatus.ON_HOLD.className
-                        )}
-                      >
-                        {taskChipByStatus.ON_HOLD.label}
-                      </span>
-                      <span
-                        className={cn(
-                          'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                          POINTS_PILL_CLASS
-                        )}
-                      >
-                        {task.points} pts
-                      </span>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleSetOnHold(task, false)}
-                        disabled={pending}
-                        className="min-h-9 shrink-0 text-slate-600"
-                      >
-                        <PlayCircle className="size-4" />
-                        {pending ? 'Reativando...' : 'Voltar para pendente'}
-                      </Button>
-                    </div>
-                  </div>
-                  {isExpanded ? (
-                    <>
-                      {task.image_url ? (
-                        <img
-                          src={task.image_url}
-                          alt=""
-                          className="mt-1 h-32 w-full rounded-xl border border-slate-200 object-cover"
-                        />
-                      ) : null}
-
-                      {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
-                          edição: os mesmos campos do card pendente, com salvamento
-                          automático. O status continua sendo ON_HOLD — só o botão
-                          "Voltar para pendente" reativa. */}
-                      <div className="mt-2 grid gap-3 md:grid-cols-[1fr_auto]">
-                        <DebouncedField
-                          value={task.title}
-                          onSave={saveTitle(task.id)}
-                          placeholder="Título da tarefa"
-                        />
-
-                        <label className="flex items-center gap-2 text-sm">
-                          <span className="text-slate-500">Atribuída a</span>
-                          <select
-                            value={task.assigned_to ?? ''}
-                            onChange={(event) => changeAssignee(task, event.target.value)}
-                            className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
-                          >
-                            <option value="">Sem atribuição</option>
-                            {assignees.map((assignee) => (
-                              <option key={assignee.id} value={assignee.id}>
-                                {assignee.full_name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <DebouncedField
-                        value={task.description ?? ''}
-                        onSave={saveDescription(task.id)}
-                        textarea
-                        placeholder="Descrição (opcional)"
-                      />
-
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="grid gap-1">
-                          <span className="text-xs text-slate-500">Pontos</span>
-                          <DebouncedField
-                            value={String(task.points)}
-                            onSave={savePoints(task.id)}
-                            type="number"
+  
+                    {isExpanded ? (
+                      <>
+                        {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
+                        {task.image_url ? (
+                          <img
+                            src={task.image_url}
+                            alt=""
+                            className="h-32 w-full rounded-xl border border-slate-200 object-cover"
                           />
+                        ) : null}
+  
+                        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                          <DebouncedField
+                            value={task.title}
+                            onSave={saveTitle(task.id)}
+                            placeholder="Título da tarefa"
+                            onSavingStatusChange={(status) => {
+                              setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                            }}
+                          />
+  
+                          <label className="flex items-center gap-2 text-sm">
+                            <span className="text-slate-500">Atribuída a</span>
+                            <select
+                              value={task.assigned_to ?? ''}
+                              onChange={(event) => changeAssignee(task, event.target.value)}
+                              className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
+                            >
+                              <option value="">Sem atribuição</option>
+                              {assignees.map((assignee) => (
+                                <option key={assignee.id} value={assignee.id}>
+                                  {assignee.full_name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                        {/* Prazo não é editável aqui: a reativação SEMPRE calcula um
-                            prazo novo (agora + padrão da casa), então editar o
-                            campo agora seria descartado em silêncio. */}
-                        <div className="grid gap-1">
-                          <span className="text-xs text-slate-500">
-                            Prazo atual (temporário)
-                          </span>
-                          <p className="flex min-h-12 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
-                            {task.due_date ? (
-                              <FormattedDateTime iso={task.due_date} />
-                            ) : (
-                              'sem prazo'
-                            )}
+  
+                        <DebouncedField
+                          value={task.description ?? ''}
+                          onSave={saveDescription(task.id)}
+                          textarea
+                          placeholder="Descrição (opcional)"
+                          onSavingStatusChange={(status) => {
+                            setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                          }}
+                        />
+  
+                        {task.extension_requested ? (
+                          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                            <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+                              <Clock3 className="size-4" />
+                              Pedido de adiamento
+                            </p>
+                            <p className="mt-1 text-sm text-blue-700">
+                              {task.extension_reason ?? 'Sem justificativa informada.'}
+                            </p>
+                            {isNotDelivered ? (
+                              <p className="mt-1 text-xs text-blue-700">
+                                A penalidade é definitiva: aprovar reabre a tarefa
+                                valendo 0, sem devolver os pontos debitados.
+                              </p>
+                            ) : null}
+                            {maxExtensions > 0 ? (
+                              <p className="mt-1 text-xs text-blue-700">
+                                Esta tarefa já teve {task.extension_count} de{' '}
+                                {maxExtensions} adiamento(s) da casa.
+                              </p>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {extensionDayOptions.map((days) => (
+                                <Button
+                                  key={days}
+                                  type="button"
+                                  size="sm"
+                                  disabled={pending}
+                                  className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
+                                  onClick={() => handleResolveExtension(task, true, days)}
+                                >
+                                  Aprovar (+{days} {days === 1 ? 'dia' : 'dias'})
+                                </Button>
+                              ))}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={pending}
+                                className="min-h-9 text-slate-600"
+                                onClick={() => handleResolveExtension(task, false)}
+                              >
+                                <X className="size-3.5" /> Rejeitar
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+  
+                        <div
+                          className={cn(
+                            'grid gap-3',
+                            isNotDelivered ? 'grid-cols-1' : 'grid-cols-2'
+                          )}
+                        >
+                          {!isNotDelivered ? (
+                            <div className="grid gap-1">
+                              <span className="text-xs text-slate-500">Pontos</span>
+                              <DebouncedField
+                                value={String(task.points)}
+                                onSave={savePoints(task.id)}
+                                type="number"
+                                onSavingStatusChange={(status) => {
+                                  setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          <div className="grid gap-1">
+                            <span className="text-xs text-slate-500">
+                              Data limite
+                            </span>
+                            <DebouncedField
+                              value={isoToDateTimeLocalValue(task.due_date)}
+                              onSave={saveDueDate(task.id)}
+                              type="datetime-local"
+                              onSavingStatusChange={(status) => {
+                                setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
+                              }}
+                            />
+                          </div>
+                        </div>
+  
+                        {isNotDelivered ? (
+                          <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                            Tarefa marcada como não entregue — {currentPoints} pt(s) já
+                            debitado(s) do dependente. A penalidade é definitiva: aprovar
+                            um adiamento (ou alterar o prazo) reabre a tarefa valendo 0
+                            pontos — os pontos debitados não voltam.
                           </p>
-                        </div>
-                      </div>
+                        ) : (
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            {/* Se estiver salvando/salvo, oculta o botão verde e exibe a mensagem de feedback */}
+                            {(savingStatuses[task.id] ?? 'idle') !== 'idle' ? (
+                              <div className="flex w-full items-center justify-center rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-medium sm:flex-1">
+                                {savingStatuses[task.id] === 'saving' && (
+                                  <span className="text-slate-500 animate-pulse">⏳ Salvando alterações...</span>
+                                )}
+                                {savingStatuses[task.id] === 'saved' && (
+                                  <span className="text-emerald-600 font-semibold">✓ Alterações salvas</span>
+                                )}
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                onClick={() => handleAdminComplete(task)}
+                                disabled={pending}
+                                className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
+                              >
+                                {pending
+                                  ? 'Concluindo...'
+                                  : 'Aprovar Tarefa e Creditar'}
+                              </Button>
+                            )}
+  
+                            {/* O botão 'Marcar como não entregue' também só aparece se não estiver editando */}
+                            {sla === 'overdue' && (savingStatuses[task.id] ?? 'idle') === 'idle' ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleMarkNotDelivered(task)}
+                                disabled={pending}
+                                className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
+                              >
+                                Marcar como não entregue
+                              </Button>
+                            ) : null}
+                          </div>
+                        )}
+  
+                        {/* Pausar: some da lista do dependente (vale também para a
+                            "não entregue" — a penalidade continua definitiva). */}
+                        {(savingStatuses[task.id] ?? 'idle') === 'idle' ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleSetOnHold(task, true)}
+                            disabled={pending}
+                            className="w-full text-slate-600"
+                          >
+                            <PauseCircle className="size-4" />
+                            {pending ? 'Colocando...' : 'Colocar em espera'}
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+        </CardColumns>
+        )}
+      </section>
 
-                      <p className="mt-1 text-xs text-slate-400">
-                        Em espera: invisível para o dependente (ele não vê, não
-                        conclui e não pede mais tempo). Você pode editar o que
-                        quiser; ao voltar, ela retorna como pendente com prazo
-                        novo e o decaimento reiniciado
-                        {task.points === 0
-                          ? ' — valendo 0 pontos (penalidade já aplicada).'
-                          : '.'}
-                      </p>
-                    </>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })}
+      {/* Tarefas pausadas: visíveis só para o ADMIN, com o botão de reativar
+          sempre à vista (fora do toggle), como o "Restaurar" das aprovadas. */}
+      {heldTasks.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+            <PauseCircle className="size-4 text-slate-400" />
+            Em espera
+          </h2>
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {heldTasks.map((task) => {
+              const isExpanded = expandedIds.has(task.id)
+  
+              return (
+                <Card
+                  key={task.id}
+                  className="border-l-4 border-l-slate-400"
+                >
+                  <CardContent className="flex flex-col gap-1 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                          {task.title}
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                            taskChipByStatus.ON_HOLD.className
+                          )}
+                        >
+                          {taskChipByStatus.ON_HOLD.label}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                            POINTS_PILL_CLASS
+                          )}
+                        >
+                          {task.points} pts
+                        </span>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleSetOnHold(task, false)}
+                          disabled={pending}
+                          className="min-h-9 shrink-0 text-slate-600"
+                        >
+                          <PlayCircle className="size-4" />
+                          {pending ? 'Reativando...' : 'Voltar para pendente'}
+                        </Button>
+                      </div>
+                    </div>
+                    {isExpanded ? (
+                      <>
+                        {task.image_url ? (
+                          <img
+                            src={task.image_url}
+                            alt=""
+                            className="mt-1 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                          />
+                        ) : null}
+  
+                        {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
+                            edição: os mesmos campos do card pendente, com salvamento
+                            automático. O status continua sendo ON_HOLD — só o botão
+                            "Voltar para pendente" reativa. */}
+                        <div className="mt-2 grid gap-3 md:grid-cols-[1fr_auto]">
+                          <DebouncedField
+                            value={task.title}
+                            onSave={saveTitle(task.id)}
+                            placeholder="Título da tarefa"
+                          />
+  
+                          <label className="flex items-center gap-2 text-sm">
+                            <span className="text-slate-500">Atribuída a</span>
+                            <select
+                              value={task.assigned_to ?? ''}
+                              onChange={(event) => changeAssignee(task, event.target.value)}
+                              className="min-h-12 rounded-xl border border-input bg-white px-2 text-xs outline-none focus-visible:border-ring"
+                            >
+                              <option value="">Sem atribuição</option>
+                              {assignees.map((assignee) => (
+                                <option key={assignee.id} value={assignee.id}>
+                                  {assignee.full_name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+  
+                        <DebouncedField
+                          value={task.description ?? ''}
+                          onSave={saveDescription(task.id)}
+                          textarea
+                          placeholder="Descrição (opcional)"
+                        />
+  
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-1">
+                            <span className="text-xs text-slate-500">Pontos</span>
+                            <DebouncedField
+                              value={String(task.points)}
+                              onSave={savePoints(task.id)}
+                              type="number"
+                            />
+                          </div>
+                          {/* Prazo não é editável aqui: a reativação SEMPRE calcula um
+                              prazo novo (agora + padrão da casa), então editar o
+                              campo agora seria descartado em silêncio. */}
+                          <div className="grid gap-1">
+                            <span className="text-xs text-slate-500">
+                              Prazo atual (temporário)
+                            </span>
+                            <p className="flex min-h-12 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                              {task.due_date ? (
+                                <FormattedDateTime iso={task.due_date} />
+                              ) : (
+                                'sem prazo'
+                              )}
+                            </p>
+                          </div>
+                        </div>
+  
+                        <p className="mt-1 text-xs text-slate-400">
+                          Em espera: invisível para o dependente (ele não vê, não
+                          conclui e não pede mais tempo). Você pode editar o que
+                          quiser; ao voltar, ela retorna como pendente com prazo
+                          novo e o decaimento reiniciado
+                          {task.points === 0
+                            ? ' — valendo 0 pontos (penalidade já aplicada).'
+                            : '.'}
+                        </p>
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </CardColumns>
         </section>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+      <section className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
           <ClipboardList className="size-4 text-amber-500" />
           Concluídas — aguardando aprovação
         </h2>
@@ -1283,176 +1288,180 @@ export function TasksAdmin({
             message="Quando um dependente concluir uma tarefa, ela aparece aqui. 🎉"
           />
         ) : (
-          completedTasks.map((task) => {
-            const isExpanded = expandedIds.has(task.id)
-            // Valor corrente sob o decaimento (o que será creditado na aprovação).
-            const currentPoints = getTaskCurrentPoints(
-              task.points,
-              getTaskDecayStart(task.created_at, task.decay_started_at),
-              task.due_date,
-              decay
-            )
-
-            return (
-              <Card
-                key={task.id}
-                className="border-l-4 border-l-amber-400"
-              >
-                <CardContent className="flex flex-col gap-2 py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(task.id)}
-                      aria-expanded={isExpanded}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                        {task.title}
-                      </span>
-                      <ChevronDown
-                        className={cn(
-                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                          isExpanded && 'rotate-180'
-                        )}
-                      />
-                    </button>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                        {taskChipByStatus.COMPLETED.label}
-                      </span>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleRejectComplete(task)}
-                        disabled={pending}
-                        className="min-h-9 shrink-0 text-slate-600"
+        <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+          {completedTasks.map((task) => {
+              const isExpanded = expandedIds.has(task.id)
+              // Valor corrente sob o decaimento (o que será creditado na aprovação).
+              const currentPoints = getTaskCurrentPoints(
+                task.points,
+                getTaskDecayStart(task.created_at, task.decay_started_at),
+                task.due_date,
+                decay
+              )
+  
+              return (
+                <Card
+                  key={task.id}
+                  className="border-l-4 border-l-amber-400"
+                >
+                  <CardContent className="flex flex-col gap-2 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
-                        Desaprovar
-                      </Button>
-                      <Button
-                        onClick={() => handleApprove(task)}
-                        disabled={pending}
-                        className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
-                      >
-                        {pending ? (
-                          'Aprovando...'
-                        ) : (
-                          <>
-                            <span className="hidden sm:inline">
-                              Aprovar e creditar pontos
-                            </span>
-                            <span className="sm:hidden">Aprovar</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {isExpanded ? (
-                    <>
-                      {task.description ? (
-                        <p className="text-sm text-slate-500">{task.description}</p>
-                      ) : null}
-                      <p className="text-sm text-slate-500">
-                        {assigneeName(task.assigned_to)} ·{' '}
-                        <span
-                          className={cn(
-                            'rounded-full px-2 py-0.5 font-semibold',
-                            POINTS_PILL_CLASS
-                          )}
-                        >
-                          {currentPoints < task.points ? (
-                            <>
-                              {currentPoints} pts{' '}
-                              <span className="font-normal line-through opacity-60">
-                                {task.points}
-                              </span>
-                            </>
-                          ) : (
-                            `${task.points} pts`
-                          )}
+                        <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                          {task.title}
                         </span>
-                        {task.completed_at
-                          ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
-                          : ''}
-                      </p>
-                    </>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                          {taskChipByStatus.COMPLETED.label}
+                        </span>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleRejectComplete(task)}
+                          disabled={pending}
+                          className="min-h-9 shrink-0 text-slate-600"
+                        >
+                          Desaprovar
+                        </Button>
+                        <Button
+                          onClick={() => handleApprove(task)}
+                          disabled={pending}
+                          className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
+                        >
+                          {pending ? (
+                            'Aprovando...'
+                          ) : (
+                            <>
+                              <span className="hidden sm:inline">
+                                Aprovar e creditar pontos
+                              </span>
+                              <span className="sm:hidden">Aprovar</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+  
+                    {isExpanded ? (
+                      <>
+                        {task.description ? (
+                          <p className="text-sm text-slate-500">{task.description}</p>
+                        ) : null}
+                        <p className="text-sm text-slate-500">
+                          {assigneeName(task.assigned_to)} ·{' '}
+                          <span
+                            className={cn(
+                              'rounded-full px-2 py-0.5 font-semibold',
+                              POINTS_PILL_CLASS
+                            )}
+                          >
+                            {currentPoints < task.points ? (
+                              <>
+                                {currentPoints} pts{' '}
+                                <span className="font-normal line-through opacity-60">
+                                  {task.points}
+                                </span>
+                              </>
+                            ) : (
+                              `${task.points} pts`
+                            )}
+                          </span>
+                          {task.completed_at
+                            ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
+                            : ''}
+                        </p>
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+        </CardColumns>
         )}
       </section>
 
       {approvedTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+        <section className="flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
             <CircleCheckBig className="size-4 text-emerald-500" />
             Aprovadas
           </h2>
-          {approvedTasks.map((task) => {
-            const isExpanded = expandedIds.has(task.id)
-
-            return (
-              <Card
-                key={task.id}
-                className="border-l-4 border-l-emerald-500"
-              >
-                <CardContent className="flex flex-col gap-1 py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(task.id)}
-                      aria-expanded={isExpanded}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                        {task.title}
-                      </span>
-                      <ChevronDown
-                        className={cn(
-                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                          isExpanded && 'rotate-180'
-                        )}
-                      />
-                    </button>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                        {taskChipByStatus.APPROVED.label}
-                      </span>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleRestore(task)}
-                        disabled={pending}
-                        className="min-h-9 shrink-0 text-slate-600"
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {approvedTasks.map((task) => {
+              const isExpanded = expandedIds.has(task.id)
+  
+              return (
+                <Card
+                  key={task.id}
+                  className="border-l-4 border-l-emerald-500"
+                >
+                  <CardContent className="flex flex-col gap-1 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
-                        Restaurar
-                      </Button>
-                    </div>
-                  </div>
-                  {isExpanded ? (
-                    <>
-                      {task.description ? (
-                        <p className="mt-1 text-sm text-slate-500">{task.description}</p>
-                      ) : null}
-                      <p className="mt-1 text-sm text-slate-500">
-                        {assigneeName(task.assigned_to)} ·{' '}
-                        <span
-                          className={cn(
-                            'rounded-full px-2 py-0.5 font-semibold',
-                            POINTS_PILL_CLASS
-                          )}
-                        >
-                          {task.points} pts
+                        <span className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                          {task.title}
                         </span>
-                        {' · '}pontos creditados
-                      </p>
-                    </>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })}
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          {taskChipByStatus.APPROVED.label}
+                        </span>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleRestore(task)}
+                          disabled={pending}
+                          className="min-h-9 shrink-0 text-slate-600"
+                        >
+                          Restaurar
+                        </Button>
+                      </div>
+                    </div>
+                    {isExpanded ? (
+                      <>
+                        {task.description ? (
+                          <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                        ) : null}
+                        <p className="mt-1 text-sm text-slate-500">
+                          {assigneeName(task.assigned_to)} ·{' '}
+                          <span
+                            className={cn(
+                              'rounded-full px-2 py-0.5 font-semibold',
+                              POINTS_PILL_CLASS
+                            )}
+                          >
+                            {task.points} pts
+                          </span>
+                          {' · '}pontos creditados
+                        </p>
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </CardColumns>
         </section>
       ) : null}
     </div>

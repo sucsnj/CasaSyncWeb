@@ -15,31 +15,32 @@
   produto**; as regras atuais permanecem como estão. Registrado no **ADR-0023**
   para que não voltem como "pendência técnica" no futuro.
 - **Ainda não há deploy** dessas entregas.
-- **Masonry nas listas de cards do DEPENDENTE (piloto):** aplicado **somente** nas 3
-  seções de `tasks-dependent.tsx`, com validação visual do usuário **pendente**.
-  Enquanto ele não valida, as demais telas seguem com a regra anterior (`items-start`).
-  Ver a seção no topo do documento.
+- **Masonry nas listas de cards de TAREFAS:** aplicado nas **3 seções de
+  `tasks-dependent.tsx`** e nas **4 seções de `tasks-admin.tsx`** — o usuário
+  **validou na tela** o piloto ("muito agradável visualmente") e pediu a
+  continuidade no ADMIN. Configurações, Recompensas, Conquistas e Comunicados
+  seguem com a regra anterior (`items-start`). Ver a seção no topo do documento.
 
 ---
 
-## Masonry nas listas de cards do DEPENDENTE — o vão vazio entre cards (piloto — implementada, aguardando validação visual)
+## Masonry nas listas de cards de TAREFAS — o vão vazio entre cards (piloto validado e replicado no ADMIN)
 
 ### O que foi feito
 - **Sintoma (o motivo de ter ido além do `items-start`):** corrigir o card esticado resolvia a altura, mas o **vão vazio embaixo continuava visível** — o CSS Grid alinha as linhas, então o card seguinte só começa na linha de baixo, nunca "sobe" para o espaço deixado pelo vizinho mais alto. Em "Suas tarefas" (cards de altura variável, com botão "Pedir mais tempo" só em alguns) isso ocupa muito espaço vazio na tela larga.
-- **O que foi aplicado (piloto, só no DEPENDENTE):** as 3 seções de `tasks-dependent.tsx` (Suas tarefas / Aguardando aprovação / Concluídas) deixaram de ser grid. O `<section>` passou a `flex flex-col gap-3` e os cards vão para o novo primitivo **`src/components/ui/card-columns.tsx`** (`columns-1` + `[&>*]:break-inside-avoid`), com o resto no call site: `gap-x-3 xl:columns-2 [&>*]:mb-3`.
-  - **Heading e `EmptyState` saíram do container de colunas** (e com eles o `xl:col-span-2`): em multicol **não existe item de largura total**, então o título e o estado vazio ficariam presos na 1ª coluna. Agora ficam acima, em largura total, com o respiro do `gap-3` do `<section>`.
+- **O que foi aplicado:** as **3 seções de `tasks-dependent.tsx`** (Suas tarefas / Aguardando aprovação / Concluídas) e as **4 seções de `tasks-admin.tsx`** (Pendentes / Em espera / Concluídas — aguardando aprovação / Aprovadas) deixaram de ser grid. O `<section>` passou a `flex flex-col gap-3` e os cards vão para o primitivo **`src/components/ui/card-columns.tsx`** (`columns-1` + `[&>*]:break-inside-avoid`), com o resto no call site: `gap-x-3 xl:columns-2 [&>*]:mb-3`.
+  - **Heading e `EmptyState` saíram do container de colunas** (e com eles o `xl:col-span-2`): em multicol **não existe item de largura total**, então o título e o estado vazio ficariam presos na 1ª coluna. Agora ficam acima, em largura total, com o respiro do `gap-3` do `<section>`. As 4 seções do ADMIN têm o mesmo desenho (2 delas com `EmptyState`, 2 condicionais a `.length > 0`).
   - **Espaçamento vertical por `[&>*]:mb-3` no filho**, nunca por `row-gap`/`gap` vertical, que não é honrado de forma confiável em multicol.
-  - **Efeito colateral:** a varredura das 3 seções não encontrou mais `items-start`/`xl:col-span-2` — as duas classes ficaram sem uso no arquivo.
+  - **Efeito colateral:** a varredura das seções alteradas não encontrou mais `items-start`/`xl:col-span-2`/`xl:grid-cols-2` nelas — as classes ficaram sem uso nesses arquivos. **Os `md:col-span-2`/`md:grid-cols-2` do formulário de tarefa não foram tocados** (são grid de campo de formulário, não lista de cards).
 - **Por que CSS puro e não JS:** medição com `ResizeObserver` + posicionamento absoluto exigiria duplicar a fonte de verdade dos cards em estado do React, roda em cada `router.refresh()`/expansão e traz risco de sobreposição/flash. O multicol resolve em CSS, sem hydration e sem custo de runtime. **Masonry nativo** (`grid-lanes`/`item-flow: collapse`) foi verificado e está **fora de conta**: não é Baseline (Chrome/Edge atrás de flag, Firefox por `about:config`, só em Technology Preview no Safari). Quando vier, dá para trocar por `@supports` **sem mudar o markup** — por isso o primitivo é a única coisa que os call sites conhecem.
 
 ### Verificação
-`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Classes conferidas **no CSS gerado** (`.next/static/chunks/*.css`), como manda o `AGENTS.md` §2: `.columns-1{columns:1}`, `.xl\:columns-2{columns:2}`, `.gap-x-3{column-gap:…}`, `.\[\&\>\*\]\:break-inside-avoid>*{break-inside:avoid}` e `.\[\&\>\*\]\:mb-3>*{margin-bottom:…}` — todas presentes. As 3 transformações foram inspecionadas linha a linha (heading fora, `<CardColumns>` abrindo/fechando no lugar certo, ternário da seção 1 preservando o `EmptyState`).
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Classes conferidas **no CSS gerado** (`.next/static/chunks/*.css`), como manda o `AGENTS.md` §2: `.columns-1{columns:1}`, `.xl\:columns-2{columns:2}`, `.gap-x-3{column-gap:…}`, `.\[\&\>\*\]\:break-inside-avoid>*{break-inside:avoid}` e `.\[\&\>\*\]\:mb-3>*{margin-bottom:…}` — todas presentes. As transformações foram inspecionadas linha a linha (heading fora, `<CardColumns>` abrindo/fechando no lugar certo, ternário das seções com `EmptyState` preservado); o diff real de `tasks-admin.tsx` ignorando indentação é de 21 linhas inseridas / 12 removidas — o resto é só a reindentação inevitável de quem entra no wrapper.
 
 ### Pontos de atenção
-- **A ordem de leitura passa a ser por coluna.** Com colunas balanceadas, a 1ª linha mostra o card 1 e o ~card 4 (não 1 e 2). Foi uma decisão consciente do usuário, não é bug — mas vale confirmar na tela antes de replicar.
+- **A ordem de leitura passa a ser por coluna.** Com colunas balanceadas, a 1ª linha mostra o card 1 e o ~card 4 (não 1 e 2). Foi uma decisão consciente do usuário, **validada na tela** — não é bug.
 - **Não é rolagem infinita:** o balanceamento de colunas define a altura da seção pela coluna mais alta; com muitos cards, ela é a que mais cresce.
 - **Risco conhecido (o principal a validar na tela):** `break-inside: avoid` impede a quebra de um card entre colunas, mas um card **muito** alto (descrição longa + expandido) pode ultrapassar a altura da coluna. No mobile é 1 coluna, então não há fragmentação.
-- **Piloto deliberado:** vale **só** para `tasks-dependent.tsx` por enquanto. Tarefas ADMIN, Configurações e Recompensas seguem com `items-start` até o usuário validar a leitura em coluna — se ele validar, o caminho é replicar o primitivo (mudança local, sem JS) e o mesmo vale para Conquistas/Comunicados.
+- **Escopo:** vale para **Tarefas (ADMIN e DEPENDENTE)**. Configurações, Recompensas, Conquistas e Comunicados seguem com `items-start` — se o usuário quiser, o caminho é replicar o primitivo (mudança local, sem JS).
 - Requer deploy para valer online.
 
 ---
