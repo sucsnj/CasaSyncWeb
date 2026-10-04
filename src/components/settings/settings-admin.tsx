@@ -30,6 +30,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { CardColumns } from '@/components/ui/card-columns'
 import { cn } from '@/lib/utils'
 import type {
   ExtensionRulesSettings,
@@ -554,8 +555,8 @@ export function SettingsAdmin({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-      <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25 lg:col-span-2">
+    <div className="flex flex-col gap-6">
+      <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-white/85">
           Ajuste a economia de pontos, a mensagem rápida, os prazos de tarefas,
@@ -563,6 +564,7 @@ export function SettingsAdmin({
         </p>
       </header>
 
+      <CardColumns className="gap-x-6 lg:columns-2 [&>*]:mb-6">
       <Card>
         <CardHeader>
           <CardAction>
@@ -1259,6 +1261,7 @@ export function SettingsAdmin({
           </div>
         </CardContent>
       </Card>
+      </CardColumns>
     </div>
   )
 }
