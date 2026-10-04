@@ -15,11 +15,37 @@
   produto**; as regras atuais permanecem como estão. Registrado no **ADR-0023**
   para que não voltem como "pendência técnica" no futuro.
 - **Ainda não há deploy** dessas entregas.
-- **Masonry nas listas de cards de TAREFAS:** aplicado nas **3 seções de
-  `tasks-dependent.tsx`** e nas **4 seções de `tasks-admin.tsx`** — o usuário
-  **validou na tela** o piloto ("muito agradável visualmente") e pediu a
-  continuidade no ADMIN. Configurações, Recompensas, Conquistas e Comunicados
-  seguem com a regra anterior (`items-start`). Ver a seção no topo do documento.
+- **Masonry nas listas de cards:** aplicado nas **3 seções de
+  `tasks-dependent.tsx`**, nas **4 seções de `tasks-admin.tsx`**, na **Loja
+  de recompensas** do dependente (`rewards-dependent.tsx`) e nos **8 cards de
+  Configurações** (`settings-admin.tsx`). O usuário **validou na tela** o piloto
+  em Tarefas ("muito agradável visualmente") e pediu a continuidade nas outras
+  telas. **Conquistas e Comunicados** ainda seguem com a regra anterior
+  (`items-start`). Ver as seções no topo do documento.
+
+---
+
+## Masonry em Recompensas (dependente) e Configurações — o primitivo replicado nas telas restantes (concluído — sem mudança de schema)
+
+### O que foi feito
+- **Continuidade do masonry de Tarefas** (seção abaixo): o mesmo primitivo `src/components/ui/card-columns.tsx` foi replicado nas duas telas seguintes — sem JS, sem markup novo, só a troca do wrapper.
+- **Loja de recompensas do DEPENDENTE (`rewards-dependent.tsx`):** a grade `grid gap-3 sm:grid-cols-2 sm:items-start xl:grid-cols-3` da seção "Loja de recompensas" virou `<CardColumns className="gap-x-3 sm:columns-2 xl:columns-3 [&>*]:mb-3">`. **Números de colunas preservados** (1 no mobile, 2 em `sm:`, 3 em `xl:`) — muda o empacotamento, não a densidade. **O heading, a busca, o form de sugestão e o `EmptyState` já estavam fora** do container de cards (ramo do ternário), então não houve o problema do item de largura total preso na 1ª coluna. É aqui que o card é **mais dinâmico**: a altura varia por **imagem + descrição de comprimento variável**.
+- **Configurações do ADMIN (`settings-admin.tsx`):** o container `grid gap-6 lg:grid-cols-2 lg:items-start` virou `flex flex-col gap-6` + `<CardColumns className="gap-x-6 lg:columns-2 [&>*]:mb-6">` nos **8 cards** (Economia de pontos, Mensagem rápida, Prazos de tarefas, Adiamento de tarefas, Notificações, Decaimento de pontos, Limites de tarefas, Fuso horário).
+  - **O banner azul de largura total saiu do multicol** (e com ele o `lg:col-span-2`): em multicol não existe item de largura total, então ele ficaria preso na 1ª coluna. É a **diferença estrutural** em relação às outras telas — aqui havia um item de largura total, não só heading.
+  - **Grades internas dos formulários intactas:** os `sm:grid-cols-2`/`sm:grid-cols-3` dentro dos `CardContent` (Economia, Mensagem rápida, Notificações, Limites) são grids de **campo de formulário**, não listas de cards — não foram tocados.
+  - **Espaçamento 6 preservado:** o `gap-6` (1.5rem) foi dividido em `gap-x-6` (horizontal) + `[&>*]:mb-6` (vertical, no filho) — mesma métrica, então o respiro entre cards não muda.
+- **Efeito colateral:** `sm:items-start` (loja) e `lg:items-start` (Configurações) foram **removidos** — em multicol cada card já ocupa só a altura do próprio conteúdo. Diff real de cada arquivo **ignorando indentação**: `rewards-dependent.tsx` **3 linhas inseridas / 2 removidas**, `settings-admin.tsx` **5 / 2**.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Classes conferidas **no CSS gerado** (`.next/static/chunks/*.css`), como manda o `AGENTS.md` §2 — `rewards-dependent.tsx`: `.sm\:columns-2{columns:2}`, `.xl\:columns-3{columns:3}`, `.gap-x-3`, `.\[\&\>\*\]\:break-inside-avoid>*{break-inside:avoid}` e `.\[\&\>\*\]\:mb-3>*{margin-bottom:…}`; `settings-admin.tsx`: `.lg\:columns-2{columns:2}`, `.gap-x-6{column-gap:calc(var(--spacing) * 6)}` e `.\[\&\>\*\]\:mb-6>*{margin-bottom:calc(var(--spacing) * 6)}` — todas presentes (`.columns-1` vem do primitivo). As duas transformações foram inspecionadas linha a linha (banner/heading fora, `<CardColumns>` abrindo e fechando no lugar certo, ternário da loja com `EmptyState` preservado).
+
+### Pontos de atenção
+- **A ordem de leitura por coluna também vale nestas telas:** na loja a 1ª linha mostra o card 1 e o ~3; em Configurações, card 1, 3 e 5. Em Configurações a ordem é mais semântica (é um menu de blocos) — se a ordem em coluna incomodar mais que o vão que ela elimina, o grid com `items-start` já resolvia o vão sem trocar a ordem de leitura.
+- **Em Configurações o item de largura total é o banner** (não um heading): qualquer coisa de largura total que entrar naquela tela precisa ficar **fora** do `CardColumns`.
+- **Não reintroduzir `items-start` junto com `CardColumns`** — em multicol não há `align-items: stretch`, então a classe é inofensiva mas enganosa.
+- **Indentação:** os 8 cards de Configurações **não foram reindentados** (ficaram 2 níveis "faltando" em relação ao wrapper) para manter o diff revisável — é puramente cosmético e nenhum linter do projeto cobra indentação (há **8** `<div className="flex justify-end">` pré-existentes na coluna 0, um por card, deixados como estão).
+- **Pendente do mesmo padrão:** Conquistas (`achievements-admin.tsx`, `achievements-dependent.tsx`) e Comunicados (`comunicados-admin.tsx`), que ainda usam `items-start`.
+- Requer deploy para valer online.
 
 ---
 
@@ -40,7 +66,7 @@
 - **A ordem de leitura passa a ser por coluna.** Com colunas balanceadas, a 1ª linha mostra o card 1 e o ~card 4 (não 1 e 2). Foi uma decisão consciente do usuário, **validada na tela** — não é bug.
 - **Não é rolagem infinita:** o balanceamento de colunas define a altura da seção pela coluna mais alta; com muitos cards, ela é a que mais cresce.
 - **Risco conhecido (o principal a validar na tela):** `break-inside: avoid` impede a quebra de um card entre colunas, mas um card **muito** alto (descrição longa + expandido) pode ultrapassar a altura da coluna. No mobile é 1 coluna, então não há fragmentação.
-- **Escopo:** vale para **Tarefas (ADMIN e DEPENDENTE)**. Configurações, Recompensas, Conquistas e Comunicados seguem com `items-start` — se o usuário quiser, o caminho é replicar o primitivo (mudança local, sem JS).
+- **Escopo:** ~~vale para **Tarefas (ADMIN e DEPENDENTE)**. Configurações, Recompensas, Conquistas e Comunicados seguem com `items-start`~~ — **superado**: Configurações e a loja de Recompensas do dependente também migraram para `CardColumns` (seção no topo). Restam **Conquistas** e **Comunicados** com `items-start`; o caminho é replicar o primitivo (mudança local, sem JS).
 - Requer deploy para valer online.
 
 ---
@@ -59,7 +85,7 @@
 ### Pontos de atenção
 - **Regra: card lado a lado não herda altura do vizinho.** Se um card novo for posto em grade com colunas, a grade precisa de `items-start` no breakpoint das colunas — sem isso o bug volta, e `lint`/`typecheck`/`build` **não** reclamam (é layout, não erro).
 - **Não reintroduzir `flex-1`/`mt-auto` como truque de alinhamento** em `CardContent`/wrapper de botão: eles só fazem sentido com altura igual entre vizinhos, que é exatamente o que esta mudança eliminou.
-- **Mesmo padrão, ainda NÃO aplicado, fora do que foi pedido:** as telas de **Conquistas** (`achievements-admin.tsx` e `achievements-dependent.tsx`) e **Comunicados** (`comunicados-admin.tsx`) também têm grades de cards com colunas e sufferiam do mesmo alongamento. Ficaram de fora porque o pedido foi Configurações/Tarefas/Recompensas — se quiser o mesmo comportamento lá, é acrescentar `items-start` na grade.
+- **Mesmo padrão, ainda NÃO aplicado, fora do que foi pedido:** as telas de **Conquistas** (`achievements-admin.tsx` e `achievements-dependent.tsx`) e **Comunicados** (`comunicados-admin.tsx`) também têm grades de cards com colunas e sufferiam do mesmo alongamento. Ficaram de fora porque o pedido foi Configurações/Tarefas/Recompensas — e Configurações/Recompensas já migraram para `CardColumns` (seção no topo), então o caminho lá é **replicar o primitivo**, não acrescentar `items-start`.
 - Requer deploy para valer online.
 
 ---
