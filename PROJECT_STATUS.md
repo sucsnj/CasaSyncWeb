@@ -22,6 +22,35 @@
   em Tarefas ("muito agradável visualmente") e pediu a continuidade nas outras
   telas. **Conquistas e Comunicados** ainda seguem com a regra anterior
   (`items-start`). Ver as seções no topo do documento.
+- **Rodapé ancorado nos cards de conquista do dependente:** o botão "Resgatar",
+  a barra de progresso e a pill de pontos desceram juntos para a base do card
+  (`mt-auto`) — sem isso o botão ficava grudado no texto, com um vão vazio
+  embaixo. Testado em tela. Ver a seção no topo do documento.
+
+---
+
+## Rodapé ancorado na base do card — conquistas do dependente (concluído — testado em tela, sem mudança de schema)
+
+### O que foi feito
+- **Pedido:** na tela `/achievements` do DEPENDENTE, o botão **"Resgatar"** (com a barra de progresso e a pill de pontos) deveria ficar **sempre na parte inferior do seu respectivo card**, e não logo abaixo do texto.
+- **Sintoma:** o card era uma sequência solta de blocos — ícone/título + chip de nível, descrição, pill `+N pts`, barra de progresso e botão — colados pelo `gap-3`. Como o grid **não tem `items-start`** (`achievements-dependent.tsx:153`), o card estica até a altura da linha (`align-items: stretch`), mas o conteúdo ficava todo agrupado no topo: o botão aparecia no meio do card e sobrava um **vão vazio embaixo dele**.
+- **Correção:** os três blocos de "metadado + ação" (pill de pontos + "Desbloqueada!", barra de progresso com `N / target` e o botão) foram agrupados em um **rodapé** único — `<div className="mt-auto flex flex-col gap-2">` — logo abaixo da descrição. O `Card` já era `flex flex-col`, então nada mais precisa mudar no card: o `mt-auto` empurra o rodapé para a base. O `gap-2` interno substitui o `gap-3` que existia entre os blocos soltos, então o rodapé fica um pouco mais compacto.
+- **O botão continua no mesmo lugar do fluxo** (`claimable` → botão, senão `claimed` → "Conquista resgatada 🎉", senão nada) e o wrapper do `useMemo`/`Realtime`/`handleClaim` não foi tocado — é mudança **de apresentação**, não de estado nem de regra.
+
+### A distinção que o `mt-auto` exige (importante para quem ler o código)
+O `AGENTS.md` §2 **proíbe** `mt-auto`/`flex-1` em `CardContent`/wrapper de botão — mas aquela regra é sobre **forçar altura igual entre vizinhos** (o truque que desfazia a regra do "card não herda a altura do vizinho"). Aqui o `mt-auto` serve a outro propósito: **ancorar o rodapé DENTRO do próprio card**, um padrão de card com footer. Não há cards vizinhos sendo igualados — cada card ancora o seu próprio rodapé. O comentário no JSX deixa isso explícito para a regra não ser lida como violação.
+
+Além disso o `mt-auto` é **inofensivo quando o card não estica**: sem espaço extra ele vira `0` e o `gap-3` do pai segue dando o respiro. Então o mesmo markup funciona nos dois regimes (card com altura natural ou card esticado pelo grid).
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Classes conferidas **no CSS gerado**, como manda o `AGENTS.md` §2: `.mt-auto{margin-top:auto}` ✓ e `.gap-2{gap:calc(var(--spacing) * 2)}` ✓. Diff real ignorando indentação: só **2 trechos** (abrir o rodapé + fechar) — o resto da inserção é a reindentação de quem entra no wrapper.
+
+### Pontos de atenção
+- **Bônus do grid sem `items-start`:** como os cards da mesma linha já esticam para a mesma altura, os **botões de uma mesma linha agora terminam na mesma altura** (antes cada um ficava na altura do próprio conteúdo). É o alinhamento que se esperava.
+- **O card da conquista secreta ficou como estava** (`achievements-dependent.tsx:169-189`): é um placeholder sem botão/progresso, então não tem rodapé para ancorar. Se ele esticar na linha, o texto fica no topo e sobra espaço embaixo — dá para ancorar também, se quiser consistência visual.
+- **Conquistas ainda NÃO migrou para masonry** (`CardColumns`): continua `grid gap-4 sm:grid-cols-2 xl:grid-cols-3`. Não foi tocado porque o pedido era o rodapé. **Se migrar para masonry no futuro, o `mt-auto` deixa de ter efeito** (em multicol o card já tem a altura do próprio conteúdo, então o rodapé fica na base naturalmente) — não vai quebrar nada, só deixa de ser necessário.
+- Testado em tela pelo usuário, sem inconsistência visual conhecida.
+- Requer deploy para valer online.
 
 ---
 

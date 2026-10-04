@@ -276,59 +276,68 @@ export function AchievementsDependent({
               <p className="text-sm text-slate-600">{achievement.description}</p>
             ) : null}
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-bold text-amber-700">
-                +{reward} pts
-              </span>
-              {unlocked && !claimed ? (
-                <span className="flex items-center gap-1 text-xs font-semibold text-amber-700">
-                  <PartyPopper className="size-4" /> Desbloqueada!
+            {/* Rodapé ancorado na base do card: recompensa, progresso e a ação
+                de resgatar descem juntos até o fim, então o botão não fica
+                grudado no texto (com um vão vazio depois dele). `mt-auto` só
+                empurra quando o card estica — quando não há espaço extra ele
+                vira 0 e o `gap-3` do pai segue dando o respiro. Isto NÃO é o
+                `mt-auto` proibido no `AGENTS.md` §2: aqui ele ancora o rodapé
+                DENTRO do próprio card, não força altura igual entre vizinhos. */}
+            <div className="mt-auto flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-bold text-amber-700">
+                  +{reward} pts
                 </span>
+                {unlocked && !claimed ? (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-amber-700">
+                    <PartyPopper className="size-4" /> Desbloqueada!
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-amber-400 transition-all duration-300"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+                <p
+                  className={cn(
+                    'text-xs',
+                    claimable
+                      ? 'flex items-center gap-1 font-semibold text-amber-700'
+                      : 'text-slate-500'
+                  )}
+                >
+                  {claimable ? (
+                    <>
+                      <Lock className="size-3.5 shrink-0" />
+                      {shownProgress} / {target} · travado até resgatar
+                    </>
+                  ) : (
+                    `${shownProgress} / ${target}`
+                  )}
+                </p>
+              </div>
+
+              {claimable ? (
+                <Button
+                  type="button"
+                  className="w-full bg-amber-500 text-slate-900 shadow-amber-500/25 hover:bg-amber-600"
+                  onClick={() => handleClaim(view)}
+                  disabled={claimingId !== null}
+                >
+                  {claimingId === achievement.id
+                    ? 'Resgatando…'
+                    : `Resgatar +${reward} PTS`}
+                </Button>
+              ) : claimed ? (
+                <p className="text-center text-xs text-emerald-600">
+                  Conquista resgatada. 🎉
+                </p>
               ) : null}
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-amber-400 transition-all duration-300"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-              <p
-                className={cn(
-                  'text-xs',
-                  claimable
-                    ? 'flex items-center gap-1 font-semibold text-amber-700'
-                    : 'text-slate-500'
-                )}
-              >
-                {claimable ? (
-                  <>
-                    <Lock className="size-3.5 shrink-0" />
-                    {shownProgress} / {target} · travado até resgatar
-                  </>
-                ) : (
-                  `${shownProgress} / ${target}`
-                )}
-              </p>
-            </div>
-
-            {claimable ? (
-              <Button
-                type="button"
-                className="w-full bg-amber-500 text-slate-900 shadow-amber-500/25 hover:bg-amber-600"
-                onClick={() => handleClaim(view)}
-                disabled={claimingId !== null}
-              >
-                {claimingId === achievement.id
-                  ? 'Resgatando…'
-                  : `Resgatar +${reward} PTS`}
-              </Button>
-            ) : claimed ? (
-              <p className="text-center text-xs text-emerald-600">
-                Conquista resgatada. 🎉
-              </p>
-            ) : null}
           </Card>
         )
       })}
