@@ -1,5 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
+## Zerar a contagem de uma conquista `MANUAL` (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **Nova Server Action `resetAchievementProgress(achievementId, profileId)`** (`src/actions/achievements.ts`): atalho para o caso em que o `−1` exigiria muitas cliques (objetivo alto) ou para recomeçar a contagem do zero. **Zera o ciclo**: `current_progress = 0` e `unlocked_at = null` — ou seja, um desbloqueio ainda não resgatado é **revogado** (o dependente perde o botão de resgate). O `level` (histórico de resgates) **nunca** muda.
+- **Mesmas guardas do `adjustAchievementProgress`:** só ADMIN da casa ativa, só conquista `MANUAL` da casa e alvo `DEPENDENT` membro; **exige progresso existente** (sem linha ou já em 0 → erro, não uma linha zerada). A gravação passa pelo `syncAchievementProgress` com `compute` fixo em `{ progress: 0, unlockedAt: null }`, reaproveitando o update atômico com guard + 1 retry (e escopo em `onlyAchievementId`, então não toca nas outras `MANUAL` da casa). **Sem notificação:** revogar não é desbloquear.
+- **Releitura de confirmação:** como o `syncAchievementProgress` é best-effort (nunca lança), a action relê a linha e só devolve `ok: true` se `current_progress` realmente estiver em `0` — o ADMIN nunca recebe "contagem zerada" com o dado velho. Devolve a linha gravada (`data.progress`) para a UI reconciliar, como no ajuste.
+- **UI (`achievements-admin.tsx`):** botão **`RotateCcw`** ("zerar contagem") no grupo `MANUAL` de cada dependente, só quando há progresso, com `Modal` de confirmação que avisa o quanto volta (`0/N`) e o efeito no desbloqueio. Resposta imediata: otimismo (barra a `0` na hora) + reconciliação pelo valor do servidor, rollback por snapshot em erro — o mesmo padrão do `+1`/`−1`. A reconciliação foi extraída para `mergeProgressSnapshot`, agora usada pelos dois handlers.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **Sem mudança de schema:** usa as colunas que já existem (`current_progress`/`unlocked_at`/`level`) e o mesmo helper de gravação do ajuste — não há caminho de escrita paralelo.
+- **Assinatura diferente do `adjustAchievementProgress`** (`amount` com sinal): o reset é uma operação absoluta (zerar), não um delta — uma action separada deixa a guarda de "valor não nulo" explícita em vez de um `amount = 0` mágico que passaria pela validação de "≠ 0".
+- Revogar desbloqueio é coerente com o `−1` (ADR-0019): um `unlocked_at` com progresso `0` manteria o botão de resgate ativo com a barra zerada.
+
+---
+
 ## Progresso de conquista trava no objetivo enquanto o resgate está pendente (implementado — sem mudança de schema)
 
 ### O que foi implementado

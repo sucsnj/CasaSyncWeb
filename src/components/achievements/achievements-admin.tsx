@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Minus, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   adjustAchievementProgress,
   createAchievement,
   deleteAchievement,
+  resetAchievementProgress,
   updateAchievement,
 } from '@/actions/achievements'
 import {
@@ -102,6 +103,14 @@ export function AchievementsAdmin({
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)
   const [adjustingKey, setAdjustingKey] = useState<string | null>(null)
+  // Alvo do "zerar contagem": pedido de confirmação antes de revogar o progresso
+  // (e o desbloqueio) que o dependente acumulou.
+  const [resetTarget, setResetTarget] = useState<{
+    achievement: Achievement
+    profileId: string
+    dependentName: string
+    progress: number
+  } | null>(null)
   // O form fica no topo da lista: ao editar um card mais abaixo, a tela rola
   // até ele e o foco cai no título (pronto para digitar).
   const formRef = useRef<HTMLDivElement>(null)
@@ -338,6 +347,27 @@ export function AchievementsAdmin({
     })
   }
 
+  /**
+   * Substitui a linha pelo valor autoritativo devolvido pela action (destrava o
+   * chip, o nível e a barra exatamente como ficaram gravados).
+   */
+  function mergeProgressSnapshot(
+    achievementId: string,
+    profileId: string,
+    saved: { level: number; current_progress: number; unlocked_at: string | null }
+  ) {
+    setProgress((prev) => {
+      const index = prev.findIndex(
+        (item) =>
+          item.achievement_id === achievementId && item.profile_id === profileId
+      )
+      if (index === -1) return prev
+      const next = [...prev]
+      next[index] = { ...next[index], ...saved }
+      return next
+    })
+  }
+
   async function handleAdjust(
     achievement: Achievement,
     profileId: string,
@@ -360,22 +390,8 @@ export function AchievementsAdmin({
         return
       }
 
-      // Confirma com o estado real do servidor (destrava o chip, o nível e a
-      // barra exatamente como ficaram gravados).
       const saved = res.data?.progress
-      if (saved) {
-        setProgress((prev) => {
-          const index = prev.findIndex(
-            (item) =>
-              item.achievement_id === achievement.id &&
-              item.profile_id === profileId
-          )
-          if (index === -1) return prev
-          const next = [...prev]
-          next[index] = { ...next[index], ...saved }
-          return next
-        })
-      }
+      if (saved) mergeProgressSnapshot(achievement.id, profileId, saved)
 
       toast.success(res.message ?? 'Progresso ajustado.')
     } catch {
@@ -383,6 +399,42 @@ export function AchievementsAdmin({
       toast.error('Falha ao ajustar o progresso.')
     } finally {
       setAdjustingKey(null)
+    }
+  }
+
+  async function handleReset() {
+    if (!resetTarget || adjustingKey) return
+    const { achievement, profileId } = resetTarget
+    const snapshot = progress
+    setAdjustingKey(`${achievement.id}:${profileId}:reset`)
+    // Otimista: a barra vai a 0 na hora. O `unlocked_at` sai no valor real.
+    mergeProgressSnapshot(achievement.id, profileId, {
+      level:
+        progress.find(
+          (item) =>
+            item.achievement_id === achievement.id && item.profile_id === profileId
+        )?.level ?? 1,
+      current_progress: 0,
+      unlocked_at: null,
+    })
+    try {
+      const res = await resetAchievementProgress(achievement.id, profileId)
+      if (!res.ok) {
+        setProgress(snapshot)
+        toast.error(res.error)
+        return
+      }
+
+      const saved = res.data?.progress
+      if (saved) mergeProgressSnapshot(achievement.id, profileId, saved)
+
+      toast.success(res.message ?? 'Contagem zerada.')
+    } catch {
+      setProgress(snapshot)
+      toast.error('Falha ao zerar a contagem.')
+    } finally {
+      setAdjustingKey(null)
+      setResetTarget(null)
     }
   }
 
@@ -818,6 +870,27 @@ export function AchievementsAdmin({
                                     >
                                       <Plus className="size-3.5" />
                                     </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700"
+                                      title="Zerar a contagem (revoga o desbloqueio se houver)"
+                                      disabled={
+                                        adjustingKey !== null ||
+                                        entry.current_progress <= 0
+                                      }
+                                      onClick={() =>
+                                        setResetTarget({
+                                          achievement,
+                                          profileId: dependent.id,
+                                          dependentName: dependent.full_name,
+                                          progress: entry.current_progress,
+                                        })
+                                      }
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                    </Button>
                                   </span>
                                 ) : null}
                               </span>
@@ -883,6 +956,48 @@ export function AchievementsAdmin({
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={resetTarget !== null}
+        onClose={() => setResetTarget(null)}
+        title="Zerar contagem"
+      >
+        {resetTarget ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600">
+              A contagem de <strong>{resetTarget.dependentName}</strong> em{' '}
+              <strong>{resetTarget.achievement.title}</strong> volta para{' '}
+              <strong>
+                0/{resetTarget.achievement.target_count}
+              </strong>
+              .
+              {capAchievementProgress(
+                resetTarget.progress,
+                resetTarget.achievement.target_count
+              ) >= resetTarget.achievement.target_count
+                ? ' Como a conquista está desbloqueada, o dependente perde o botão de resgate até a meta ser atingida de novo.'
+                : ''}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setResetTarget(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleReset}
+                disabled={adjustingKey !== null}
+              >
+                {adjustingKey !== null ? 'Zerando…' : 'Zerar contagem'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   )

@@ -499,6 +499,107 @@ export async function adjustAchievementProgress(
 }
 
 /**
+ * ADMIN **zera a contagem** de uma conquista de métrica `MANUAL` de um dependente
+ * da casa ativa — o atalho para o caso em que o `−1` exigiria muitas cliques
+ * (objetivo alto) ou para recomeçar a contagem do zero.
+ *
+ * Mesmas guardas do `adjustAchievementProgress`: só ADMIN da casa ativa, só
+ * conquista `MANUAL` da casa e alvo `DEPENDENT` membro. Zera **o ciclo**:
+ * `current_progress = 0` e `unlocked_at = null` — ou seja, um desbloqueio ainda
+ * não resgatado é **revogado** (o dependente perde o botão de resgate). O
+ * `level` (histórico de resgates) nunca muda, e exige progresso existente: sem
+ * linha (ou já em 0) a resposta é erro, não uma linha zerada.
+ *
+ * A gravação passa pelo `syncAchievementProgress` com `compute` fixo em
+ * `{ progress: 0, unlockedAt: null }`, que reaproveita o update atômico com guard
+ * + 1 retry. Nenhuma notificação: revogar não é desbloquear.
+ */
+export async function resetAchievementProgress(
+  achievementId: string,
+  profileId: string
+): Promise<ActionResult<{ progress: AchievementProgressSnapshot }>> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: achievement } = await admin
+    .from('achievements')
+    .select('id, house_id, metric_type')
+    .eq('id', achievementId)
+    .maybeSingle()
+
+  if (!achievement || achievement.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Conquista não encontrada nesta casa.' }
+  }
+  if (achievement.metric_type !== 'MANUAL') {
+    return {
+      ok: false,
+      error: 'Apenas conquistas de concessão manual aceitam ajuste do ADMIN.',
+    }
+  }
+
+  const { data: member } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', activeHouse.id)
+    .eq('profile_id', profileId)
+    .eq('role', 'DEPENDENT')
+    .maybeSingle()
+
+  if (!member) {
+    return { ok: false, error: 'Dependente não encontrado na casa.' }
+  }
+
+  const { data: currentRow } = await admin
+    .from('dependent_achievements')
+    .select('current_progress')
+    .eq('achievement_id', achievementId)
+    .eq('profile_id', profileId)
+    .maybeSingle()
+
+  if (!currentRow || currentRow.current_progress <= 0) {
+    return {
+      ok: false,
+      error: 'Este dependente não tem contagem para zerar nesta conquista.',
+    }
+  }
+
+  await syncAchievementProgress(
+    activeHouse.id,
+    profileId,
+    'MANUAL',
+    () => ({ progress: 0, unlockedAt: null }),
+    { onlyAchievementId: achievementId, actorId: auth.adminId }
+  )
+
+  const { data: updated, error: readError } = await admin
+    .from('dependent_achievements')
+    .select('level, current_progress, unlocked_at')
+    .eq('achievement_id', achievementId)
+    .eq('profile_id', profileId)
+    .maybeSingle()
+
+  // O sync é best-effort (nunca lança): a releitura confirma que a contagem
+  // zerou de fato, senão o ADMIN receberia "contagem zerada" com o dado velho.
+  if (readError || !updated || updated.current_progress !== 0) {
+    return {
+      ok: false,
+      error: 'Não foi possível zerar a contagem. Tente novamente.',
+    }
+  }
+
+  revalidatePath('/achievements')
+  return {
+    ok: true,
+    data: { progress: updated },
+    message: 'Contagem zerada.',
+  }
+}
+
+/**
  * DEPENDENTE resgata a recompensa de pontos de uma conquista desbloqueada da
  * própria casa. O "nível" sobe a cada resgate:
  *
@@ -511,7 +612,7 @@ export async function adjustAchievementProgress(
  *
  * Atomicidade: a linha de progresso avança com guard no `unlocked_at` lido
  * (repetível) ou no `level == 1` (não repetível) — duas janelas não resgatam o
- * mesmo desbloqueio. Falha no crédito revierte a linha.
+ * mesmo desbloqueio. Falha no crédito reverte a linha.
  */
 export async function claimAchievementReward(
   achievementId: string
