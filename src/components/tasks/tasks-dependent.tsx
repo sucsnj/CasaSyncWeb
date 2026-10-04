@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { Modal } from '@/components/ui/modal'
@@ -167,8 +168,8 @@ export function TasksDependent({
         </p>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+      <section className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
           <ListTodo className="size-4 text-blue-600" />
           Suas tarefas
         </h2>
@@ -181,274 +182,280 @@ export function TasksDependent({
             message="Tudo limpo por aqui! Aproveite o momento. 🎉"
           />
         ) : (
-          openTasks.map((task) => {
-            const sla = getTaskSlaStatus(
-              task.due_date,
-              new Date(),
-              dueSoonHours
-            )
-            const slaInfo = taskSlaBadge[sla]
-            // "Não entregue" tem card próprio (borda vermelha) e some o badge
-            // de SLA — o chip vermelho já comunica o estado.
-            const isNotDelivered = task.status === 'NOT_DELIVERED'
-            // Valor corrente sob o decaimento (o que o dependente recebe se concluir).
-            const currentPoints = getTaskCurrentPoints(
-              task.points,
-              getTaskDecayStart(task.created_at, task.decay_started_at),
-              task.due_date,
-              decay
-            )
-            const cardClass =
-              isNotDelivered || sla === 'normal'
-                ? cn('border-l-4', taskAccentByStatus[task.status])
-                : taskSlaCardClass[sla]
-
-            return (
-              <Card key={task.id} className={cardClass}>
-                <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                  <div className="min-w-0 flex-1">
-                    {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
-                    {task.image_url ? (
-                      <img
-                        src={task.image_url}
-                        alt=""
-                        className="mb-3 h-32 w-full rounded-xl border border-slate-200 object-cover"
-                      />
-                    ) : null}
-                    <p className="font-semibold text-slate-800">{task.title}</p>
-                    {task.description ? (
-                      <p className="mt-1 text-sm text-slate-500">
-                        {task.description}
-                      </p>
-                    ) : null}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      {!isNotDelivered && slaInfo ? (
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {openTasks.map((task) => {
+              const sla = getTaskSlaStatus(
+                task.due_date,
+                new Date(),
+                dueSoonHours
+              )
+              const slaInfo = taskSlaBadge[sla]
+              // "Não entregue" tem card próprio (borda vermelha) e some o badge
+              // de SLA — o chip vermelho já comunica o estado.
+              const isNotDelivered = task.status === 'NOT_DELIVERED'
+              // Valor corrente sob o decaimento (o que o dependente recebe se concluir).
+              const currentPoints = getTaskCurrentPoints(
+                task.points,
+                getTaskDecayStart(task.created_at, task.decay_started_at),
+                task.due_date,
+                decay
+              )
+              const cardClass =
+                isNotDelivered || sla === 'normal'
+                  ? cn('border-l-4', taskAccentByStatus[task.status])
+                  : taskSlaCardClass[sla]
+  
+              return (
+                <Card key={task.id} className={cardClass}>
+                  <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0 flex-1">
+                      {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
+                      {task.image_url ? (
+                        <img
+                          src={task.image_url}
+                          alt=""
+                          className="mb-3 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                        />
+                      ) : null}
+                      <p className="font-semibold text-slate-800">{task.title}</p>
+                      {task.description ? (
+                        <p className="mt-1 text-sm text-slate-500">
+                          {task.description}
+                        </p>
+                      ) : null}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        {!isNotDelivered && slaInfo ? (
+                          <span
+                            className={cn(
+                              'rounded-full px-2.5 py-1 text-xs font-medium',
+                              slaInfo.className
+                            )}
+                          >
+                            {slaInfo.label}
+                          </span>
+                        ) : null}
                         <span
                           className={cn(
                             'rounded-full px-2.5 py-1 text-xs font-medium',
-                            slaInfo.className
+                            taskChipByStatus[task.status].className
                           )}
                         >
-                          {slaInfo.label}
+                          {taskChipByStatus[task.status].label}
                         </span>
-                      ) : null}
-                      <span
-                        className={cn(
-                          'rounded-full px-2.5 py-1 text-xs font-medium',
-                          taskChipByStatus[task.status].className
-                        )}
-                      >
-                        {taskChipByStatus[task.status].label}
-                      </span>
-                      <span
-                        className={cn(
-                          'rounded-full px-2 py-0.5 text-sm font-semibold',
-                          POINTS_PILL_CLASS
-                        )}
-                      >
-                        {currentPoints < task.points ? (
-                          <>
-                            {currentPoints} pts{' '}
-                            <span className="font-normal line-through opacity-60">
-                              {task.points}
-                            </span>
-                          </>
-                        ) : (
-                          `${task.points} pts`
-                        )}
-                      </span>
-                      {task.due_date ? (
-                        <span className="text-sm text-slate-500">
-                          até <FormattedDateTime iso={task.due_date} />
+                        <span
+                          className={cn(
+                            'rounded-full px-2 py-0.5 text-sm font-semibold',
+                            POINTS_PILL_CLASS
+                          )}
+                        >
+                          {currentPoints < task.points ? (
+                            <>
+                              {currentPoints} pts{' '}
+                              <span className="font-normal line-through opacity-60">
+                                {task.points}
+                              </span>
+                            </>
+                          ) : (
+                            `${task.points} pts`
+                          )}
                         </span>
-                      ) : null}
-                      {task.extension_requested ? (
-                        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                          <Clock3 className="size-3" />
-                          Aguardando adiamento
-                        </span>
+                        {task.due_date ? (
+                          <span className="text-sm text-slate-500">
+                            até <FormattedDateTime iso={task.due_date} />
+                          </span>
+                        ) : null}
+                        {task.extension_requested ? (
+                          <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                            <Clock3 className="size-3" />
+                            Aguardando adiamento
+                          </span>
+                        ) : null}
+                      </div>
+                      {creatorNames[task.created_by] ? (
+                        <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-400">
+                          <UserRound className="size-3.5" />
+                          Criada por {creatorNames[task.created_by]}
+                        </p>
                       ) : null}
                     </div>
-                    {creatorNames[task.created_by] ? (
-                      <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-400">
-                        <UserRound className="size-3.5" />
-                        Criada por {creatorNames[task.created_by]}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
-                    {isNotDelivered ? (
-                      <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                        Marcada como não entregue. Peça mais tempo para reabrir
-                        a tarefa.
-                      </p>
-                    ) : (
-                      <Button
-                        onClick={() => handleComplete(task)}
-                        disabled={pending}
-                        className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
-                      >
-                        {pending ? 'Enviando...' : 'Concluir tarefa'}
-                      </Button>
-                    )}
-                    {task.due_date && !task.extension_requested ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="min-h-9 w-full text-slate-600 sm:w-auto"
-                        onClick={() => {
-                          setExtensionError(null)
-                          setExtendingTask(task)
-                        }}
-                      >
-                        <Clock3 className="size-3.5" />
-                        Pedir mais tempo
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })
+                    <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+                      {isNotDelivered ? (
+                        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                          Marcada como não entregue. Peça mais tempo para reabrir
+                          a tarefa.
+                        </p>
+                      ) : (
+                        <Button
+                          onClick={() => handleComplete(task)}
+                          disabled={pending}
+                          className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
+                        >
+                          {pending ? 'Enviando...' : 'Concluir tarefa'}
+                        </Button>
+                      )}
+                      {task.due_date && !task.extension_requested ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-h-9 w-full text-slate-600 sm:w-auto"
+                          onClick={() => {
+                            setExtensionError(null)
+                            setExtendingTask(task)
+                          }}
+                        >
+                          <Clock3 className="size-3.5" />
+                          Pedir mais tempo
+                        </Button>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </CardColumns>
         )}
       </section>
 
       {awaitingTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-base font-semibold text-slate-800">
             Aguardando aprovação
           </h2>
-          {awaitingTasks.map((task) => {
-            const isExpanded = expandedIds.has(task.id)
-            // Valor corrente sob o decaimento (o que será aprovado/creditado).
-            const currentPoints = getTaskCurrentPoints(
-              task.points,
-              getTaskDecayStart(task.created_at, task.decay_started_at),
-              task.due_date,
-              decay
-            )
-            return (
-              <Card
-                key={task.id}
-                className="border-l-4 border-l-amber-400"
-              >
-                <CardContent className="flex flex-col gap-2 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(task.id)}
-                      aria-expanded={isExpanded}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                        {task.title}
-                      </p>
-                      <ChevronDown
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {awaitingTasks.map((task) => {
+              const isExpanded = expandedIds.has(task.id)
+              // Valor corrente sob o decaimento (o que será aprovado/creditado).
+              const currentPoints = getTaskCurrentPoints(
+                task.points,
+                getTaskDecayStart(task.created_at, task.decay_started_at),
+                task.due_date,
+                decay
+              )
+              return (
+                <Card
+                  key={task.id}
+                  className="border-l-4 border-l-amber-400"
+                >
+                  <CardContent className="flex flex-col gap-2 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                          {task.title}
+                        </p>
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <span
                         className={cn(
-                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                          isExpanded && 'rotate-180'
+                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                          taskChipByStatus.COMPLETED.className
                         )}
-                      />
-                    </button>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                        taskChipByStatus.COMPLETED.className
+                      >
+                        {taskChipByStatus.COMPLETED.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {currentPoints < task.points ? (
+                        <>
+                          <span className="font-semibold text-slate-600">
+                            {currentPoints} pts
+                          </span>{' '}
+                          <span className="line-through opacity-60">
+                            {task.points}
+                          </span>{' '}
+                          · o administrador precisa aprovar
+                        </>
+                      ) : (
+                        <>
+                          {task.points} pts · o administrador precisa
+                          aprovar
+                        </>
                       )}
-                    >
-                      {taskChipByStatus.COMPLETED.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {currentPoints < task.points ? (
-                      <>
-                        <span className="font-semibold text-slate-600">
-                          {currentPoints} pts
-                        </span>{' '}
-                        <span className="line-through opacity-60">
-                          {task.points}
-                        </span>{' '}
-                        · o administrador precisa aprovar
-                      </>
-                    ) : (
-                      <>
-                        {task.points} pts · o administrador precisa
-                        aprovar
-                      </>
-                    )}
-                  </p>
-                  {creatorNames[task.created_by] ? (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
-                      <UserRound className="size-3.5" />
-                      Criada por {creatorNames[task.created_by]}
                     </p>
-                  ) : null}
-                  {isExpanded && task.description ? (
-                    <p className="mt-1 text-sm text-slate-500">{task.description}</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })}
+                    {creatorNames[task.created_by] ? (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                        <UserRound className="size-3.5" />
+                        Criada por {creatorNames[task.created_by]}
+                      </p>
+                    ) : null}
+                    {isExpanded && task.description ? (
+                      <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </CardColumns>
         </section>
       ) : null}
 
       {doneTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-base font-semibold text-slate-800">
             Concluídas
           </h2>
-          {doneTasks.map((task) => {
-            const isExpanded = expandedIds.has(task.id)
-            return (
-              <Card
-                key={task.id}
-                className="border-l-4 border-l-emerald-500"
-              >
-                <CardContent className="flex flex-col gap-2 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(task.id)}
-                      aria-expanded={isExpanded}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
-                        {task.title}
-                      </p>
-                      <ChevronDown
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {doneTasks.map((task) => {
+              const isExpanded = expandedIds.has(task.id)
+              return (
+                <Card
+                  key={task.id}
+                  className="border-l-4 border-l-emerald-500"
+                >
+                  <CardContent className="flex flex-col gap-2 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <p className="min-w-0 flex-1 truncate font-semibold text-slate-800">
+                          {task.title}
+                        </p>
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <span
                         className={cn(
-                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
-                          isExpanded && 'rotate-180'
+                          'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                          taskChipByStatus.APPROVED.className
                         )}
-                      />
-                    </button>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                        taskChipByStatus.APPROVED.className
-                      )}
-                    >
-                      {taskChipByStatus.APPROVED.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                    <CircleCheck className="size-4 shrink-0 text-emerald-500" />
-                    {task.points} pts · pontos creditados
-                  </p>
-                  {creatorNames[task.created_by] ? (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
-                      <UserRound className="size-3.5" />
-                      Criada por {creatorNames[task.created_by]}
+                      >
+                        {taskChipByStatus.APPROVED.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                      <CircleCheck className="size-4 shrink-0 text-emerald-500" />
+                      {task.points} pts · pontos creditados
                     </p>
-                  ) : null}
-                  {isExpanded && task.description ? (
-                    <p className="mt-1 text-sm text-slate-500">{task.description}</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )
-          })}
+                    {creatorNames[task.created_by] ? (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                        <UserRound className="size-3.5" />
+                        Criada por {creatorNames[task.created_by]}
+                      </p>
+                    ) : null}
+                    {isExpanded && task.description ? (
+                      <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </CardColumns>
         </section>
       ) : null}
 
