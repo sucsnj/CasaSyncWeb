@@ -1,6 +1,6 @@
 # CasaSync Web — PROJECT STATUS
 
-## Castigo do dependente — aviso no cabeçalho, sem efeito em regra nenhuma (implementado — SQL a aplicar no banco)
+## Castigo do dependente — aviso no cabeçalho, sem efeito em regra nenhuma (implementado — SQL aplicado no banco)
 
 ### O que foi implementado
 - **Novo módulo `dependent_punishments` — só um indicador.** O ADMIN escreve um "castigo" para um dependente e ele passa a ver um **ícone de triângulo ao lado do sino** em todas as telas dele (`/dashboard/dependent`, `/tasks`, `/rewards`, `/achievements`); tocar abre um `Modal` com a descrição e a duração informadas pelo tutor. **Nada mais muda no app:** nenhuma escrita em `profiles.points`, `tasks`, `rewards` ou `dependent_achievements` — o castigo é aviso, não penalidade (a penalidade de verdade continua sendo o débito em `updateDependentPoints` com PIN da casa, e o `NOT_DELIVERED` segue intacto). Ver **ADR-0020**.
@@ -13,7 +13,8 @@
 - **UI DEPENDENT:** `PunishmentIndicator` (`src/components/punishments/punishment-indicator.tsx`) é o botão de triângulo âmbar + modal de leitura ("Aviso do seu tutor", com botão "Entendi" e o vencimento em `FormattedDateTime`). A `DashboardNav` ganhou a prop `punishment?: ActivePunishment | null` e renderiza o indicador **ao lado do sino**, logo depois de `NotificationsBell` — só o DEPENDENT recebe a prop.
 - **Limpeza:** `expelMember`/`deleteDependentAccount` removem o castigo do alvo e `deleteHouse` remove os castigos da casa (FK também tem cascade, mas o fluxo é explícito, como o resto).
 
-### SQL a aplicar no banco
+### SQL aplicado no banco
+**Já aplicado no Supabase e verificado por probe** (a tabela responde sem erro e o fluxo foi testado ponta a ponta). Arquivo completo em `docs/sql/dependent_punishments.sql` — registro do que foi rodado:
 ```sql
 -- docs/sql/dependent_punishments.sql (rodar no SQL Editor do Supabase):
 create table if not exists public.dependent_punishments (
@@ -35,14 +36,14 @@ alter table public.dependent_punishments enable row level security;
 ```
 
 ### Verificação
-`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). As regras puras de `src/utils/punishments.ts` foram conferidas executando o módulo com `node --experimental-strip-types` (script temporário fora do repo, sem dependência nova): validação (descrição > 500, duração 0/366/fracionária reprovam; campos vazios são válidos), expiração (sem duração = sempre ativo, `now + 7 dias`, vencido e ISO inválido inativos) e rótulos.
 
 ### Pontos de atenção
-- **O SQL ainda NÃO foi aplicado no banco** — sem a tabela, o botão "Castigo" do ADMIN falha e o dependente nunca vê o ícone (é a única pendência desta feature).
+- **Nada pendente:** SQL aplicado no banco e feature testada ponta a ponta (botão "Castigo" → ícone no dependente → expiração/remoção).
 - **Castigo sem duração não expira sozinho:** é intencional (dá para manter o aviso durante toda a fase), mas significa que a limpeza depende do ADMIN removendo.
 - **Sem tempo real:** se o ADMIN aplicar o castigo com o dependente na tela, o triângulo só aparece depois de um refresh/navegação dele. É a mesma limitação aceita dos comunicados.
 - **Unidade da duração escolhida como dias (1–365)** — não havia definição previa; se mudar para horas/data fixa, o ajuste é em `punishmentExpiryFromNow` + `src/utils/punishments.ts` + a coluna.
-- Requer deploy para valer online.
+- **Não confundir com as outras penalidades:** a `PENALTY` (débito de pontos com PIN, via `updateDependentPoints`) e a tarefa `NOT_DELIVERED` continuam sendo efeitos reais e independentes deste indicador.
 
 ---
 
@@ -732,7 +733,7 @@ alter publication supabase_realtime add table public.dependent_achievements;
 
 ---
 
-> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, tabela `house_settings` (+ policy de SELECT por membro), bucket público `casasync-media`, **`tasks.decay_started_at`**, as **3 colunas novas das conquistas** (`image_url`/`max_level`/`level_multiplier`), as tabelas **`achievements`**/**`dependent_achievements`** e a tabela **`dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`** — **todos já foram aplicados** no Supabase pelo usuário. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Nada está pendente no banco.**
+> **Banco de dados sincronizado:** **todos** os scripts/enums SQL citados neste documento — coluna `profiles.username`, colunas `image_url` (incluindo `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida), tabela `reward_suggestions`, flags `extension_*`, enum `task_status` com `NOT_DELIVERED`, tabela `notifications`, policies de leitura, publication Realtime, tabela `house_settings` (+ policy de SELECT por membro), bucket público `casasync-media`, **`tasks.decay_started_at`**, as **3 colunas novas das conquistas** (`image_url`/`max_level`/`level_multiplier`), as tabelas **`achievements`**/**`dependent_achievements`** e a tabela **`dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`** e a tabela **`dependent_punishments`** (castigo do dependente) — **todos já foram aplicados** no Supabase pelo usuário. Os blocos de SQL abaixo são **registro histórico** do que foi rodado — o mesmo vale para as seções "Próxima etapa" / "Pontos de atenção" mais antigas. **Nada está pendente no banco.**
 
 ## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — SQL aplicado no banco)
 

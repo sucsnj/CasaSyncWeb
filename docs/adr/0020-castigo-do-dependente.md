@@ -68,6 +68,7 @@ sinal visível de que o próprio tutor escreveu algo para ele).
 - A remoção manual é idempotente (não haver castigo não é erro) e as limpezas de
   membro (`expelMember`, `deleteDependentAccount`) e de casa (`deleteHouse`)
   removem os castigos explicitamente, sem depender de cascade.
-- Requer aplicar `docs/sql/dependent_punishments.sql` no Supabase (fora da
-  migration versionada no repo) — sem a tabela, o botão de castigo falha com erro
-  de relation e o dependente nunca vê o ícone.
+- O schema é o único requisito de infraestrutura e foi aplicado manualmente em
+  `docs/sql/dependent_punishments.sql` (as migrações SQL não são versionadas no
+  repo, por decisão de projeto). Feature testada ponta a ponta: botão "Castigo" →
+  ícone no dependente → expiração/remoção.
