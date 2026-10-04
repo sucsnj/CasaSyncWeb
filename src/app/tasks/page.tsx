@@ -11,6 +11,7 @@ import {
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { hasClaimableAchievement } from '@/utils/achievement-progress'
+import { getActivePunishment } from '@/utils/active-punishment'
 import {
   getHouseExtensionRulesSettings,
   getHouseQuickMessageSettings,
@@ -104,6 +105,13 @@ export default async function TasksPage() {
   const quickMessageSettings = !isAdmin && dependentHouse
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
+
+  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
+  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
+  const punishment =
+    !isAdmin && dependentHouse
+      ? await getActivePunishment(user.id, dependentHouse.id)
+      : null
 
   // Settings de prazos/SLA e de adiamento da casa, aplicadas nos cards de
   // tarefas (prazo padrão, chip "Prazo próximo" e botões de adiamento).
@@ -201,6 +209,7 @@ export default async function TasksPage() {
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
+        punishment={isAdmin ? null : punishment}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

@@ -624,6 +624,64 @@ export interface Database {
           }
         ]
       }
+      dependent_punishments: {
+        Row: {
+          id: string
+          house_id: string
+          profile_id: string
+          description: string | null
+          duration_days: number | null
+          expires_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          profile_id: string
+          description?: string | null
+          duration_days?: number | null
+          expires_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          profile_id?: string
+          description?: string | null
+          duration_days?: number | null
+          expires_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'dependent_punishments_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'dependent_punishments_profile_id_fkey'
+            columns: ['profile_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'dependent_punishments_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       comunicados: {
         Row: {
           id: string

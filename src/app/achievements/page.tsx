@@ -11,6 +11,7 @@ import {
 import { getMyNotifications } from '@/utils/notifications'
 import { isAchievementClaimable } from '@/utils/achievements'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import { getActivePunishment } from '@/utils/active-punishment'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
@@ -90,6 +91,13 @@ export default async function AchievementsPage() {
   const quickMessageSettings = !isAdmin && dependentHouse
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
+
+  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
+  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
+  const punishment =
+    !isAdmin && dependentHouse
+      ? await getActivePunishment(user.id, dependentHouse.id)
+      : null
 
   // Item "Conquistas" da nav dourado quando há resgate disponível — derivado
   // das views que o próprio render carrega (mesma regra dos cards).
@@ -189,6 +197,7 @@ export default async function AchievementsPage() {
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
+        punishment={isAdmin ? null : punishment}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

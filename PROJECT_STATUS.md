@@ -1,5 +1,51 @@
 # CasaSync Web — PROJECT STATUS
 
+## Castigo do dependente — aviso no cabeçalho, sem efeito em regra nenhuma (implementado — SQL a aplicar no banco)
+
+### O que foi implementado
+- **Novo módulo `dependent_punishments` — só um indicador.** O ADMIN escreve um "castigo" para um dependente e ele passa a ver um **ícone de triângulo ao lado do sino** em todas as telas dele (`/dashboard/dependent`, `/tasks`, `/rewards`, `/achievements`); tocar abre um `Modal` com a descrição e a duração informadas pelo tutor. **Nada mais muda no app:** nenhuma escrita em `profiles.points`, `tasks`, `rewards` ou `dependent_achievements` — o castigo é aviso, não penalidade (a penalidade de verdade continua sendo o débito em `updateDependentPoints` com PIN da casa, e o `NOT_DELIVERED` segue intacto). Ver **ADR-0020**.
+- **Descrição e duração OPCIONAIS, com semântica própria:** sem descrição o modal diz que o tutor não deixou texto; **sem duração o castigo não expira** e só sai quando o ADMIN remove ("Remover castigo" no mesmo modal). Com duração (1–365 dias) a action grava `expires_at = now + N dias` e a expiração é avaliada **na leitura** (sem cron no projeto, como o decaimento e os comunicados).
+- **Um castigo ativo por dependente** (`UNIQUE (profile_id)`): aplicar de novo **substitui** o anterior (upsert), em vez de acumular avisos. O botão na linha do ADMIN vira "Substituir castigo" quando já existe.
+- **Sem Realtime (decisão de produto, mesma premissa dos comunicados — ADR-0017):** o castigo chega ao dependente no **render server-side**; ele o vê ao atualizar a tela ou navegar. As actions chamam `revalidatePath` nas 4 rotas para a próxima renderização já trazer o dado novo. **Nada de notificação/push**: castigo não gera `notifications` nem entra na fila de alertas — é leitura, não evento.
+- **Escopo derivado da sessão:** `applyPunishment(profileId, input)`/`removePunishment(profileId)` recebem **só o alvo** — a casa vem de `getActiveAdminHouse` (nunca de parâmetro público) e o alvo precisa ser `DEPENDENT` dela (um ADMIN nunca é punido). Qualquer **ADMIN da casa ativa** pode aplicar (inclusive co-ADMIN): punição é rotina, ao contrário de excluir conta/trocar PIN, que seguem restritos ao autor (ADR-0014).
+- **Leitura com limpeza lazy:** `getActivePunishment(profileId, houseId)` (`src/utils/active-punishment.ts`, `React.cache`) apaga o castigo vencido na próxima leitura (best-effort) e **ainda assim** checa `expires_at` no código (`isPunishmentActive`), então falha no delete não mostra aviso vencido. `getActivePunishmentProfileIds(houseId)` devolve quem está com castigo ativo para a tela do ADMIN marcar a linha.
+- **UI ADMIN** (`houses-manager.tsx`): botão **"Castigo"** (`TriangleAlert`, âmbar quando há castigo ativo) na linha de cada `DEPENDENT`, com `Modal` que explica que é só um aviso, campo de descrição (textarea, `maxLength` 500) e de duração (number, 1–365, vazio = sem prazo), feedback inline + toast + `router.refresh()`.
+- **UI DEPENDENT:** `PunishmentIndicator` (`src/components/punishments/punishment-indicator.tsx`) é o botão de triângulo âmbar + modal de leitura ("Aviso do seu tutor", com botão "Entendi" e o vencimento em `FormattedDateTime`). A `DashboardNav` ganhou a prop `punishment?: ActivePunishment | null` e renderiza o indicador **ao lado do sino**, logo depois de `NotificationsBell` — só o DEPENDENT recebe a prop.
+- **Limpeza:** `expelMember`/`deleteDependentAccount` removem o castigo do alvo e `deleteHouse` remove os castigos da casa (FK também tem cascade, mas o fluxo é explícito, como o resto).
+
+### SQL a aplicar no banco
+```sql
+-- docs/sql/dependent_punishments.sql (rodar no SQL Editor do Supabase):
+create table if not exists public.dependent_punishments (
+  id uuid primary key default gen_random_uuid(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  description text check (description is null or char_length(btrim(description)) between 1 and 500),
+  duration_days int check (duration_days is null or duration_days between 1 and 365),
+  expires_at timestamptz,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (profile_id)
+);
+create index if not exists dependent_punishments_house_idx on public.dependent_punishments (house_id);
+create index if not exists dependent_punishments_expires_idx on public.dependent_punishments (expires_at);
+alter table public.dependent_punishments enable row level security;
+-- SEM policies (service-role) e FORA da publication supabase_realtime (módulo sem tempo real).
+```
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo).
+
+### Pontos de atenção
+- **O SQL ainda NÃO foi aplicado no banco** — sem a tabela, o botão "Castigo" do ADMIN falha e o dependente nunca vê o ícone (é a única pendência desta feature).
+- **Castigo sem duração não expira sozinho:** é intencional (dá para manter o aviso durante toda a fase), mas significa que a limpeza depende do ADMIN removendo.
+- **Sem tempo real:** se o ADMIN aplicar o castigo com o dependente na tela, o triângulo só aparece depois de um refresh/navegação dele. É a mesma limitação aceita dos comunicados.
+- **Unidade da duração escolhida como dias (1–365)** — não havia definição previa; se mudar para horas/data fixa, o ajuste é em `punishmentExpiryFromNow` + `src/utils/punishments.ts` + a coluna.
+- Requer deploy para valer online.
+
+---
+
 ## Zerar a contagem de uma conquista `MANUAL` (implementado — sem mudança de schema)
 
 ### O que foi implementado

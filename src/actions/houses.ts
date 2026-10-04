@@ -852,6 +852,16 @@ export async function expelMember(
     return { ok: false, error: 'Falha ao remover as estatísticas do membro.' }
   }
 
+  // Castigo ativo (ADR-0020) — sem dono, não pode ficar órfão na casa.
+  const { error: punishmentsError } = await admin
+    .from('dependent_punishments')
+    .delete()
+    .eq('house_id', houseId)
+    .eq('profile_id', targetUserId)
+  if (punishmentsError) {
+    return { ok: false, error: 'Falha ao remover o castigo do membro.' }
+  }
+
   const { error: membershipError } = await admin
     .from('house_members')
     .delete()
@@ -1040,6 +1050,15 @@ export async function deleteDependentAccount(
     return { ok: false, error: 'Falha ao remover as estatísticas do dependente.' }
   }
 
+  // Castigo ativo (ADR-0020) — some com a conta.
+  const { error: punishmentsError } = await admin
+    .from('dependent_punishments')
+    .delete()
+    .eq('profile_id', targetUserId)
+  if (punishmentsError) {
+    return { ok: false, error: 'Falha ao remover o castigo do dependente.' }
+  }
+
   // Imagens no Storage (best-effort).
   await deleteMemberStorage(admin, targetUserId)
 
@@ -1202,6 +1221,15 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
     .eq('house_id', houseId)
   if (statsError) {
     return { ok: false, error: 'Falha ao excluir as estatísticas da casa.' }
+  }
+
+  // Castigos dos dependentes da casa (ADR-0020).
+  const { error: punishmentsError } = await admin
+    .from('dependent_punishments')
+    .delete()
+    .eq('house_id', houseId)
+  if (punishmentsError) {
+    return { ok: false, error: 'Falha ao excluir os castigos da casa.' }
   }
 
   const { error: achievementsError } = await admin

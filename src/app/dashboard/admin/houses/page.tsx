@@ -7,6 +7,7 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { HousesManager } from '@/components/houses/houses-manager'
+import { getActivePunishmentProfileIds } from '@/utils/active-punishment'
 
 export const metadata: Metadata = {
   title: 'Casas',
@@ -41,6 +42,7 @@ export default async function AdminHousesPage() {
     points: number
     role: 'ADMIN' | 'DEPENDENT'
   }[] = []
+  let punishedProfileIds: string[] = []
 
   if (activeHouse) {
     const { data: houseMembers } = await admin
@@ -80,6 +82,10 @@ export default async function AdminHousesPage() {
           role: member.role,
         }
       }) ?? []
+
+    // Castigos ativos da casa (ADR-0020): marcam a linha do dependente e liberam
+    // a remoção. Castigo sem prazo continua na lista até o ADMIN tirar.
+    punishedProfileIds = [...(await getActivePunishmentProfileIds(activeHouse.id))]
   }
 
   return (
@@ -91,6 +97,7 @@ export default async function AdminHousesPage() {
       activeHouseOwnerId={activeHouse?.owner_id ?? null}
       currentUserId={user.id}
       members={members}
+      punishedProfileIds={punishedProfileIds}
     />
   )
 }

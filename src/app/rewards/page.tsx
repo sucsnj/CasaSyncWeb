@@ -8,6 +8,7 @@ import {
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { hasClaimableAchievement } from '@/utils/achievement-progress'
+import { getActivePunishment } from '@/utils/active-punishment'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -67,6 +68,13 @@ export default async function RewardsPage() {
   const quickMessageSettings = !isAdmin && dependentHouse
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
+
+  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
+  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
+  const punishment =
+    !isAdmin && dependentHouse
+      ? await getActivePunishment(user.id, dependentHouse.id)
+      : null
 
   let content: React.ReactNode
 
@@ -248,6 +256,7 @@ export default async function RewardsPage() {
         role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
+        punishment={isAdmin ? null : punishment}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

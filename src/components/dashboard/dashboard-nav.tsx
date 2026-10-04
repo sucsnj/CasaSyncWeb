@@ -9,8 +9,10 @@ import { SignOutButton } from '@/components/auth/sign-out-button'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Modal } from '@/components/ui/modal'
 import { useClaimableAchievement } from '@/hooks/use-claimable-achievement'
+import { PunishmentIndicator } from '@/components/punishments/punishment-indicator'
 import type { NotificationRow } from '@/types/notifications'
 import type { QuickMessageSettings } from '@/utils/settings'
+import type { ActivePunishment } from '@/utils/punishments'
 
 export type NavItem = { href: string; label: string }
 
@@ -39,6 +41,7 @@ export function DashboardNav({
   role,
   quickMessageSettings,
   hasClaimableAchievement,
+  punishment,
 }: {
   items: NavItem[]
   userName?: string | null
@@ -49,6 +52,12 @@ export function DashboardNav({
   quickMessageSettings?: QuickMessageSettings
   /** Dependente com resgate de conquista disponível → item "Conquistas" dourado. */
   hasClaimableAchievement?: boolean
+  /**
+   * Castigo ativo do dependente (ADR-0020) — quando presente, mostra o ícone de
+   * triângulo ao lado do sino. Só o DEPENDENT recebe a prop (o ADMIN é quem
+   * aplica/remove o castigo), e sem Realtime: vem do render server-side.
+   */
+  punishment?: ActivePunishment | null
 }) {
   const pathname = usePathname()
   const [showAccount, setShowAccount] = useState(false)
@@ -108,6 +117,7 @@ export function DashboardNav({
                 quickMessageSettings={quickMessageSettings}
               />
             ) : null}
+            {punishment ? <PunishmentIndicator punishment={punishment} /> : null}
             {typeof points === 'number' ? (
               <span className="flex items-center rounded-full bg-amber-400 px-2.5 py-1 text-sm font-bold text-slate-900 shadow-sm">
                 {points} pts

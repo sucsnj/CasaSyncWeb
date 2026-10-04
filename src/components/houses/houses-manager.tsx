@@ -18,6 +18,12 @@ import {
   updateHouse,
   updateMemberPassword,
 } from '@/actions/houses'
+import { applyPunishment, removePunishment } from '@/actions/punishments'
+import {
+  PUNISHMENT_MAX_DESCRIPTION,
+  PUNISHMENT_MAX_DURATION_DAYS,
+  PUNISHMENT_MIN_DURATION_DAYS,
+} from '@/utils/punishments'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
@@ -31,6 +37,7 @@ import {
   Pencil,
   RefreshCw,
   Trash2,
+  TriangleAlert,
   UserMinus,
 } from 'lucide-react'
 import {
@@ -66,6 +73,11 @@ type HousesManagerProps = {
   activeHouseOwnerId: string | null
   currentUserId: string
   members: Member[]
+  /**
+   * Dependentes com castigo ATIVO no momento (ADR-0020). Marca a linha e permite
+   * remover o castigo. Vem do servidor (castigos vencidos não entram na lista).
+   */
+  punishedProfileIds: string[]
 }
 
 type ConfirmAction =
@@ -81,6 +93,7 @@ export function HousesManager({
   activeHouseOwnerId,
   currentUserId,
   members,
+  punishedProfileIds,
 }: HousesManagerProps) {
   const router = useRouter()
   const [houseName, setHouseName] = useState('')
@@ -111,6 +124,13 @@ export function HousesManager({
   const [pointsError, setPointsError] = useState<string | null>(null)
   const [pointsSuccess, setPointsSuccess] = useState<string | null>(null)
   const [pointsPending, setPointsPending] = useState(false)
+
+  // Castigo do dependente (ADR-0020): só indicador, não mexe em pontos. Campos
+  // do form ficam uncontrolled (lidos via FormData no submit).
+  const [punishMember, setPunishMember] = useState<Member | null>(null)
+  const [punishError, setPunishError] = useState<string | null>(null)
+  const [punishSuccess, setPunishSuccess] = useState<string | null>(null)
+  const [punishPending, setPunishPending] = useState(false)
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
@@ -334,6 +354,78 @@ export function HousesManager({
       toast.success(result.message ?? 'PIN atualizado!')
       router.refresh()
     })
+  }
+
+  /**
+   * Aplica (ou substitui) o castigo do dependente. Descrição e duração são
+   * OPCIONAIS: campo vazio vira `null` no servidor. O castigo é só indicador —
+   * nenhum ponto é tocado.
+   */
+  async function handleSavePunishment(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault()
+    if (!punishMember) return
+
+    const form = event.currentTarget
+    setPunishError(null)
+    setPunishSuccess(null)
+    setPunishPending(true)
+
+    try {
+      const formData = new FormData(form)
+      const durationRaw = String(formData.get('durationDays') ?? '').trim()
+
+      const result = await applyPunishment(punishMember.profileId, {
+        description: String(formData.get('description') ?? ''),
+        durationDays: durationRaw === '' ? null : Number(durationRaw),
+      })
+
+      if (!result.ok) {
+        setPunishError(result.error)
+        toast.error(result.error)
+        return
+      }
+
+      toast.success('Castigo aplicado!')
+      setPunishSuccess(result.message ?? 'Castigo aplicado.')
+      // Limpa o form, mas mantém o modal aberto (o estado de "castigo ativo" da
+      // linha chega pelo refresh).
+      form.reset()
+      router.refresh()
+    } catch (err) {
+      console.error('Falha ao aplicar castigo:', err)
+      setPunishError('Falha de comunicação ao aplicar o castigo.')
+    } finally {
+      setPunishPending(false)
+    }
+  }
+
+  /** Limpeza manual: o ADMIN tira o castigo antes da duração expirar. */
+  async function handleRemovePunishment() {
+    if (!punishMember) return
+
+    setPunishError(null)
+    setPunishSuccess(null)
+    setPunishPending(true)
+
+    try {
+      const result = await removePunishment(punishMember.profileId)
+      if (!result.ok) {
+        setPunishError(result.error)
+        toast.error(result.error)
+        return
+      }
+
+      toast.success('Castigo removido!')
+      setPunishSuccess('Castigo removido.')
+      router.refresh()
+    } catch (err) {
+      console.error('Falha ao remover castigo:', err)
+      setPunishError('Falha de comunicação ao remover o castigo.')
+    } finally {
+      setPunishPending(false)
+    }
   }
 
   async function handleConfirmAction() {
@@ -794,6 +886,32 @@ export function HousesManager({
                         type="button"
                         variant="ghost"
                         size="sm"
+                        className={cn(
+                          'min-h-9 px-2 text-xs',
+                          punishedProfileIds.includes(member.profileId)
+                            ? 'font-semibold text-amber-700 hover:bg-amber-50 hover:text-amber-800'
+                            : 'text-slate-500'
+                        )}
+                        onClick={() => {
+                          setPunishError(null)
+                          setPunishSuccess(null)
+                          setPunishMember(member)
+                        }}
+                        title={
+                          punishedProfileIds.includes(member.profileId)
+                            ? 'Este dependente está com castigo ativo — clique para editar ou remover'
+                            : 'Aplicar um castigo (apenas um aviso no app, não altera pontos)'
+                        }
+                      >
+                        <TriangleAlert className="size-3.5" />
+                        Castigo
+                      </Button>
+                    ) : null}
+                    {member.role === 'DEPENDENT' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         className="min-h-9 px-2 text-xs text-slate-500"
                         onClick={() => {
                           setDepError(null)
@@ -1114,6 +1232,108 @@ export function HousesManager({
             <Button type="submit" disabled={pointsPending}>
               {pointsPending ? 'Salvando...' : 'Salvar pontos'}
             </Button>
+          </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!punishMember}
+        onClose={() => {
+          if (punishPending) return
+          setPunishMember(null)
+          setPunishError(null)
+          setPunishSuccess(null)
+        }}
+        title={`Castigo - ${punishMember?.fullName ?? ''}`}
+      >
+        {punishMember ? (
+          <form
+            key={punishMember.profileId}
+            onSubmit={handleSavePunishment}
+            className="flex flex-col gap-3"
+          >
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <p>
+                O castigo é <strong>só um aviso</strong>: o dependente verá um
+                ícone de triângulo no cabeçalho do app. Nenhum ponto, tarefa ou
+                recompensa é alterado.
+                {punishedProfileIds.includes(punishMember.profileId)
+                  ? ' Este dependente já tem um castigo ativo — salvar abaixo substitui o atual.'
+                  : ''}
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="punish-description">
+                Descrição (opcional)
+              </Label>
+              <textarea
+                id="punish-description"
+                name="description"
+                rows={3}
+                maxLength={PUNISHMENT_MAX_DESCRIPTION}
+                defaultValue=""
+                placeholder="Explique ao dependente o motivo do castigo."
+                className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional. Sem texto, o dependente vê apenas o aviso de que há um
+                castigo ativo (até {PUNISHMENT_MAX_DESCRIPTION} caracteres).
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="punish-duration">Duração em dias (opcional)</Label>
+              <Input
+                id="punish-duration"
+                name="durationDays"
+                type="number"
+                inputMode="numeric"
+                min={PUNISHMENT_MIN_DURATION_DAYS}
+                max={PUNISHMENT_MAX_DURATION_DAYS}
+                step={1}
+                defaultValue=""
+                placeholder="Ex.: 7"
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional. Deixe vazio para o castigo não ter prazo (ele só sai
+                quando você remover). Com valor, expira sozinho depois de{' '}
+                {PUNISHMENT_MIN_DURATION_DAYS} a {PUNISHMENT_MAX_DURATION_DAYS}{' '}
+                dias.
+              </p>
+            </div>
+
+            {punishError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {punishError}
+              </p>
+            ) : null}
+            {punishSuccess ? (
+              <p className="text-sm font-medium text-emerald-600" role="status">
+                {punishSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <Button type="submit" disabled={punishPending}>
+                {punishPending
+                  ? 'Salvando...'
+                  : punishedProfileIds.includes(punishMember.profileId)
+                    ? 'Substituir castigo'
+                    : 'Aplicar castigo'}
+              </Button>
+              {punishedProfileIds.includes(punishMember.profileId) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={punishPending}
+                  onClick={handleRemovePunishment}
+                >
+                  Remover castigo
+                </Button>
+              ) : null}
+            </div>
           </form>
         ) : null}
       </Modal>

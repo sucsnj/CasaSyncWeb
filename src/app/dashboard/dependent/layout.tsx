@@ -10,6 +10,7 @@ import { PushNotificationsSetup } from '@/components/notifications/push-notifica
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
+import { getActivePunishment } from '@/utils/active-punishment'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -33,6 +34,10 @@ export default async function DependentDashboardLayout({
   const quickMessageSettings = house
     ? await getHouseQuickMessageSettings(house.id)
     : undefined
+  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino. Sem
+  // Realtime — lido no render desta tela, como os comunicados.
+  const punishment =
+    user && house ? await getActivePunishment(user.id, house.id) : null
 
   if (!user || !profile) {
     return null
@@ -60,6 +65,7 @@ export default async function DependentDashboardLayout({
         role="DEPENDENT"
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={hasClaimable}
+        punishment={punishment}
       />
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}

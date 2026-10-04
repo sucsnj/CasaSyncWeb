@@ -223,6 +223,20 @@ RLS: policy de SELECT por membro e inclusion na publication Realtime são **inof
 
 Uma linha por (comunicado, dependente) — `UNIQUE (comunicado_id, profile_id)`. Sem policies client e **fora** da publication Realtime (leituras/escritas service-role; a UI de total de confirmações do ADMIN entra via `router.refresh()`).
 
+### dependent_punishments
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | default `gen_random_uuid()` |
+| house_id | uuid FK → houses | `on delete cascade` |
+| profile_id | uuid FK → profiles | `on delete cascade`; **`UNIQUE (profile_id)`** — um castigo ativo por dependente |
+| description | text | **opcional** (nula = castigo sem texto); check 1–500 chars com `btrim` |
+| duration_days | int | **opcional**; check 1–365; `null` = castigo **sem prazo** (só o ADMIN remove) |
+| expires_at | timestamptz | derivado de `duration_days` pela action (`now + N dias`); `null` quando não há duração |
+| created_by | uuid FK → profiles | `on delete set null` (ADMIN que aplicou) |
+| created_at / updated_at | timestamptz | |
+
+Castigo é **só um indicador** (ADR-0020): não altera pontos, tarefas, recompensas ou conquistas. Aplicar de novo **substitui** (`upsert` em `profile_id`). Expiração é avaliada **na leitura** (`isPunishmentActive`) e a linha vencida é apagada por limpeza lazy — sem cron. RLS **sem policies** (service-role, escopo derivado da sessão) e **fora** da publication Realtime: o dependente vê o ícone de triângulo no render server-side das 4 telas, sem tempo real. Schema em `docs/sql/dependent_punishments.sql`.
+
 ## Enums
 - `user_role` = `ADMIN` \| `DEPENDENT`
 - `member_role` = `ADMIN` \| `DEPENDENT`
