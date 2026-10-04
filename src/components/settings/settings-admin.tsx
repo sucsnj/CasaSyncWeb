@@ -9,6 +9,7 @@ import {
   Clock3,
   Coins,
   Hourglass,
+  ListTodo,
   MessageSquare,
   Plus,
   Save,
@@ -28,10 +29,12 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type {
   ExtensionRulesSettings,
+  NotificationMuteSettings,
   NotificationRetentionSettings,
   QuickMessageSettings,
   RewardPricingSettings,
   TaskDecaySettings,
+  TaskRulesSettings,
   TaskSlaSettings,
 } from '@/utils/settings'
 
@@ -41,7 +44,9 @@ type SettingsAdminProps = {
   taskSla: TaskSlaSettings
   extensionRules: ExtensionRulesSettings
   notificationRetention: NotificationRetentionSettings
+  notificationMute: NotificationMuteSettings
   taskDecay: TaskDecaySettings
+  taskRules: TaskRulesSettings
 }
 
 function Toggle({
@@ -125,7 +130,9 @@ export function SettingsAdmin({
   taskSla,
   extensionRules,
   notificationRetention,
+  notificationMute,
   taskDecay,
+  taskRules,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -155,6 +162,12 @@ export function SettingsAdmin({
   const [decay, setDecay] = useState<TaskDecaySettings>(taskDecay)
   const [decayError, setDecayError] = useState<string | null>(null)
   const [decaySuccess, setDecaySuccess] = useState<string | null>(null)
+
+  const [mute, setMute] = useState<NotificationMuteSettings>(notificationMute)
+
+  const [rules, setRules] = useState<TaskRulesSettings>(taskRules)
+  const [rulesError, setRulesError] = useState<string | null>(null)
+  const [rulesSuccess, setRulesSuccess] = useState<string | null>(null)
 
   function savePricing() {
     setPricingError(null)
@@ -233,6 +246,8 @@ export function SettingsAdmin({
     setRetentionSuccess(null)
 
     startTransition(async () => {
+      // Retenção e silenciamento moram no mesmo card "Notificações": as duas
+      // chaves são gravadas juntas (uma mensagem de erro vem da 2ª se falhar).
       const result = await updateHouseSettings('notification_retention', {
         ...retention,
       })
@@ -241,7 +256,34 @@ export function SettingsAdmin({
         toast.error(result.error)
         return
       }
-      setRetentionSuccess(result.message ?? 'Configurações salvas.')
+
+      const muteResult = await updateHouseSettings('notification_mute', {
+        ...mute,
+      })
+      if (!muteResult.ok) {
+        setRetentionError(muteResult.error)
+        toast.error(muteResult.error)
+        return
+      }
+
+      setRetentionSuccess(muteResult.message ?? 'Configurações salvas.')
+      toast.success(muteResult.message ?? 'Configurações salvas.')
+      router.refresh()
+    })
+  }
+
+  function saveRules() {
+    setRulesError(null)
+    setRulesSuccess(null)
+
+    startTransition(async () => {
+      const result = await updateHouseSettings('task_rules', { ...rules })
+      if (!result.ok) {
+        setRulesError(result.error)
+        toast.error(result.error)
+        return
+      }
+      setRulesSuccess(result.message ?? 'Configurações salvas.')
       toast.success(result.message ?? 'Configurações salvas.')
       router.refresh()
     })
@@ -658,11 +700,48 @@ export function SettingsAdmin({
           </CardAction>
           <CardTitle>Notificações</CardTitle>
           <CardDescription>
-            Quanto tempo uma notificação comum já lida fica no sino antes de ser
-            apagada automaticamente.
+            Silencie o que não quer receber e defina quanto tempo uma notificação
+            já lida fica no sino antes de ser apagada.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-semibold text-slate-700">
+              Silenciar por categoria
+            </span>
+            {(
+              [
+                ['tasks', 'Tarefas', 'Criação, conclusão, aprovação, adiamentos, espera e restauração.'],
+                ['rewards', 'Recompensas', 'Recompensa nova, resgates e sugestões.'],
+                ['achievements', 'Conquistas', 'Aviso de conquista desbloqueada.'],
+              ] as const
+            ).map(([key, label, hint]) => (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {label}
+                  </span>
+                  <span className="text-xs text-slate-500">{hint}</span>
+                </div>
+                <Toggle
+                  checked={mute[key]}
+                  onChange={(checked) =>
+                    setMute((prev) => ({ ...prev, [key]: checked }))
+                  }
+                  label={`Silenciar notificações de ${label}`}
+                />
+              </div>
+            ))}
+            <p className="text-xs text-slate-500">
+              Silenciar não apaga o que já foi notificado — só impede novos avisos
+              (e o push) dessa categoria. As mensagens rápidas do dependente e os
+              avisos de penalização de pontos não podem ser silenciados.
+            </p>
+          </div>
+
           <div className="grid gap-4 sm:max-w-xs">
             <Field
               label="Retenção de lidas"
@@ -786,6 +865,72 @@ export function SettingsAdmin({
             >
               <Save className="size-4" />
               Salvar decaimento
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardAction>
+            <span className="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+              <ListTodo className="size-5" />
+            </span>
+          </CardAction>
+          <CardTitle>Limites de tarefas</CardTitle>
+          <CardDescription>
+            Rede de segurança contra erro de digitação e contra a lista do
+            dependente crescer sem limite. Zero desliga cada limite.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Teto de pontos"
+              value={rules.maxPointsPerTask}
+              onChange={(maxPointsPerTask) =>
+                setRules((prev) => ({ ...prev, maxPointsPerTask }))
+              }
+              min={0}
+              max={1_000_000}
+              step={1}
+              suffix="por tarefa"
+              hint="0 = sem teto. Acima disso o servidor recusa a tarefa — evita que um zero a mais vire uma fortuna de pontos."
+            />
+            <Field
+              label="Tarefas ativas"
+              value={rules.maxActiveTasks}
+              onChange={(maxActiveTasks) =>
+                setRules((prev) => ({ ...prev, maxActiveTasks }))
+              }
+              min={0}
+              max={999}
+              step={1}
+              suffix="por dependente"
+              hint="0 = sem limite. Conta pendentes, em andamento e não entregues; tarefa em espera não conta (o dependente não a vê)."
+            />
+          </div>
+
+          {rulesError ? (
+            <p role="alert" className="text-sm text-red-600">
+              {rulesError}
+            </p>
+          ) : null}
+          {rulesSuccess ? (
+            <p role="status" className="text-sm text-emerald-700">
+              {rulesSuccess}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void saveRules()}
+              disabled={pending}
+            >
+              <Save className="size-4" />
+              Salvar limites
             </Button>
           </div>
         </CardContent>

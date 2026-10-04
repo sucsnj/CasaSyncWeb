@@ -122,7 +122,7 @@ pg_cron.
 | coluna | tipo | notas |
 |---|---|---|
 | house_id | uuid FK → houses (PK) | casa dona da configuração; `on delete cascade` |
-| key | text (PK) | `reward_pricing` \| `quick_message` \| `task_sla` \| `extension_rules` \| `notification_retention` \| `task_decay` (`HouseSettingsKey` em `src/utils/settings.ts`) |
+| key | text (PK) | `reward_pricing` \| `quick_message` \| `task_sla` \| `extension_rules` \| `notification_retention` \| `notification_mute` \| `task_decay` \| `task_rules` (`HouseSettingsKey` em `src/utils/settings.ts`) |
 | value | jsonb | objeto de configuração; campos ausentes caem no default via `mergeSettings` |
 | updated_by | uuid FK → profiles | nullable; ADMIN que salvou por último |
 | updated_at | timestamptz | default `now()` |
@@ -132,7 +132,8 @@ Configuração por casa, escrita **exclusivamente** pela Server Action `updateHo
 getters cached em `src/utils/house-settings.ts` (sem Realtime: a propagação usa
 `router.refresh()` pós-ação). Sem linha = defaults (`DEFAULT_REWARD_PRICING` /
 `DEFAULT_QUICK_MESSAGE` / `DEFAULT_TASK_SLA` / `DEFAULT_EXTENSION_RULES` /
-`DEFAULT_NOTIFICATION_RETENTION` / `DEFAULT_TASK_DECAY`). **Sem publication Realtime.**
+`DEFAULT_NOTIFICATION_RETENTION` / `DEFAULT_NOTIFICATION_MUTE` / `DEFAULT_TASK_DECAY` /
+`DEFAULT_TASK_RULES`). **Sem publication Realtime.**
 
 Chaves e efeitos:
 - `reward_pricing`: `enabled`, `noIncreaseMax`, `midMax`, `midRate`, `highRate`, `minBump` — encarecimento automático em `approveRedemption` (`nextRewardCost`). Defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt.
@@ -140,6 +141,8 @@ Chaves e efeitos:
 - `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonHours` (4, chip "Prazo próximo" quando faltam menos de N horas para o prazo — limiar absoluto, independente da duração; 0 desliga).
 - `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista).
 - `notification_retention`: `readRetentionDays` (5, lidas comuns apagadas por casa da notificação, excluindo `QUICK_MESSAGE`).
+- `notification_mute`: `tasks`, `rewards`, `achievements` (false) — silenciar **categorias** de notificação. `QUICK_MESSAGE` e `PENALTY` **não têm toggle** (decisão de produto, garantida por construção: `notificationCategory()` devolve `null` e `isNotificationMuted` falha em favor de notificar). Guarda no gargalo único (`notifyUser`/`notifyHouse`): categoria silenciada não grava linha nem dispara push, e **não apaga histórico**. Default: tudo ligado (nada muda para casa existente).
+- `task_rules`: `maxPointsPerTask` (0, sem teto) e `maxActiveTasks` (0, ilimitado) — rede de segurança validada **no servidor** em `createTask`/`updateTask` (`checkPointsCap` e `checkActiveTaskLimit`; conta `PENDING`/`IN_PROGRESS`/`NOT_DELIVERED`, `ON_HOLD` **não** conta).
 - `task_decay`: `enabled` (true), `periodHours` (24), `pointsPerPeriod` (1) — decaimento de pontos de tarefas. A cada `periodHours` completas desde o **ponto de partida do relógio** — `tasks.decay_started_at` (criação ou última edição; fallback `created_at`) — a tarefa perde `pointsPerPeriod` (janela capada no `due_date` — após o vencimento a perda não cresce —, piso 0); `tasks.points` é a base intocada e o valor corrente é calculado por `getTaskCurrentPoints` (`src/utils/task-decay.ts`), usado no crédito da aprovação e no débito de `NOT_DELIVERED`. Adiamentos não reiniciam o relógio; `restoreTask` reinicia (ver topo do `PROJECT_STATUS.md`).
 
 ### achievements

@@ -22,6 +22,7 @@ import { normalizeTaskTitle } from '@/utils/task-normalize'
 import {
   getHouseExtensionRulesSettings,
   getHouseTaskDecaySettings,
+  getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
@@ -46,6 +47,67 @@ type CreateTaskInput = {
   points: number
   assignedTo: string
   imageUrl: string | null
+}
+
+/**
+ * Status que contam como tarefa ATIVA para o dependente (mesmo conjunto do soft
+ * block de duplicidade). `ON_HOLD` fica de fora de propósito: a tarefa em espera
+ * é invisível para o dependente, então não lota a lista dele.
+ */
+const ACTIVE_TASK_STATUSES = ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'] as const
+
+/**
+ * Teto de pontos por tarefa (chave `task_rules`), ou `null` quando cabe.
+ * Rede de segurança contra erro de digitação: `0` = sem teto.
+ */
+function checkPointsCap(points: number, maxPointsPerTask: number): string | null {
+  if (maxPointsPerTask <= 0) return null
+  if (points > maxPointsPerTask) {
+    return `Esta tarefa vale ${points} pontos, acima do teto de ${maxPointsPerTask} pontos da casa.`
+  }
+  return null
+}
+
+/**
+ * Limite de tarefas ativas por dependente (chave `task_rules`), ou `null` quando
+ * cabe. `maxActiveTasks = 0` = ilimitado (default) e não gera consulta.
+ *
+ * Conta `PENDING/IN_PROGRESS/NOT_DELIVERED` — o dependente não vê tarefa em
+ * espera (`ON_HOLD`), então ela não lota a lista dele. Best-effort: erro de
+ * leitura libera (não bloqueia trabalho legítimo por uma falha transitória).
+ *
+ * `excludeTaskId` ignora a própria tarefa: usado na edição, em que o alvo já
+ * conta entre as ativas e não pode contar duas vezes.
+ */
+async function checkActiveTaskLimit(
+  admin: ReturnType<typeof createAdminClient>,
+  houseId: string,
+  profileId: string,
+  maxActiveTasks: number,
+  excludeTaskId?: string
+): Promise<string | null> {
+  if (maxActiveTasks <= 0) return null
+
+  let query = admin
+    .from('tasks')
+    .select('id', { count: 'exact', head: true })
+    .eq('house_id', houseId)
+    .eq('assigned_to', profileId)
+    .in('status', [...ACTIVE_TASK_STATUSES])
+
+  if (excludeTaskId) query = query.neq('id', excludeTaskId)
+
+  const { count, error } = await query
+  if (error) {
+    console.error('[tasks] Falha ao contar tarefas ativas:', error)
+    return null
+  }
+
+  const active = count ?? 0
+  if (active >= maxActiveTasks) {
+    return `Este dependente já tem ${active} tarefas ativas — o limite da casa é ${maxActiveTasks}.`
+  }
+  return null
 }
 
 /**
@@ -147,6 +209,12 @@ export async function createTask(
   if (!title) return { ok: false, error: 'Informe o título da tarefa.' }
   if (input.points < 0) return { ok: false, error: 'Pontos não podem ser negativos.' }
 
+  // Limites da casa (chave `task_rules`): teto de pontos e de tarefas ativas.
+  // `0` em qualquer um dos dois = desligado.
+  const rules = await getHouseTaskRulesSettings(activeHouse.id)
+  const pointsCapError = checkPointsCap(input.points, rules.maxPointsPerTask)
+  if (pointsCapError) return { ok: false, error: pointsCapError }
+
   const { data: assignee } = await admin
     .from('house_members')
     .select('id')
@@ -158,6 +226,14 @@ export async function createTask(
   if (!assignee) {
     return { ok: false, error: 'O dependente selecionado não pertence a esta casa.' }
   }
+
+  const activeLimitError = await checkActiveTaskLimit(
+    admin,
+    activeHouse.id,
+    input.assignedTo,
+    rules.maxActiveTasks
+  )
+  if (activeLimitError) return { ok: false, error: activeLimitError }
 
   // Soft block server-side (rede de segurança): impede criar uma tarefa ativa
   // com o mesmo nome (normalizado) para o mesmo pupilo, a menos que o ADMIN
@@ -314,6 +390,10 @@ export async function updateTask(
     if (patch.points === undefined || patch.points < 0) {
       return { ok: false, error: 'Pontos inválidos.' }
     }
+    // Teto de pontos da casa (chave `task_rules`, 0 = sem teto).
+    const rules = await getHouseTaskRulesSettings(activeHouse.id)
+    const pointsCapError = checkPointsCap(patch.points, rules.maxPointsPerTask)
+    if (pointsCapError) return { ok: false, error: pointsCapError }
     updates.points = patch.points
   }
   if ('due_date' in patch) {
@@ -360,6 +440,19 @@ export async function updateTask(
       if (!assignee) {
         return { ok: false, error: 'O dependente selecionado não pertence a esta casa.' }
       }
+
+      // Reatribuir também respeita o limite de tarefas ativas do destino. A
+      // própria tarefa é excluída da contagem (ela já está entre as ativas do
+      // alvo quando o status permite editar).
+      const rules = await getHouseTaskRulesSettings(activeHouse.id)
+      const activeLimitError = await checkActiveTaskLimit(
+        admin,
+        activeHouse.id,
+        nextAssignee,
+        rules.maxActiveTasks,
+        taskId
+      )
+      if (activeLimitError) return { ok: false, error: activeLimitError }
     }
     updates.assigned_to = nextAssignee
   }

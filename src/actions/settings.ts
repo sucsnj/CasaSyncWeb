@@ -5,19 +5,25 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   DEFAULT_EXTENSION_RULES,
+  DEFAULT_NOTIFICATION_MUTE,
   DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
   DEFAULT_REWARD_PRICING,
   DEFAULT_TASK_DECAY,
+  DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
+  type NotificationMuteSettings,
   type NotificationRetentionSettings,
   type QuickMessageSettings,
   type RewardPricingSettings,
   type TaskDecaySettings,
+  type TaskRulesSettings,
   type TaskSlaSettings,
 } from '@/utils/settings'
+import { MUTEABLE_CATEGORIES } from '@/types/notifications'
+import { POINTS_MAX } from './types'
 import type { ActionResult } from './types'
 
 function isFiniteNumber(value: unknown): value is number {
@@ -81,9 +87,11 @@ export async function updateHouseSettings(
     revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
   }
-  if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay') {
+  if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay' || key === 'task_rules') {
     revalidatePath('/tasks')
   }
+  // `notification_mute` e `notification_retention` só afetam notificações
+  // futuras, então nãoinvalidam nenhuma tela.
 
   return { ok: true, message: 'Configurações salvas.' }
 }
@@ -102,6 +110,8 @@ function validateSettings(
   if (key === 'task_sla') return validateTaskSla(patch)
   if (key === 'extension_rules') return validateExtensionRules(patch)
   if (key === 'task_decay') return validateTaskDecay(patch)
+  if (key === 'notification_mute') return validateNotificationMute(patch)
+  if (key === 'task_rules') return validateTaskRules(patch)
   return validateNotificationRetention(patch)
 }
 
@@ -114,7 +124,9 @@ type SettingsResult =
         | TaskSlaSettings
         | ExtensionRulesSettings
         | NotificationRetentionSettings
+        | NotificationMuteSettings
         | TaskDecaySettings
+        | TaskRulesSettings
     }
   | { ok: false; error: string }
 
@@ -267,6 +279,55 @@ function validateTaskDecay(patch: Record<string, unknown>): SettingsResult {
 
   base.periodHours = periodHours
   base.pointsPerPeriod = pointsPerPeriod
+
+  return { ok: true, value: base }
+}
+
+/**
+ * Categorias silenciadas. Só as chaves de `MUTEABLE_CATEGORIES` são aceitas —
+ * partir dos defaults garante que nenhum campo extra submittedo pelo cliente
+ * entre no jsonb (`QUICK_MESSAGE`/`PENALTY` não têm toggle por decisão de produto).
+ */
+function validateNotificationMute(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_NOTIFICATION_MUTE }
+
+  for (const category of MUTEABLE_CATEGORIES) {
+    const value = patch[category] ?? base[category]
+    if (typeof value !== 'boolean') {
+      return { ok: false, error: `A opção de silenciar "${category}" deve ser ligada ou desligada.` }
+    }
+    base[category] = value
+  }
+
+  return { ok: true, value: base }
+}
+
+/** Teto de pontos por tarefa e limite de tarefas ativas (`0` = desligado). */
+function validateTaskRules(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_TASK_RULES }
+
+  const maxPointsPerTask = patch.maxPointsPerTask ?? base.maxPointsPerTask
+  if (
+    !isFiniteNumber(maxPointsPerTask) ||
+    !Number.isInteger(maxPointsPerTask) ||
+    maxPointsPerTask < 0 ||
+    maxPointsPerTask > POINTS_MAX
+  ) {
+    return { ok: false, error: 'O teto de pontos por tarefa deve ser um inteiro de 0 (sem teto) até 1.000.000.' }
+  }
+
+  const maxActiveTasks = patch.maxActiveTasks ?? base.maxActiveTasks
+  if (
+    !isFiniteNumber(maxActiveTasks) ||
+    !Number.isInteger(maxActiveTasks) ||
+    maxActiveTasks < 0 ||
+    maxActiveTasks > 999
+  ) {
+    return { ok: false, error: 'O limite de tarefas ativas deve ser um inteiro de 0 (sem limite) até 999.' }
+  }
+
+  base.maxPointsPerTask = maxPointsPerTask
+  base.maxActiveTasks = maxActiveTasks
 
   return { ok: true, value: base }
 }

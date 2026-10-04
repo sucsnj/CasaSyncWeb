@@ -1,9 +1,11 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { MEDIA_BUCKET } from '@/utils/media'
 import {
+  getHouseNotificationMuteSettings,
   getHouseNotificationRetentionSettings,
   getHouseQuickMessageSettings,
 } from '@/utils/house-settings'
+import { isNotificationMuted } from '@/utils/notification-mute'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -59,6 +61,23 @@ export type NotifyOptions = {
   dispatchPush?: boolean
 }
 
+/**
+ * A casa silenciou a categoria deste tipo de notificação? Best-effort: erro de
+ * leitura cai em `false` (notifica) — nunca em `true`.
+ */
+async function isCategoryMuted(
+  houseId: string,
+  type: NotificationType
+): Promise<boolean> {
+  try {
+    const mute = await getHouseNotificationMuteSettings(houseId)
+    return isNotificationMuted(type, mute)
+  } catch (err) {
+    console.error('[notifications] Falha ao ler o mute da casa:', err)
+    return false
+  }
+}
+
 /** Ids dos membros da casa com o papel informado. */
 async function getHouseMemberIds(
   admin: AdminClient,
@@ -93,6 +112,11 @@ export async function notifyUser(
   input: NotifyInput & { recipientId: string },
   options?: NotifyOptions
 ): Promise<void> {
+  // Categoria silenciada pela casa (chave `notification_mute`): não grava linha
+  // nem dispara push. `QUICK_MESSAGE`/`PENALTY` não têm categoria => nunca são
+  // silenciadas (ver `isNotificationMuted`).
+  if (await isCategoryMuted(input.houseId, input.type)) return
+
   try {
     await admin.from('notifications').insert({
       house_id: input.houseId,
@@ -129,6 +153,8 @@ export async function notifyHouse(
   input: NotifyHouseInput,
   options?: NotifyOptions
 ): Promise<void> {
+  if (await isCategoryMuted(input.houseId, input.type)) return
+
   try {
     const ids = await getHouseMemberIds(
       admin,

@@ -1,5 +1,31 @@
 # CasaSync Web — PROJECT STATUS
 
+## Duas chaves novas de configuração: silenciar notificações e limites de tarefas (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **`notification_mute`** — a casa silencia **categorias** de notificação: `tasks` (os 7 `TASK_*` + os 3 `EXTENSION_*`), `rewards` (`REWARD_CREATED` + 3 `REDEMPTION_*` + 3 `SUGGESTION_*`) e `achievements` (`ACHIEVEMENT_UNLOCKED`). Default `false` em todas: uma casa que nunca abriu a tela não muda de comportamento.
+- **`QUICK_MESSAGE` e `PENALTY` não têm toggle — e não existe caminho no código para silenciá-las.** Decisão explícita: a mensagem rápida é o canal direto do dependente para o tutor, e a penalidade é aviso de um débito real de pontos (que já exige motivo obrigatório). Silenciar os dois é o tipo de mute que vira briga em casa. Isso é garantido por construção, não por convenção: o mapeamento `notificationCategory()` devolve `null` para esses tipos, e o helper **falha em favor de notificar** (`isNotificationMuted` com categoria ausente ou settings legível falha ⇒ `false`).
+- **Aplicação no gargalo único de escrita:** guarda no topo de `notifyUser`/`notifyHouse` (`src/utils/notifications.ts:91,127`) — categoria silenciada **não grava linha nem dispara push** (o retorno vem antes do insert e antes do bloco de push). É o único caminho de disparo de notificação do app, então silenciar vale para o sino, o toast via Realtime e o Web Push de uma vez. Silenciar **não apaga histórico**: só impede avisos futuros.
+- **`task_rules`** — teto de pontos por tarefa (`maxPointsPerTask`) e limite de tarefas ativas por dependente (`maxActiveTasks`), ambos `0` = desligado (default, preserva o comportamento atual).
+  - **Teto de pontos:** validado no servidor em `createTask` e `updateTask` (`checkPointsCap`) — rede de segurança contra erro de digitação, já que hoje `tasks.points` só barra valor negativo.
+  - **Limite de tarefas ativas:** `checkActiveTaskLimit` conta `PENDING/IN_PROGRESS/NOT_DELIVERED` do dependente na casa. **`ON_HOLD` não conta** — a tarefa em espera é invisível para o dependente, então não lota a lista dele (mesmo conjunto do soft block de duplicidade). Roda no `createTask` **e** no `updateTask` quando o ADMIN reatribui para alguém no limite (com `excludeTaskId`, para a própria tarefa não contar duas vezes). Erro de leitura do banco **libera** o limite (não bloqueia trabalho legítimo por falha transitória) e `0` nem gera consulta.
+- **UI:** o silenciamento **entrou no card "Notificações" que já existia** (3 `Toggle` no mesmo padrão do toggle "Decaimento ativo"), com a dica de que mensagem rápida e penalidade não são silenciáveis; o card **"Limites de tarefas"** é novo (`ListTodo`, ícone índigo), com 2 `Field` (`sm:grid-cols-2`). As duas chaves são gravadas **juntas** pelo mesmo botão "Salvar notificações" (mensagem de erro trazida da 2ª se a 1ª passar).
+- **`validateNotificationMute` parte de `MUTEABLE_CATEGORIES`**, não das chaves recebidas: nenhum campo extra enviado pelo cliente entra no jsonb, e `QUICK_MESSAGE`/`PENALTY` não ganham toggle por acidente.
+- **`revalidatePath`:** `task_rules` revalida `/tasks` (o limite aparece nos hints do form); `notification_mute` **não revalida nada** além da tela de configurações, porque só afeta notificações futuras.
+- **Rótulos das categorias em um lugar só:** `notificationCategory()` em `src/types/notifications.ts` é usado tanto pelos toggles da UI quanto pela guarda no servidor — não há como um lado conhecer uma categoria e o outro não.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Regras puras conferidas executando os módulos reais com `node --experimental-strip-types` (loader temporário para resolver o alias `@/`, fora do repo): **17 casos de mute** — os 20 tipos mapeados (10 tarefas / 7 recompensas / 1 conquistas), nenhum tipo sem categoria, `QUICK_MESSAGE`/`PENALTY` imunes mesmo com tudo silenciado, mute por categoria correta, e fail-open com settings ausente/`undefined`/default. **8 casos do teto de pontos** — `0` nunca barra, 501 vs 500 recusa, 500 exato aceita. Classes do card novo conferidas no CSS gerado (`bg-indigo-100`, `text-indigo-700`).
+
+### Pontos de atenção
+- **Sem mudança de schema:** as duas chaves são valores jsonb em `house_settings`; linhas ausentes caem no default.
+- **Silenciar é por categoria, não por tipo:** não dá para silenciar só `TASK_APPROVED` mantendo `TASK_REJECTED`. Escolha consciente — 20 toggles seriam ruído; se surgir a necessidade, o mapa `CATEGORY_BY_TYPE` vira a lista de chaves.
+- **O limite de tarefas ativas é sempre por dependente, nunca global** e nunca por casa. Tarefa em espera e tarefa concluída/aprovada não contam.
+- **O `updateTask` valida o limite apenas ao reatribuir** e o teto apenas quando `points` vem no patch — editar o título de uma tarefa que ficou acima do limite (porque o ADMIN baixou o teto depois) continua permitido. Escolha: não bloquear edição por regra já existente.
+- **Etapa 2 pendente (não implementada):** `house_timezone`, com refatoração do offset fixo de `America/Recife` (`utils/comunicados.ts:107`) para cálculo IANA via `Intl` — depende do teste desta etapa.
+
+---
+
 ## Ajustes da visão geral do ADMIN e do modal de castigo (concluídos — sem mudança de schema)
 
 ### O que foi feito

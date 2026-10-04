@@ -3,10 +3,12 @@ import { redirect } from 'next/navigation'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   getHouseExtensionRulesSettings,
+  getHouseNotificationMuteSettings,
   getHouseNotificationRetentionSettings,
   getHouseQuickMessageSettings,
   getHouseRewardPricingSettings,
   getHouseTaskDecaySettings,
+  getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
@@ -56,14 +58,24 @@ export default async function AdminSettingsPage() {
     )
   }
 
-  const [rewardPricing, quickMessage, taskSla, extensionRules, notificationRetention, taskDecay] =
-  await Promise.all([
+  const [
+    rewardPricing,
+    quickMessage,
+    taskSla,
+    extensionRules,
+    notificationRetention,
+    notificationMute,
+    taskDecay,
+    taskRules,
+  ] = await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
     getHouseTaskSlaSettings(activeHouse.id),
     getHouseExtensionRulesSettings(activeHouse.id),
     getHouseNotificationRetentionSettings(activeHouse.id),
+    getHouseNotificationMuteSettings(activeHouse.id),
     getHouseTaskDecaySettings(activeHouse.id),
+    getHouseTaskRulesSettings(activeHouse.id),
   ])
 
   return (
@@ -74,7 +86,9 @@ export default async function AdminSettingsPage() {
         taskSla={taskSla}
         extensionRules={extensionRules}
         notificationRetention={notificationRetention}
+        notificationMute={notificationMute}
         taskDecay={taskDecay}
+        taskRules={taskRules}
       />
     </div>
   )

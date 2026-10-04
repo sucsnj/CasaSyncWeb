@@ -18,7 +18,9 @@ export type HouseSettingsKey =
   | 'task_sla'
   | 'extension_rules'
   | 'notification_retention'
+  | 'notification_mute'
   | 'task_decay'
+  | 'task_rules'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -106,6 +108,34 @@ export type TaskDecaySettings = {
   pointsPerPeriod: number
 }
 
+/**
+ * Categorias de notificação que a casa pode **silenciar** (não gerar nem notificar
+ * por push). `true` = silenciada. Default `false` em todas: nada muda para uma
+ * casa que nunca abriu essa tela.
+ *
+ * `QUICK_MESSAGE` e `PENALTY` **não têm toggle de propósito** (ver
+ * `MUTEABLE_CATEGORIES` e `notificationCategory`): a mensagem rápida é o canal
+ * direto do dependente para o tutor e a penalidade é aviso de um débito real de
+ * pontos com motivo obrigatório — silenciá-las é o tipo de mute que vira briga.
+ */
+export type NotificationMuteSettings = {
+  tasks: boolean
+  rewards: boolean
+  achievements: boolean
+}
+
+/**
+ * Limites de tarefas da casa — rede de segurança contra erro de digitação e
+ * contra a lista do dependente crescer sem limite. `0` = desligado (default,
+ * preserva o comportamento atual).
+ */
+export type TaskRulesSettings = {
+  /** Teto de pontos por tarefa (0 = sem teto). */
+  maxPointsPerTask: number
+  /** Máximo de tarefas ATIVAS por dependente (0 = ilimitado). */
+  maxActiveTasks: number
+}
+
 export const DEFAULT_TASK_SLA: TaskSlaSettings = {
   defaultDueDays: 1,
   dueSoonHours: 4,
@@ -119,10 +149,21 @@ export const DEFAULT_NOTIFICATION_RETENTION: NotificationRetentionSettings = {
   readRetentionDays: 5,
 }
 
+export const DEFAULT_NOTIFICATION_MUTE: NotificationMuteSettings = {
+  tasks: false,
+  rewards: false,
+  achievements: false,
+}
+
 export const DEFAULT_TASK_DECAY: TaskDecaySettings = {
   enabled: true,
   periodHours: 24,
   pointsPerPeriod: 1,
+}
+
+export const DEFAULT_TASK_RULES: TaskRulesSettings = {
+  maxPointsPerTask: 0,
+  maxActiveTasks: 0,
 }
 
 export function mergeSettings<T extends Record<string, unknown>>(
