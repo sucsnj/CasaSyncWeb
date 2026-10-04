@@ -79,13 +79,17 @@ export type TaskSlaSettings = {
 }
 
 /**
- * Regras de adiamento de tarefas. Apenas os dias oferecidos nos botões de
- * aprovação — a mecânica de "máximo de adiamentos por tarefa" ficou de fora
- * (decisão de produto, ver PROJECT_STATUS.md).
+ * Regras de adiamento de tarefas.
+ *
+ * `maxExtensions` limita quantas vezes o prazo da MESMA tarefa pode ser
+ * esticado (contador `tasks.extension_count`, somado quando o ADMIN aprova um
+ * adiamento). `0` = ilimitado.
  */
 export type ExtensionRulesSettings = {
   /** Dias disponíveis nos botões "Aprovar (+N dias)" do ADMIN. */
   dayOptions: number[]
+  /** Máximo de adiamentos por tarefa (0 = ilimitado). */
+  maxExtensions: number
 }
 
 /** Retenção das notificações comuns (a QUICK_MESSAGE tem regra própria). */
@@ -154,6 +158,7 @@ export const DEFAULT_TASK_SLA: TaskSlaSettings = {
 
 export const DEFAULT_EXTENSION_RULES: ExtensionRulesSettings = {
   dayOptions: [1, 3],
+  maxExtensions: 0,
 }
 
 export const DEFAULT_NOTIFICATION_RETENTION: NotificationRetentionSettings = {

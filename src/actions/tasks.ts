@@ -1247,7 +1247,7 @@ export async function requestTaskExtension(
 
   const { data: task } = await admin
     .from('tasks')
-    .select('house_id, assigned_to, status, extension_requested, title')
+    .select('house_id, assigned_to, status, extension_requested, extension_count, title')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -1266,6 +1266,17 @@ export async function requestTaskExtension(
   }
   if (task.extension_requested) {
     return { ok: false, error: 'Já existe um pedido de adiamento para esta tarefa.' }
+  }
+
+  // Limite de adiamentos por tarefa (chave `extension_rules`, 0 = ilimitado). O
+  // contador é somado na APROVAÇÃO, então um pedido recusado não gasta orçamento.
+  const extensionSettings = await getHouseExtensionRulesSettings(house.id)
+  const { maxExtensions } = extensionSettings
+  if (maxExtensions > 0 && task.extension_count >= maxExtensions) {
+    return {
+      ok: false,
+      error: `Esta tarefa já teve ${task.extension_count} adiamento(s) e o limite da casa é ${maxExtensions}.`,
+    }
   }
 
   const { error } = await admin
@@ -1314,7 +1325,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, assigned_to, title'
+      'house_id, status, due_date, extension_requested, extension_reason, extension_count, assigned_to, title'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -1339,6 +1350,7 @@ export async function resolveTaskExtension(
   const updates: {
     extension_requested: boolean
     extension_reason: null
+    extension_count?: number
     due_date?: string
     points?: number
     status?: 'PENDING' | 'NOT_DELIVERED'
@@ -1353,6 +1365,11 @@ export async function resolveTaskExtension(
     const nextDue = new Date(base.getTime() + days * 24 * 60 * 60 * 1000)
     updates.due_date = nextDue.toISOString()
 
+    // Contador de adiamentos desta tarefa (chave `extension_rules.maxExtensions`).
+    // Só a aprovação soma: recusar não estica prazo, e editar o prazo direto no
+    // card também não — são decisões do ADMIN, não adiamentos.
+    updates.extension_count = task.extension_count + 1
+
     // Reabertura de uma tarefa "não entregue": os pontos debitados NÃO voltam
     // (penalidade definitiva) e a tarefa passa a valer 0 pontos.
     if (isNotDelivered) {
@@ -1362,9 +1379,24 @@ export async function resolveTaskExtension(
     }
   }
 
-  const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
+  // Guarda de transição: `.eq('extension_requested', true)` garante que só o
+  // primeiro clique resolve o pedido. Sem ela, dois cliques rápidos em
+  // "Aprovar (+N dias)" lêm o pedido pendente e aplicam o adiamento DUAS vezes
+  // (o que também somaria o contador duas vezes).
+  const { data: resolved, error } = await admin
+    .from('tasks')
+    .update(updates)
+    .eq('id', taskId)
+    .eq('extension_requested', true)
+    .select('id')
 
   if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
+  if (!resolved || resolved.length === 0) {
+    return {
+      ok: false,
+      error: 'Este pedido de adiamento já foi resolvido por outra pessoa.',
+    }
+  }
 
   if (task.assigned_to) {
     await notifyUser(admin, {

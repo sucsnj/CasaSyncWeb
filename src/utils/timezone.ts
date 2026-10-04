@@ -141,6 +141,27 @@ export function zonedWallClockToInstant(
 }
 
 /**
+ * Offset do fuso no formato curto de exibição (`"UTC-03:00"`, `"UTC+01:00"`).
+ *
+ * Usado na tela de Configurações para deixar o fuso escolhido **visível**: como
+ * o `<select>` só mostra o nome da cidade, o offset é o que muda na hora quando
+ * o ADMIN troca o fuso. É calculado com `zonedOffsetMs`, então já respeita o
+ * horário de verão do fuso (Brasília não tem DST hoje; Lisboa tem).
+ */
+export function formatZonedOffset(
+  timeZone: string,
+  instant: Date = new Date()
+): string {
+  const offsetMs = zonedOffsetMs(instant, timeZone)
+  const sign = offsetMs < 0 ? '-' : '+'
+  const totalMinutes = Math.round(Math.abs(offsetMs) / 60_000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  return `UTC${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+/**
  * Dia da semana (0=domingo .. 6=sábado) que o instante tem **no fuso da casa**.
  * Mesmo truque do código anterior (desloca o instante pelo offset e lê o campo UTC
  * de dia), só que o offset agora é calculado em vez de fixo em +3h.

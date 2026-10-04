@@ -150,6 +150,7 @@ export default async function TasksPage() {
           defaultDueDays={taskSlaSettings?.defaultDueDays}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           extensionDayOptions={extensionRulesSettings?.dayOptions}
+          maxExtensions={extensionRulesSettings?.maxExtensions}
           taskDecay={taskDecaySettings}
         />
       )

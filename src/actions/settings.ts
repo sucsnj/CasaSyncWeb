@@ -254,7 +254,21 @@ function validateExtensionRules(patch: Record<string, unknown>): SettingsResult 
     return { ok: false, error: 'As opções de dias devem ser todas diferentes entre si.' }
   }
 
-  return { ok: true, value: { dayOptions } }
+  const maxExtensions =
+    patch.maxExtensions ?? DEFAULT_EXTENSION_RULES.maxExtensions
+  if (
+    !isFiniteNumber(maxExtensions) ||
+    !Number.isInteger(maxExtensions) ||
+    maxExtensions < 0 ||
+    maxExtensions > 99
+  ) {
+    return {
+      ok: false,
+      error: 'O máximo de adiamentos deve ser um inteiro de 0 (ilimitado) até 99.',
+    }
+  }
+
+  return { ok: true, value: { dayOptions, maxExtensions } }
 }
 
 function validateNotificationRetention(patch: Record<string, unknown>): SettingsResult {

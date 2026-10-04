@@ -1,5 +1,37 @@
 # CasaSync Web — PROJECT STATUS
 
+## Limite de adiamentos por tarefa + fuso visível (implementado — SQL a aplicar no banco)
+
+### O que foi implementado
+- **Novo campo `maxExtensions` na chave `extension_rules`** (0 = ilimitado, **default preserva o comportamento atual**) no card "Adiamento de tarefas". Limita quantas vezes o prazo da **mesma tarefa** pode ser esticado.
+- **Nova coluna `tasks.extension_count`** — não existia histórico: `extension_requested`/`extension_reason` são flags do pedido **atual** (limpam quando o pedido é resolvido), então não dava para saber quantos adiamentos uma tarefa já teve. Tarefas existentes nascem em `0` — não há como saber o histórico e inventar seria pior que recomeçar (a regra vale daqui pra frente, e a dica da tela diz isso).
+- **O contador soma na APROVAÇÃO** (`resolveTaskExtension`), não no pedido: **recusar não estica prazo** e não pode consumir o orçamento do dependente. **Não contam**: editar o prazo direto no card, `restoreTask` e a reativação de `ON_HOLD` — todos dão prazo novo, mas são decisão do ADMIN (que sempre pode mudar o prazo direto).
+- **A trava fica no pedido do dependente** (`requestTaskExtension`), com mensagem acionável (*"Esta tarefa já teve 2 adiamento(s) e o limite da casa é 3."*). O ADMIN continua podendo aprovar um pedido feito **antes** de a casa baixar o limite.
+- **Bug corrigido no mesmo caminho — corrida de duplo clique em "Aprovar adiamento":** `resolveTaskExtension` fazia `update().eq('id', taskId)` **sem guarda de estado**, então dois cliques rápidos liam o pedido pendente e aplicavam o adiamento **duas vezes** (o que também somaria o contador duas vezes). Ganhou `.eq('extension_requested', true)` — a mesma defesa de transição guardada do resto do app — e "0 linhas" vira *"Este pedido de adiamento já foi resolvido por outra pessoa."*
+- **Fuso ficou visível:** o card "Fuso horário" agora mostra **"Agora na casa: UTC-03:00"**. O `<select>` só mostra o nome da cidade, então o offset é o que muda de imediato ao trocar o fuso. O offset é calculado **no servidor** (`formatZonedOffset`) e repassado como **prop string** — texto estável, sem risco de hydration mismatch.
+- **UI:** o banner do pedido de adiamento mostra o consumo (*"Esta tarefa já teve N de M adiamento(s) da casa"*) só quando há limite, e o update otimista já soma o contador na hora (sem esperar o `router.refresh()`).
+
+### SQL a aplicar no banco
+```sql
+-- docs/sql/task_extension_count.sql (rodar no SQL Editor do Supabase):
+alter table public.tasks add column if not exists extension_count int not null default 0;
+alter table public.tasks drop constraint if exists tasks_extension_count_non_negative;
+alter table public.tasks add constraint tasks_extension_count_non_negative check (extension_count >= 0);
+```
+**Ordem obrigatória:** o SQL **precisa** estar aplicado antes do deploy — o app lê a coluna em `requestTaskExtension`/`resolveTaskExtension` e quebraria com `column "extension_count" does not exist`.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas). Módulos reais executados com `node --experimental-strip-types` (loader temporário fora do repo): **14 casos de `formatZonedOffset`** — Recife/São Paulo/Belém (−03:00), Manaus (−04:00), Noronha (−02:00), `UTC`, Kolkata (+05:30, **meia hora**), Tóquio (+09:00), Lisboa +00:00/+01:00 conforme o DST e Santiago −03:00/−04:00 na estação correta do hemisfério sul. **20 casos de `maxExtensions`** — 0/1/3/99 aceitos, −1/100/fracionário/string reprovados, e as fronteiras da trava (0 = ilimitado nunca barra; 3 de 3 barra; 3 de 1 com limite já baixado barra). Classe do campo novo conferida no CSS gerado (`sm:max-w-xs`).
+
+### Pontos de atenção
+- **SQL pendente** (ver acima) — é o único bloqueio antes do deploy.
+- **A regra é prospectiva:** tarefas com adiamentos anteriores a esta mudança começam em 0.
+- **Baixar o limite vale na hora**, inclusive para tarefas que já passaram do novo teto (elas deixam de aceitar novo pedido).
+- **Não é um teto global:** o limite é por tarefa e por casa; não existe "total de adiamentos da casa por semana".
+- O limite é **só no caminho do pedido**. Editar o prazo direto no card continua可能的 de propósito (ver decisão 4 no ADR).
+
+---
+
 ## Fuso horário por casa — e fim de um bug de 34% no agendamento dos comunicados (implementado — sem mudança de schema)
 
 ### O que foi implementado

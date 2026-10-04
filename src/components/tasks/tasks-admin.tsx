@@ -84,6 +84,7 @@ export function TasksAdmin({
   defaultDueDays = 1,
   dueSoonHours = 4,
   extensionDayOptions = [1, 3],
+  maxExtensions = 0,
   taskDecay,
 }: {
   houseId: string
@@ -95,6 +96,8 @@ export function TasksAdmin({
   dueSoonHours?: number
   /** Dias disponíveis nos botões de aprovação de adiamento — settings.casa. */
   extensionDayOptions?: number[]
+  /** Máximo de adiamentos por tarefa (0 = ilimitado) — settings.casa. */
+  maxExtensions?: number
   /** Decaimento de pontos de tarefas — settings.casa. */
   taskDecay?: TaskDecaySettings
 }) {
@@ -476,6 +479,9 @@ export function TasksAdmin({
           ...task,
           extension_requested: false,
           extension_reason: null,
+          // Aprovar soma o contador de adiamentos da tarefa (mesmo passo do
+          // servidor), para o "N de M" não ficar velho até o refresh.
+          extension_count: approve ? task.extension_count + 1 : task.extension_count,
           ...restored,
         })
       )
@@ -974,6 +980,12 @@ export function TasksAdmin({
                             <p className="mt-1 text-xs text-blue-700">
                               A penalidade é definitiva: aprovar reabre a tarefa
                               valendo 0, sem devolver os pontos debitados.
+                            </p>
+                          ) : null}
+                          {maxExtensions > 0 ? (
+                            <p className="mt-1 text-xs text-blue-700">
+                              Esta tarefa já teve {task.extension_count} de{' '}
+                              {maxExtensions} adiamento(s) da casa.
                             </p>
                           ) : null}
                           <div className="mt-2 flex flex-wrap gap-2">

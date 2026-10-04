@@ -51,6 +51,8 @@ type SettingsAdminProps = {
   taskDecay: TaskDecaySettings
   taskRules: TaskRulesSettings
   houseTimezone: HouseTimezoneSettings
+  /** Offset do fuso já formatado no servidor (ex.: `UTC-03:00`) — texto estável. */
+  houseTimezoneOffset: string
 }
 
 function Toggle({
@@ -138,6 +140,7 @@ export function SettingsAdmin({
   taskDecay,
   taskRules,
   houseTimezone,
+  houseTimezoneOffset,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -616,10 +619,26 @@ export function SettingsAdmin({
           <CardTitle>Adiamento de tarefas</CardTitle>
           <CardDescription>
             Dias oferecidos nos botões de aprovação de pedidos de adiamento (o
-            dependente sempre pede; o ADMIN escolhe os dias).
+            dependente sempre pede; o ADMIN escolhe os dias) e quantas vezes o
+            prazo da mesma tarefa pode ser esticado.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:max-w-xs">
+            <Field
+              label="Máximo de adiamentos"
+              value={extensions.maxExtensions}
+              onChange={(maxExtensions) =>
+                setExtensions((prev) => ({ ...prev, maxExtensions }))
+              }
+              min={0}
+              max={99}
+              step={1}
+              suffix="por tarefa"
+              hint="0 = ilimitado. O contador soma quando você APROVA um adiamento; recusar não gasta, e editar o prazo direto no card também não."
+            />
+          </div>
+
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-slate-700">
               Opções de dias
@@ -1004,6 +1023,9 @@ export function SettingsAdmin({
               Padrão: Recife. Só os horários de comunicados e a contagem de dias da
               Streak usam isso — o prazo das tarefas continua sendo o horário do
               dispositivo de cada um.
+            </p>
+            <p className="text-xs font-medium text-slate-600">
+              Agora na casa: {houseTimezoneOffset}
             </p>
           </div>
 

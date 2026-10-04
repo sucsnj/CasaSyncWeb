@@ -13,6 +13,7 @@ import {
   getHouseTimezoneSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
+import { formatZonedOffset } from '@/utils/timezone'
 import {
   Card,
   CardContent,
@@ -81,6 +82,12 @@ export default async function AdminSettingsPage() {
     getHouseTimezoneSettings(activeHouse.id),
   ])
 
+  // Offset do fuso da casa, calculado NO SERVIDOR e repassado como texto: o
+  // `<select>` só mostra o nome da cidade, então o offset é o que torna a escolha
+  // visível de imediato. Texto estável (a página é `force-dynamic`) => sem risco
+  // de hydration mismatch.
+  const houseTimezoneOffset = formatZonedOffset(houseTimezone.timezone)
+
   return (
     <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
       <SettingsAdmin
@@ -93,6 +100,7 @@ export default async function AdminSettingsPage() {
         taskDecay={taskDecay}
         taskRules={taskRules}
         houseTimezone={houseTimezone}
+        houseTimezoneOffset={houseTimezoneOffset}
       />
     </div>
   )

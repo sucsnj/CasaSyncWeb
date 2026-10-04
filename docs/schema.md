@@ -55,6 +55,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | image_url | text | |
 | extension_requested | bool | pedido de adiamento |
 | extension_reason | text | justificativa obrigatória |
+| extension_count | int | default 0; quantos adiamentos a tarefa já recebeu (soma na aprovação); `>= 0` |
 | decay_started_at | timestamptz | nullable; ponto de partida do relógio do **decaimento** (criação ou última edição; null em tarefas antigas → fallback `created_at`). **Aplicado no Supabase** (SQL no topo do `PROJECT_STATUS.md`) |
 | created_at / updated_at | timestamptz | |
 
@@ -139,7 +140,7 @@ Chaves e efeitos:
 - `reward_pricing`: `enabled`, `noIncreaseMax`, `midMax`, `midRate`, `highRate`, `minBump` — encarecimento automático em `approveRedemption` (`nextRewardCost`). Defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt.
 - `quick_message`: `maxChars` (100), `maxImageMb` (5), `capacity` (2, limite de envio), `readRetentionDays` (5, **retenção por tempo**: assim que ao menos um admin lê, apaga o grupo inteiro após X dias; mensagens nunca lidas ficam armazenadas; regra antiga "2 lidas → apaga a mais antiga" removida).
 - `task_sla`: `defaultDueDays` (1, prazo "agora + N dias" no form/restauro) e `dueSoonHours` (4, chip "Prazo próximo" quando faltam menos de N horas para o prazo — limiar absoluto, independente da duração; 0 desliga).
-- `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista).
+- `extension_rules`: `dayOptions` ([1,3], botões "Aprovar (+N dias)"; `resolveTaskExtension` rejeita dias fora da lista) e `maxExtensions` (0, ilimitado — quantas vezes a **mesma tarefa** pode ser adiada; checado no pedido do dependente e somado em `tasks.extension_count` **na aprovação**, então recusar não gasta; ver **ADR-0022**).
 - `notification_retention`: `readRetentionDays` (5, lidas comuns apagadas por casa da notificação, excluindo `QUICK_MESSAGE`).
 - `notification_mute`: `tasks`, `rewards`, `achievements` (false) — silenciar **categorias** de notificação. `QUICK_MESSAGE` e `PENALTY` **não têm toggle** (decisão de produto, garantida por construção: `notificationCategory()` devolve `null` e `isNotificationMuted` falha em favor de notificar). Guarda no gargalo único (`notifyUser`/`notifyHouse`): categoria silenciada não grava linha nem dispara push, e **não apaga histórico**. Default: tudo ligado (nada muda para casa existente).
 - `task_rules`: `maxPointsPerTask` (0, sem teto) e `maxActiveTasks` (0, ilimitado) — rede de segurança validada **no servidor** em `createTask`/`updateTask` (`checkPointsCap` e `checkActiveTaskLimit`; conta `PENDING`/`IN_PROGRESS`/`NOT_DELIVERED`, `ON_HOLD` **não** conta). O limite de ativas também vale nas transições que devolvem a tarefa ao dependente (`restoreTask`, reativação de `setTaskOnHold`, `rejectCompletedTask` — `checkReopenTaskLimit`), já que todas aumentam a lista dele.

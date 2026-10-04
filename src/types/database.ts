@@ -178,6 +178,7 @@ export interface Database {
           image_url: string | null
           extension_requested: boolean
           extension_reason: string | null
+          extension_count: number
           decay_started_at: string | null
           created_at: string
           updated_at: string
@@ -197,6 +198,7 @@ export interface Database {
           image_url?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
+          extension_count?: number
           decay_started_at?: string | null
           created_at?: string
           updated_at?: string
@@ -216,6 +218,7 @@ export interface Database {
           image_url?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
+          extension_count?: number
           decay_started_at?: string | null
           created_at?: string
           updated_at?: string
