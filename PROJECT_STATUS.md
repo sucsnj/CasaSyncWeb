@@ -1,5 +1,40 @@
 # CasaSync Web — PROJECT STATUS
 
+## Fuso horário por casa — e fim de um bug de 34% no agendamento dos comunicados (implementado — sem mudança de schema)
+
+### O que foi implementado
+- **Nova chave `house_timezone`** (`{ timezone }`, nome IANA, default `America/Recife`) e card **"Fuso horário"** na tela de Configurações: um `<select>` com 13 fusos brasileiros + alguns externos + `UTC`. A casa escolhe que horas são para ela.
+- **Novo módulo puro `src/utils/timezone.ts`** — todo o trabalho no `Intl`, sem dependência nova: `zonedOffsetMs` (offset **calculado**, já considera DST), `zonedWallClockToInstant` (relógio de parede → instante, em **duas passagens** — é o par que resolve a borda de DST), `zonedWeekday`, `zonedDay` (para a Streak) e `isValidTimeZone` (o guard é o **próprio `Intl`**, não uma lista fechada — a lista da UI é só conveniência).
+- **`America/Recife` deixou de estar hardcoded nos dois lugares** que dependem de "que horas são lá": o agendamento dos comunicados (`utils/comunicados.ts`) e o dia-contagem da Streak (`actions/stats.ts`, `registerLoginDay`). As assinaturas dos helpers passaram a receber o fuso: `nextComunicadoOccurrence(after, schedule, timeZone)` e `firstComunicadoOccurrence(now, schedule, timeZone)`; `recifeWeekday`/`recifeOffsetHours` foram removidos (não usados fora do módulo).
+- **Fuso inválido nunca entra no banco:** o validator (`validateHouseTimezone`) usa `isValidTimeZone`, e o getter (`getHouseTimezoneSettings`) ainda cai no default se a linha gravada trouxer algo que o runtime não reconhece — um fuso quebrado não se propaga para o cálculo do agenda.
+- **`revalidatePath` nas 3 rotas do dependente** ao salvar: o fuso muda o que está "devido" no overlay de comunicados e o dia da Streak, ambos calculados no render.
+- **Não toca no prazo das tarefas**, que continua sendo o horário do dispositivo de cada um (`datetime-local` + `FormattedDateTime`) — a dica do card diz isso.
+
+### 🐞 Bug pré-existente corrigido no caminho (importante)
+Ao generalizar o fuso, a validação contra um oráculo independente revelou que o código antigo de comunicados tinha **o sinal do offset trocado nos dois pontos**. Como local = UTC − 3h, para ler a data local é preciso **subtrair** 3h — e o código **somava** (equivale a ler *(local + 6h)*):
+- `recifeWeekday()` → devolvia o dia da semana errado;
+- `slotOf()` → usava o mesmo `+3h` para achar a data-calendário local (o `+3h` do fim da conta está certo: parede → UTC é `UTC = local + 3h`).
+
+**Alcance medido:** 240 agendas × 5.840 instantes (2 anos, de 3 em 3 horas) = **1.401.600 cenários**. Código antigo divergia do comportamento correto em **34%** deles; o novo diverge em **0**.
+**Exemplo prático:** comunicado de domingo às `00:00`, avaliado às 18:00 de domingo — o slot já passou, então devia aparecer na hora; o antigo empurrava para o **domingo seguinte** (7 dias de atraso). Ou seja, **comunicados agendados para horário cedo podiam atrasar uma semana**. Quem usa comunicados vai ver o aviso aparecer **mais cedo** do que antes — é a correção, não uma regressão.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas).
+Helpers puros executados com `node --experimental-strip-types` (loader temporário para o alias `@/`, fora do repo):
+- **26 casos de fuso** — validação (nome válido, `Mars/Phobos`, vazio, `null`, número), offsets (Recife −3h nos dois hemisférios; Lisboa 0/+1 conforme o DST; `UTC` 0), parede → instante (Recife 08:00 = 11:00Z; Manaus = 12:00Z), **borda de DST de Lisboa** (antes e depois da virada), round-trip dos dois lados da virada, dia da semana local na virada de meia-noite e `zonedDay` na virada do dia por fuso.
+- **Paridade do agendamento:** 1.401.600 cenários comparados contra um **oráculo escrito do zero** (com a regra de sinal explicitada) → **0 divergências**. E o **código antigo** contra o mesmo oráculo → 34% de divergência, o que dimensiona o bug corrigido.
+- **Weekday x Intl:** varrida de 48h em 3 fusos brasileiros (antigo erra 12h de 48; novo 0) e de 40 dias em Lisboa/Santiago/New York, cobrindo a virada de DST (novo 0).
+- Classes do card novo conferidas no CSS gerado (`bg-sky-100`, `text-sky-700`).
+
+### Pontos de atenção
+- **Mudança de comportamento visível:** por causa da correção do bug, comunicados com horário agendado cedo podem aparecer **imediatamente** (ou no mesmo dia) em vez de esperar o próximo dia da semana. Se um teste seu depended disso, o comportamento antigo estava errado.
+- **Trocar o fuso reancora comunicados já agendados** (`repeat_time` é hora de parede): o próximo disparo passa a ser calculado no fuso novo. Não há migração de dados.
+- **Fuso com DST só importa para casas fora do Brasil** — os fusos brasileiros não têm horário de verão hoje, então o ganho real do `Intl` aqui é a generalização, não o DST.
+- A **Streak** é o outro lugar afetado: uma casa em Lisboa, por exemplo, fecha o dia antes do Recife e a contagem muda de dia em um horário diferente do nosso.
+- Requer deploy para valer online.
+
+---
+
 ## Duas chaves novas de configuração: silenciar notificações e limites de tarefas (implementado — sem mudança de schema)
 
 ### O que foi implementado
@@ -24,7 +59,7 @@
 - **O limite de tarefas ativas é sempre por dependente, nunca global** e nunca por casa. Tarefa em espera e tarefa concluída/aprovada não contam.
 - **O `updateTask` valida o limite apenas ao reatribuir** e o teto apenas quando `points` vem no patch — editar o título de uma tarefa que ficou acima do limite (porque o ADMIN baixou o teto depois) continua permitido. Escolha: não bloquear edição por regra já existente.
 - **Desaprovar uma tarefa concluída também respeita o limite.** É o caso mais discutível dos três (o ADMIN às vezes quer devolver o trabalho para refazer), mas a regra é uniforme: as três transições *acrescentam* uma tarefa à lista do dependente, então as três passam pela mesma guarda. Se preferir que "Desaprovar" seja sempre permitido, é isolar `checkReopenTaskLimit` nessa action.
-- **Etapa 2 pendente (não implementada):** `house_timezone`, com refatoração do offset fixo de `America/Recife` (`utils/comunicados.ts:107`) para cálculo IANA via `Intl` — depende do teste desta etapa.
+- **Etapa 2 (`house_timezone`) implementada** — ver a seção no topo do documento.
 
 ---
 

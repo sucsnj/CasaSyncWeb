@@ -5,6 +5,7 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   DEFAULT_EXTENSION_RULES,
+  DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
   DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
@@ -14,6 +15,7 @@ import {
   DEFAULT_TASK_SLA,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
+  type HouseTimezoneSettings,
   type NotificationMuteSettings,
   type NotificationRetentionSettings,
   type QuickMessageSettings,
@@ -22,6 +24,7 @@ import {
   type TaskRulesSettings,
   type TaskSlaSettings,
 } from '@/utils/settings'
+import { isValidTimeZone } from '@/utils/timezone'
 import { MUTEABLE_CATEGORIES } from '@/types/notifications'
 import { POINTS_MAX } from './types'
 import type { ActionResult } from './types'
@@ -91,7 +94,14 @@ export async function updateHouseSettings(
     revalidatePath('/tasks')
   }
   // `notification_mute` e `notification_retention` só afetam notificações
-  // futuras, então nãoinvalidam nenhuma tela.
+  // futuras, então não invalidam nenhuma tela.
+  if (key === 'house_timezone') {
+    // O fuso muda o que está "devido" no overlay de comunicados e o dia da
+    // Streak, ambos calculados no render das telas do dependente.
+    revalidatePath('/dashboard/dependent')
+    revalidatePath('/tasks')
+    revalidatePath('/rewards')
+  }
 
   return { ok: true, message: 'Configurações salvas.' }
 }
@@ -112,6 +122,7 @@ function validateSettings(
   if (key === 'task_decay') return validateTaskDecay(patch)
   if (key === 'notification_mute') return validateNotificationMute(patch)
   if (key === 'task_rules') return validateTaskRules(patch)
+  if (key === 'house_timezone') return validateHouseTimezone(patch)
   return validateNotificationRetention(patch)
 }
 
@@ -127,6 +138,7 @@ type SettingsResult =
         | NotificationMuteSettings
         | TaskDecaySettings
         | TaskRulesSettings
+        | HouseTimezoneSettings
     }
   | { ok: false; error: string }
 
@@ -328,6 +340,24 @@ function validateTaskRules(patch: Record<string, unknown>): SettingsResult {
 
   base.maxPointsPerTask = maxPointsPerTask
   base.maxActiveTasks = maxActiveTasks
+
+  return { ok: true, value: base }
+}
+
+/**
+ * Fuso horário da casa (nome IANA). O guard é o próprio `Intl`: um nome que o
+ * runtime não reconhece lança no construtor, então valor inválido nunca entra no
+ * banco. Não é uma lista fechada — a lista da UI é só conveniência.
+ */
+function validateHouseTimezone(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_HOUSE_TIMEZONE_SETTINGS }
+
+  const timezone = patch.timezone ?? base.timezone
+  if (!isValidTimeZone(timezone)) {
+    return { ok: false, error: 'Fuso horário inválido.' }
+  }
+
+  base.timezone = timezone
 
   return { ok: true, value: base }
 }

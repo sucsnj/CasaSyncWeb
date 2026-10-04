@@ -2,6 +2,7 @@ import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   DEFAULT_EXTENSION_RULES,
+  DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
   DEFAULT_NOTIFICATION_RETENTION,
   DEFAULT_QUICK_MESSAGE,
@@ -12,6 +13,7 @@ import {
   mergeSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
+  type HouseTimezoneSettings,
   type NotificationMuteSettings,
   type NotificationRetentionSettings,
   type QuickMessageSettings,
@@ -20,6 +22,7 @@ import {
   type TaskRulesSettings,
   type TaskSlaSettings,
 } from '@/utils/settings'
+import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
 
 type SettingsRow = { value: Record<string, unknown> | null }
 
@@ -101,6 +104,25 @@ export const getHouseTaskRulesSettings = cache(
   async (houseId: string): Promise<TaskRulesSettings> => {
     const value = await getHouseSettingsValue(houseId, 'task_rules')
     return mergeSettings(value, DEFAULT_TASK_RULES)
+  }
+)
+
+/**
+ * Fuso horário da casa. Lido pelos dois lugares que dependem de "que horas são
+ * lá": o agendamento dos comunicados (`getDueComunicados`) e o dia-contagem da
+ * Streak (`registerLoginDay`).
+ */
+export const getHouseTimezoneSettings = cache(
+  async (houseId: string): Promise<HouseTimezoneSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'house_timezone')
+    const merged = mergeSettings(value, DEFAULT_HOUSE_TIMEZONE_SETTINGS)
+    // Linha gravada com fuso que o runtime não conhece (ou nunca existiu) cai
+    // no default — nunca propaga um fuso quebrado para o cálculo do agenda.
+    return {
+      timezone: isValidTimeZone(merged.timezone)
+        ? merged.timezone
+        : DEFAULT_HOUSE_TIMEZONE,
+    }
   }
 )
 

@@ -122,7 +122,7 @@ pg_cron.
 | coluna | tipo | notas |
 |---|---|---|
 | house_id | uuid FK → houses (PK) | casa dona da configuração; `on delete cascade` |
-| key | text (PK) | `reward_pricing` \| `quick_message` \| `task_sla` \| `extension_rules` \| `notification_retention` \| `notification_mute` \| `task_decay` \| `task_rules` (`HouseSettingsKey` em `src/utils/settings.ts`) |
+| key | text (PK) | `reward_pricing` \| `quick_message` \| `task_sla` \| `extension_rules` \| `notification_retention` \| `notification_mute` \| `task_decay` \| `task_rules` \| `house_timezone` (`HouseSettingsKey` em `src/utils/settings.ts`) |
 | value | jsonb | objeto de configuração; campos ausentes caem no default via `mergeSettings` |
 | updated_by | uuid FK → profiles | nullable; ADMIN que salvou por último |
 | updated_at | timestamptz | default `now()` |
@@ -133,7 +133,7 @@ getters cached em `src/utils/house-settings.ts` (sem Realtime: a propagação us
 `router.refresh()` pós-ação). Sem linha = defaults (`DEFAULT_REWARD_PRICING` /
 `DEFAULT_QUICK_MESSAGE` / `DEFAULT_TASK_SLA` / `DEFAULT_EXTENSION_RULES` /
 `DEFAULT_NOTIFICATION_RETENTION` / `DEFAULT_NOTIFICATION_MUTE` / `DEFAULT_TASK_DECAY` /
-`DEFAULT_TASK_RULES`). **Sem publication Realtime.**
+`DEFAULT_TASK_RULES` / `DEFAULT_HOUSE_TIMEZONE_SETTINGS`). **Sem publication Realtime.**
 
 Chaves e efeitos:
 - `reward_pricing`: `enabled`, `noIncreaseMax`, `midMax`, `midRate`, `highRate`, `minBump` — encarecimento automático em `approveRedemption` (`nextRewardCost`). Defaults: ≤25 não encarece; 26–200 +3%; >200 +2%; piso +1 pt.
@@ -144,6 +144,7 @@ Chaves e efeitos:
 - `notification_mute`: `tasks`, `rewards`, `achievements` (false) — silenciar **categorias** de notificação. `QUICK_MESSAGE` e `PENALTY` **não têm toggle** (decisão de produto, garantida por construção: `notificationCategory()` devolve `null` e `isNotificationMuted` falha em favor de notificar). Guarda no gargalo único (`notifyUser`/`notifyHouse`): categoria silenciada não grava linha nem dispara push, e **não apaga histórico**. Default: tudo ligado (nada muda para casa existente).
 - `task_rules`: `maxPointsPerTask` (0, sem teto) e `maxActiveTasks` (0, ilimitado) — rede de segurança validada **no servidor** em `createTask`/`updateTask` (`checkPointsCap` e `checkActiveTaskLimit`; conta `PENDING`/`IN_PROGRESS`/`NOT_DELIVERED`, `ON_HOLD` **não** conta). O limite de ativas também vale nas transições que devolvem a tarefa ao dependente (`restoreTask`, reativação de `setTaskOnHold`, `rejectCompletedTask` — `checkReopenTaskLimit`), já que todas aumentam a lista dele.
 - `task_decay`: `enabled` (true), `periodHours` (24), `pointsPerPeriod` (1) — decaimento de pontos de tarefas. A cada `periodHours` completas desde o **ponto de partida do relógio** — `tasks.decay_started_at` (criação ou última edição; fallback `created_at`) — a tarefa perde `pointsPerPeriod` (janela capada no `due_date` — após o vencimento a perda não cresce —, piso 0); `tasks.points` é a base intocada e o valor corrente é calculado por `getTaskCurrentPoints` (`src/utils/task-decay.ts`), usado no crédito da aprovação e no débito de `NOT_DELIVERED`. Adiamentos não reiniciam o relógio; `restoreTask` reinicia (ver topo do `PROJECT_STATUS.md`).
+- `house_timezone`: `timezone` (`America/Recife`) — nome IANA do fuso da casa. Afeta **dois** lugares: o agendamento dos comunicados (`repeat_time` é hora de parede **dela**) e o dia-contagem da Streak (`registerLoginDay`). Calculado por `Intl` em `src/utils/timezone.ts` (DST-aware); validado pelo próprio `Intl` (`isValidTimeZone`) e o getter cai no default se a linha trouxer um nome que o runtime não reconhece. Não afeta o prazo das tarefas (que é horário do dispositivo). Ver **ADR-0021**.
 
 ### achievements
 | coluna | tipo | notas |
@@ -191,7 +192,7 @@ Uma linha por (conquista, dependente). RLS: SELECT por membro (policy `dependent
 | custom_rewards_approved_count | int | default 0 |
 | app_login_days_count | int | default 0 |
 | streak_login_days | int | default 0 |
-| last_login_day | date | idempotência do login diário (America/Recife) |
+| last_login_day | date | idempotência do login diário no **fuso da casa** (`house_timezone`) |
 | updated_at | timestamptz | |
 
 Uma linha por dependente+casa; contadores iniciados em **0** (sem backfill). Os contadores alimentam o progresso das métricas (exceto `EARNED_POINTS`/`MANUAL`); mapa métrica→coluna em `src/utils/dependent-stats.ts`. **RLS sem policies de cliente** (leituras/escritas service-role) e **fora da publication Realtime** (a UI segue por `dependent_achievements`).
@@ -208,7 +209,7 @@ Uma linha por dependente+casa; contadores iniciados em **0** (sem backfill). Os 
 | repeats_total | int | 1–100; quantas confirmações por dependente |
 | repeat_interval_days | int | 0–365; período entre repetições (0 = sem período fixo) |
 | repeat_weekdays | int[] | default `{0,1,2,3,4,5,6}` (Dom..Sáb); vazio = todos |
-| repeat_time | time | default `08:00:00`; relógio de parede em America/Recife |
+| repeat_time | time | default `08:00:00`; relógio de parede no **fuso da casa** (`house_timezone`) |
 | created_at / updated_at | timestamptz | |
 
 RLS: policy de SELECT por membro e inclusion na publication Realtime são **inofensivas** (o overlay do dependente não assina `comunicados` — o módulo é sem tempo real; só o `comunicados-admin.tsx` assina). Escritas e leituras via service role (escopo da sessão). **Schema já aplicado no banco** — ver `docs/sql/comunicados.sql` e seção "Comunicados" do `PROJECT_STATUS.md`.

@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/utils/supabase/admin'
 import { syncAchievementProgress } from '@/utils/achievement-progress'
+import { getHouseTimezoneSettings } from '@/utils/house-settings'
+import { zonedDay } from '@/utils/timezone'
 import {
   DEPENDENT_STAT_COLUMNS,
   type DependentStatColumns,
@@ -26,14 +28,13 @@ function statPatch(
   return { [column]: value } as Partial<DependentStatColumns>
 }
 
-/** Dia (e ontem) em America/Recife no formato YYYY-MM-DD — fuso fixo, sem DST. */
-function recifeDay(offsetDays: number): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Recife',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000))
+/**
+ * Dia (e ontem) no **fuso da casa** (chave `house_timezone`), no formato
+ * YYYY-MM-DD. Dia-contagem da Streak: uma casa em outro fuso fecha o dia em
+ * horário diferente do Recife, e é o dia *dela* que conta.
+ */
+function houseDay(timeZone: string, offsetDays: number): string {
+  return zonedDay(timeZone, offsetDays)
 }
 
 /**
@@ -192,10 +193,11 @@ export async function evaluateAchievements(
 
 /**
  * Conta o acesso diário do dependente (métrica APP_LOGIN_DAYS + STREAK_LOGIN_DAYS),
- * com "dia" no fuso America/Recife. Idempotente por dia: só incrementa quando
- * `last_login_day` difere de hoje; o streak continua quando ontem foi registrado
- * e reseta para 1 após um dia sem acesso. Disparado best-effort nos renders
- * dependentes (dashboard, tasks, rewards, conquistas).
+ * com "dia" no **fuso da casa** (chave `house_timezone`, default America/Recife).
+ * Idempotente por dia: só incrementa quando `last_login_day` difere de hoje; o
+ * streak continua quando ontem foi registrado e reseta para 1 após um dia sem
+ * acesso. Disparado best-effort nos renders dependentes (dashboard, tasks,
+ * rewards, conquistas).
  */
 export async function registerLoginDay(
   houseId: string,
@@ -209,8 +211,9 @@ export async function registerLoginDay(
   }
 
   try {
-    const today = recifeDay(0)
-    const yesterday = recifeDay(-1)
+    const { timezone } = await getHouseTimezoneSettings(houseId)
+    const today = houseDay(timezone, 0)
+    const yesterday = houseDay(timezone, -1)
 
     const { data: row } = await admin
       .from('dependent_stats')

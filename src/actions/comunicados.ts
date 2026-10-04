@@ -24,6 +24,7 @@ import {
   ALERT_TYPED_WORDS_REQUIRED,
   hasTypedAlertConfirmation,
 } from '@/utils/alert-queue'
+import { getHouseTimezoneSettings } from '@/utils/house-settings'
 import type { ActionResult } from './types'
 
 /**
@@ -361,6 +362,8 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
 
   const now = new Date()
   const due: DueComunicado[] = []
+  // Fuso da casa (chave `house_timezone`): `repeat_time` é hora de parede dela.
+  const { timezone } = await getHouseTimezoneSettings(house.id)
 
   for (const comunicado of comunicados) {
     const delivery = deliveriesByComunicado.get(comunicado.id)
@@ -376,13 +379,13 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
       const lastConfirmed = delivery.last_confirmed_at
         ? new Date(delivery.last_confirmed_at)
         : new Date()
-      const next = nextComunicadoOccurrence(lastConfirmed, schedule)
+      const next = nextComunicadoOccurrence(lastConfirmed, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
         due.push(toDueComunicado(comunicado, deliveredCount))
       }
     } else {
       // 1ª exibição: "slot de hoje ou próximo" (regra do usuário).
-      const first = firstComunicadoOccurrence(now, schedule)
+      const first = firstComunicadoOccurrence(now, schedule, timezone)
       if (now.getTime() >= first.getTime()) {
         due.push(toDueComunicado(comunicado, deliveredCount))
       }

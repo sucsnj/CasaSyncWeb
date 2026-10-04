@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Clock3,
   Coins,
+  Globe,
   Hourglass,
   ListTodo,
   MessageSquare,
@@ -29,6 +30,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type {
   ExtensionRulesSettings,
+  HouseTimezoneSettings,
   NotificationMuteSettings,
   NotificationRetentionSettings,
   QuickMessageSettings,
@@ -37,6 +39,7 @@ import type {
   TaskRulesSettings,
   TaskSlaSettings,
 } from '@/utils/settings'
+import { HOUSE_TIMEZONE_OPTIONS } from '@/utils/timezone'
 
 type SettingsAdminProps = {
   rewardPricing: RewardPricingSettings
@@ -47,6 +50,7 @@ type SettingsAdminProps = {
   notificationMute: NotificationMuteSettings
   taskDecay: TaskDecaySettings
   taskRules: TaskRulesSettings
+  houseTimezone: HouseTimezoneSettings
 }
 
 function Toggle({
@@ -133,6 +137,7 @@ export function SettingsAdmin({
   notificationMute,
   taskDecay,
   taskRules,
+  houseTimezone,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -168,6 +173,10 @@ export function SettingsAdmin({
   const [rules, setRules] = useState<TaskRulesSettings>(taskRules)
   const [rulesError, setRulesError] = useState<string | null>(null)
   const [rulesSuccess, setRulesSuccess] = useState<string | null>(null)
+
+  const [timezone, setTimezone] = useState<string>(houseTimezone.timezone)
+  const [timezoneError, setTimezoneError] = useState<string | null>(null)
+  const [timezoneSuccess, setTimezoneSuccess] = useState<string | null>(null)
 
   function savePricing() {
     setPricingError(null)
@@ -284,6 +293,23 @@ export function SettingsAdmin({
         return
       }
       setRulesSuccess(result.message ?? 'Configurações salvas.')
+      toast.success(result.message ?? 'Configurações salvas.')
+      router.refresh()
+    })
+  }
+
+  function saveTimezone() {
+    setTimezoneError(null)
+    setTimezoneSuccess(null)
+
+    startTransition(async () => {
+      const result = await updateHouseSettings('house_timezone', { timezone })
+      if (!result.ok) {
+        setTimezoneError(result.error)
+        toast.error(result.error)
+        return
+      }
+      setTimezoneSuccess(result.message ?? 'Configurações salvas.')
       toast.success(result.message ?? 'Configurações salvas.')
       router.refresh()
     })
@@ -931,6 +957,76 @@ export function SettingsAdmin({
             >
               <Save className="size-4" />
               Salvar limites
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardAction>
+            <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+              <Globe className="size-5" />
+            </span>
+          </CardAction>
+          <CardTitle>Fuso horário</CardTitle>
+          <CardDescription>
+            Define que horas são para a casa. Muda o horário em que os comunicados
+            são cobrados e o dia que conta na Streak.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="house-timezone"
+              className="text-sm font-medium text-slate-700"
+            >
+              Fuso da casa
+            </label>
+            <select
+              id="house-timezone"
+              value={timezone}
+              onChange={(event) => setTimezone(event.target.value)}
+              className="min-h-10 w-full rounded-xl border border-input bg-white px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {/* Uma casa com fuso fora da lista (gravado por outro caminho)
+                  continua selecionável em vez de cair no primeiro item. */}
+              {HOUSE_TIMEZONE_OPTIONS.some((option) => option.value === timezone) ? null : (
+                <option value={timezone}>{timezone}</option>
+              )}
+              {HOUSE_TIMEZONE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500">
+              Padrão: Recife. Só os horários de comunicados e a contagem de dias da
+              Streak usam isso — o prazo das tarefas continua sendo o horário do
+              dispositivo de cada um.
+            </p>
+          </div>
+
+          {timezoneError ? (
+            <p role="alert" className="text-sm text-red-600">
+              {timezoneError}
+            </p>
+          ) : null}
+          {timezoneSuccess ? (
+            <p role="status" className="text-sm text-emerald-700">
+              {timezoneSuccess}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void saveTimezone()}
+              disabled={pending}
+            >
+              <Save className="size-4" />
+              Salvar fuso
             </Button>
           </div>
         </CardContent>

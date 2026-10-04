@@ -11,6 +11,7 @@ import {
   QUICK_MESSAGE_MAX_IMAGE_MB,
   QUICK_MESSAGE_READ_RETENTION_DAYS,
 } from '@/utils/quick-message'
+import { DEFAULT_HOUSE_TIMEZONE } from '@/utils/timezone'
 
 export type HouseSettingsKey =
   | 'reward_pricing'
@@ -21,6 +22,7 @@ export type HouseSettingsKey =
   | 'notification_mute'
   | 'task_decay'
   | 'task_rules'
+  | 'house_timezone'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -136,6 +138,15 @@ export type TaskRulesSettings = {
   maxActiveTasks: number
 }
 
+/**
+ * Fuso horário da casa (nome IANA). Afeta **dois** lugares que antes tinham
+ * `America/Recife` fixo: o horário de parede dos comunicados e o dia-contagem da
+ * Streak. Ver `src/utils/timezone.ts`.
+ */
+export type HouseTimezoneSettings = {
+  timezone: string
+}
+
 export const DEFAULT_TASK_SLA: TaskSlaSettings = {
   defaultDueDays: 1,
   dueSoonHours: 4,
@@ -164,6 +175,10 @@ export const DEFAULT_TASK_DECAY: TaskDecaySettings = {
 export const DEFAULT_TASK_RULES: TaskRulesSettings = {
   maxPointsPerTask: 0,
   maxActiveTasks: 0,
+}
+
+export const DEFAULT_HOUSE_TIMEZONE_SETTINGS: HouseTimezoneSettings = {
+  timezone: DEFAULT_HOUSE_TIMEZONE,
 }
 
 export function mergeSettings<T extends Record<string, unknown>>(

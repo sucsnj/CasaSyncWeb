@@ -10,6 +10,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
+  getHouseTimezoneSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
 import {
@@ -67,6 +68,7 @@ export default async function AdminSettingsPage() {
     notificationMute,
     taskDecay,
     taskRules,
+    houseTimezone,
   ] = await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
@@ -76,6 +78,7 @@ export default async function AdminSettingsPage() {
     getHouseNotificationMuteSettings(activeHouse.id),
     getHouseTaskDecaySettings(activeHouse.id),
     getHouseTaskRulesSettings(activeHouse.id),
+    getHouseTimezoneSettings(activeHouse.id),
   ])
 
   return (
@@ -89,6 +92,7 @@ export default async function AdminSettingsPage() {
         notificationMute={notificationMute}
         taskDecay={taskDecay}
         taskRules={taskRules}
+        houseTimezone={houseTimezone}
       />
     </div>
   )

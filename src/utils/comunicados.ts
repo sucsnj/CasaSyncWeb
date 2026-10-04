@@ -18,11 +18,13 @@
  * - O "disparo" agendado é calculado no servidor (próxima abertura) — o app
  *   não usa cron/background.
  *
- * O fuso de referência do agendamento é America/Recife (UTC-3 fixo, sem DST) —
- * mesmo fuso que o `registerLoginDay` usa para os dias de acesso. Horários de
- * parede digitados pelo ADMIN viram instantes comparáveis via offset fixo.
+ * O fuso do agendamento é o **fuso da casa** (chave `house_timezone`, nome IANA,
+ * default `America/Recife`) — o mesmo que o `registerLoginDay` usa para os dias de
+ * acesso. Horários de parede digitados pelo ADMIN viram instantes comparáveis via
+ * `Intl` (`utils/timezone.ts`), que também considera horário de verão.
  */
 
+import { zonedOffsetMs, zonedWallClockToInstant, zonedWeekday } from '@/utils/timezone'
 import type { Tables } from '@/types/database'
 
 export const COMUNICADO_MAX_REPEATS = 100
@@ -100,12 +102,6 @@ export function comunicadoSchedule(comunicado: Comunicado): ComunicadoSchedule {
   }
 }
 
-/**
- * Offset fixo de America/Recife: local = UTC − 3h, logo `UTC = local + 3h`.
- * Sem DST, então a conversão é linear (dura para todo o ano).
- */
-const RECIFE_UTC_OFFSET_MS = 3 * 60 * 60 * 1000
-
 /** HH:MM de 24h (ex.: "08:00", "14:30"). */
 export const COMUNICADO_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 
@@ -126,42 +122,33 @@ export function formatComunicadoTime(time: string): string {
   return time.slice(0, 5)
 }
 
-/** Dia da semana (0=domingo..6=sábado) que um instante tem em America/Recife. */
-export function recifeWeekday(instant: Date): number {
-  return new Date(instant.getTime() + RECIFE_UTC_OFFSET_MS).getUTCDay()
-}
-
 /**
- * Instante do "slot" (HH:MM em America/Recife) do mesmo dia-calendário (Recife)
- * de `instant`. Usado como candidato inicial das ocorrências.
+ * Instante do "slot" (HH:MM no fuso da casa) do mesmo dia-calendário de
+ * `instant` naquele fuso. Usado como candidato inicial das ocorrências.
  */
-function slotOf(instant: Date, time: string): number {
+function slotOf(instant: Date, time: string, timeZone: string): number {
   const { hour, minute } = hourMinute(time)
-  // Data-calendário (Recife) de `instant`, obtida somando o offset (+3h) e
-  // lendo os campos UTC; `hour:minute` vira o instante de parede: como local
-  // = UTC − 3h, `UTC = local + 3h`, então SOMA-se o offset ao slot "como UTC".
-  const shift = instant.getTime() + RECIFE_UTC_OFFSET_MS
-  const wall = new Date(shift)
-  return (
-    Date.UTC(
-      wall.getUTCFullYear(),
-      wall.getUTCMonth(),
-      wall.getUTCDate(),
-      hour,
-      minute,
-      0,
-      0
-    ) + RECIFE_UTC_OFFSET_MS
-  )
+  // Dia-calendário (na casa) de `instant`: desloca pelo offset do fuso e lê os
+  // campos UTC. O slot HH:MM desse dia vira o instante equivalente via
+  // `Intl` (uma-passagem com refinamento, para a borda de DST).
+  const shifted = new Date(instant.getTime() + zonedOffsetMs(instant, timeZone))
+  return zonedWallClockToInstant(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth() + 1,
+    shifted.getUTCDate(),
+    hour,
+    minute,
+    timeZone
+  ).getTime()
 }
 
 /**
  * Próxima ocorrência agendada de um comunicado, DADO o instante da última
- * confirmação (`after`):
+ * confirmação (`after`) e o fuso da casa:
  *
  *   referência = after + repeatIntervalDays (ou `after` se 0)
  *   candidato   = primeiro instante >= referência cujo dia da semana está em
- *                 `repeatWeekdays` e cujo relógio local (Recife) é `HH:MM`
+ *                 `repeatWeekdays` e cujo relógio local é `HH:MM`
  *
  * Usado para as REPETIÇÕES (`after` = última confirmação e intervalo real).
  * Para a 1ª exibição use `firstComunicadoOccurrence` (regra "slot de hoje ou
@@ -169,7 +156,8 @@ function slotOf(instant: Date, time: string): number {
  */
 export function nextComunicadoOccurrence(
   after: Date,
-  schedule: ComunicadoSchedule
+  schedule: ComunicadoSchedule,
+  timeZone: string
 ): Date {
   const weekdays = schedule.repeatWeekdays.length > 0
     ? schedule.repeatWeekdays
@@ -180,7 +168,7 @@ export function nextComunicadoOccurrence(
     reference = new Date(after.getTime() + schedule.repeatIntervalDays * 86_400_000)
   }
 
-  let candidateMs = slotOf(reference, schedule.repeatTime)
+  let candidateMs = slotOf(reference, schedule.repeatTime, timeZone)
   if (candidateMs <= reference.getTime()) {
     candidateMs += 86_400_000
   }
@@ -188,7 +176,7 @@ export function nextComunicadoOccurrence(
   // Avança de dia em dia (no máx. 8) até cair num dia da semana permitido.
   for (let i = 0; i < 8; i++) {
     const candidate = new Date(candidateMs)
-    if (weekdays.includes(recifeWeekday(candidate))) {
+    if (weekdays.includes(zonedWeekday(candidate, timeZone))) {
       return candidate
     }
     candidateMs += 86_400_000
@@ -199,7 +187,7 @@ export function nextComunicadoOccurrence(
 
 /**
  * "Deadline" da 1ª exibição de um comunicado (regra "slot de hoje ou próximo",
- * definida pelo usuário):
+ * definida pelo usuário), no fuso da casa:
  *
  * - hoje é dia agendado e o horário de hoje ainda não chegou → o aviso espera
  *   o horário de hoje (retorna o slot de hoje);
@@ -211,23 +199,23 @@ export function nextComunicadoOccurrence(
  */
 export function firstComunicadoOccurrence(
   now: Date,
-  schedule: ComunicadoSchedule
+  schedule: ComunicadoSchedule,
+  timeZone: string
 ): Date {
   const weekdays = schedule.repeatWeekdays.length > 0
     ? schedule.repeatWeekdays
     : COMUNICADO_DEFAULT_WEEKDAYS
 
-  if (weekdays.includes(recifeWeekday(now))) {
-    const todaySlotMs = slotOf(now, schedule.repeatTime)
+  if (weekdays.includes(zonedWeekday(now, timeZone))) {
+    const todaySlotMs = slotOf(now, schedule.repeatTime, timeZone)
     return now.getTime() >= todaySlotMs
       ? new Date(now.getTime())
       : new Date(todaySlotMs)
   }
 
-  return nextComunicadoOccurrence(now, { ...schedule, repeatIntervalDays: 0 })
-}
-
-/** Fuso do agendamento, exposto para testes/registro. */
-export function recifeOffsetHours(): number {
-  return RECIFE_UTC_OFFSET_MS / 3_600_000
+  return nextComunicadoOccurrence(
+    now,
+    { ...schedule, repeatIntervalDays: 0 },
+    timeZone
+  )
 }
