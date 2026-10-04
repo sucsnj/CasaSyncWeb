@@ -1,5 +1,23 @@
 # CasaSync Web — PROJECT STATUS
 
+## Estado atual (verificado — sem pendências)
+
+- **Banco:** todos os scripts SQL já foram aplicados. Confirmado por probe:
+  `tasks.extension_count` responde (com `0` nas tarefas existentes),
+  `dependent_punishments` responde, e `house_settings` já tem as chaves novas
+  gravadas (`task_rules`, `notification_mute`, `house_timezone`, `extension_rules`).
+  **Nada pendente no banco** — o item em `AGENTS.md` §3 voltou a ser "nada pendente".
+- **Features:** castigo do dependente, silenciamento de notificações, limites de
+  tarefas, limite de adiamentos e fuso horário por casa — todas testadas, sem bug
+  ou inconsistência visual conhecida até o momento.
+- **Fila de configuração — decisão de projeto:** `permissions` (só o autor altera
+  pontos/configurações) e `task_proof` (comprovação por foto) **não entram no
+  produto**; as regras atuais permanecem como estão. Registrado no **ADR-0023**
+  para que não voltem como "pendência técnica" no futuro.
+- **Ainda não há deploy** dessas entregas.
+
+---
+
 ## Espaçamento das telas internas do ADMIN e ajustes na tela de Configurações (concluído — sem mudança de schema)
 
 ### O que foi feito
@@ -17,12 +35,13 @@
 
 ### Pontos de atenção
 - **Não reintroduzir container com padding em página aninhada** — é a causa raiz do desalinhamento com a navbar. Se uma página nova do dashboard precisar de respiro, o espaço já vem do layout.
-- O dropdown do fuso é uma lista customizada (não `<select>` nativo): se um dia ele for replicado, manter o `Escape`/clique-fora e os papéis de ARIA.
+- O dropdown do fuso é uma lista customizada em **portal** (não `<select>` nativo): se um dia ele for replicado, manter o `Escape`/clique-fora, o posicionamento recalculado (para baixo ou para cima) e os papéis de ARIA. E atenção ao par `TZ_OPTION_HEIGHT`/`TZ_VISIBLE_ITEMS` — a altura da lista é derivada dos dois.
+- Testado pelo usuário: **sem inconsistência visual e sem bug** nestas telas até o momento.
 - Requer deploy para valer online.
 
 ---
 
-## Limite de adiamentos por tarefa + fuso visível (implementado — SQL a aplicar no banco)
+## Limite de adiamentos por tarefa + fuso visível (implementado — SQL aplicado no banco)
 
 ### O que foi implementado
 - **Novo campo `maxExtensions` na chave `extension_rules`** (0 = ilimitado, **default preserva o comportamento atual**) no card "Adiamento de tarefas". Limita quantas vezes o prazo da **mesma tarefa** pode ser esticado.
@@ -33,24 +52,24 @@
 - **Fuso ficou visível:** o card "Fuso horário" agora mostra **"Agora na casa: UTC-03:00"**. O `<select>` só mostra o nome da cidade, então o offset é o que muda de imediato ao trocar o fuso. O offset é calculado **no servidor** (`formatZonedOffset`) e repassado como **prop string** — texto estável, sem risco de hydration mismatch.
 - **UI:** o banner do pedido de adiamento mostra o consumo (*"Esta tarefa já teve N de M adiamento(s) da casa"*) só quando há limite, e o update otimista já soma o contador na hora (sem esperar o `router.refresh()`).
 
-### SQL a aplicar no banco
+### SQL aplicado no banco
+**Já aplicado no Supabase e confirmado por probe** (`select extension_count from tasks` responde sem erro, com `0` nas tarefas existentes). Arquivo completo em `docs/sql/task_extension_count.sql` — registro do que foi rodado:
 ```sql
 -- docs/sql/task_extension_count.sql (rodar no SQL Editor do Supabase):
 alter table public.tasks add column if not exists extension_count int not null default 0;
 alter table public.tasks drop constraint if exists tasks_extension_count_non_negative;
 alter table public.tasks add constraint tasks_extension_count_non_negative check (extension_count >= 0);
 ```
-**Ordem obrigatória:** o SQL **precisa** estar aplicado antes do deploy — o app lê a coluna em `requestTaskExtension`/`resolveTaskExtension` e quebraria com `column "extension_count" does not exist`.
 
 ### Verificação
 `npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas). Módulos reais executados com `node --experimental-strip-types` (loader temporário fora do repo): **14 casos de `formatZonedOffset`** — Recife/São Paulo/Belém (−03:00), Manaus (−04:00), Noronha (−02:00), `UTC`, Kolkata (+05:30, **meia hora**), Tóquio (+09:00), Lisboa +00:00/+01:00 conforme o DST e Santiago −03:00/−04:00 na estação correta do hemisfério sul. **20 casos de `maxExtensions`** — 0/1/3/99 aceitos, −1/100/fracionário/string reprovados, e as fronteiras da trava (0 = ilimitado nunca barra; 3 de 3 barra; 3 de 1 com limite já baixado barra). Classe do campo novo conferida no CSS gerado (`sm:max-w-xs`).
 
 ### Pontos de atenção
-- **SQL pendente** (ver acima) — é o único bloqueio antes do deploy.
+- **Nada pendente:** SQL aplicado e verificado por probe (`extension_count` responde, com `0` nas tarefas existentes), e a feature testada ponta a ponta (pedir → aprovar → contador sobe → trava no limite → remover/resetar contagem).
 - **A regra é prospectiva:** tarefas com adiamentos anteriores a esta mudança começam em 0.
 - **Baixar o limite vale na hora**, inclusive para tarefas que já passaram do novo teto (elas deixam de aceitar novo pedido).
 - **Não é um teto global:** o limite é por tarefa e por casa; não existe "total de adiamentos da casa por semana".
-- O limite é **só no caminho do pedido**. Editar o prazo direto no card continua可能的 de propósito (ver decisão 4 no ADR).
+- O limite é **só no caminho do pedido**. Editar o prazo direto no card continua possível de propósito (ver decisão 4 no ADR).
 
 ---
 

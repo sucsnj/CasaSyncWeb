@@ -44,6 +44,7 @@ saber quantas vezes uma tarefa já foi esticada.
 ## Consequências
 - **Ordem de deploy:** o SQL tem de estar aplicado **antes** do deploy, senão as
   actions de adiamento quebram com `column "extension_count" does not exist`.
+  *(Já aplicado e verificado por probe — a ordem foi respeitada.)*
 - Uma casa que já usava muito adiamento começa com folga — a regra é prospectiva.
 - Baixar o limite passa a valer imediatamente, inclusive para tarefas que já
   passaram do novo teto (elas deixam de aceitar novo pedido).
