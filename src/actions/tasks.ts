@@ -105,7 +105,7 @@ async function checkActiveTaskLimit(
 
   const active = count ?? 0
   if (active >= maxActiveTasks) {
-    return `Este dependente já tem ${active} tarefas ativas — o limite da casa é ${maxActiveTasks}.`
+    return `Este dependente já tem ${active} tarefas ativas — o limite da casa é ${maxActiveTasks}. Conclua ou aprove uma tarefa, ou aumente o limite em Configurações.`
   }
   return null
 }
@@ -484,6 +484,28 @@ export async function updateTask(
 }
 
 /**
+ * Limite de tarefas ativas nas transições que **devolvem** a tarefa ao
+ * dependente (`COMPLETED`/`APPROVED`/`ON_HOLD` → `PENDING`).
+ *
+ * Essas três também aumentam a contagem de ativas, então precisam da mesma
+ * guarda do `createTask` — sem elas, restaurar uma tarefaApproved burla o limite
+ * da casa. A tarefa em si não entra na contagem (esses três status estão fora de
+ * `ACTIVE_TASK_STATUSES`), por isso não precisa de `excludeTaskId`.
+ *
+ * `null` quando a tarefa não tem dependente (sem atribuição não há lista para
+ * lotar) ou quando o limite está desligado (`0`).
+ */
+async function checkReopenTaskLimit(
+  admin: ReturnType<typeof createAdminClient>,
+  houseId: string,
+  assignedTo: string | null
+): Promise<string | null> {
+  if (!assignedTo) return null
+  const rules = await getHouseTaskRulesSettings(houseId)
+  return checkActiveTaskLimit(admin, houseId, assignedTo, rules.maxActiveTasks)
+}
+
+/**
  * DEPENDENTE marca a própria tarefa como concluída.
  * Guards: a tarefa deve estar PENDING/IN_PROGRESS e atribuída ao usuário.
  */
@@ -684,6 +706,14 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
   if (task.status !== 'COMPLETED') {
     return { ok: false, error: 'Somente tarefas concluídas podem ser desaprovadas.' }
   }
+
+  // Devolver a tarefa reabre a lista ativa do dependente (chave `task_rules`).
+  const limitError = await checkReopenTaskLimit(
+    admin,
+    activeHouse.id,
+    task.assigned_to
+  )
+  if (limitError) return { ok: false, error: limitError }
 
   const { data: reopened, error } = await admin
     .from('tasks')
@@ -921,6 +951,14 @@ export async function setTaskOnHold(
     return { ok: false, error: 'Esta tarefa não está em espera.' }
   }
 
+  // Reativar devolve a tarefa à lista ativa do dependente (chave `task_rules`).
+  const limitError = await checkReopenTaskLimit(
+    admin,
+    activeHouse.id,
+    task.assigned_to
+  )
+  if (limitError) return { ok: false, error: limitError }
+
   // Prazo padrão de reativação derivado das settings da casa (agora + N dias).
   const slaSettings = await getHouseTaskSlaSettings(activeHouse.id)
   const nextDue = new Date(
@@ -1007,6 +1045,14 @@ export async function restoreTask(
   if (task.status !== 'APPROVED') {
     return { ok: false, error: 'Somente tarefas aprovadas podem ser restauradas.' }
   }
+
+  // Restaurar também aumenta a lista ativa do dependente (chave `task_rules`).
+  const limitError = await checkReopenTaskLimit(
+    admin,
+    activeHouse.id,
+    task.assigned_to
+  )
+  if (limitError) return { ok: false, error: limitError }
 
   // Prazo padrão de restauro derivado das settings da casa (agora + N dias).
   const slaSettings = await getHouseTaskSlaSettings(activeHouse.id)
