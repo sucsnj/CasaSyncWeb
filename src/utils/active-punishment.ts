@@ -1,6 +1,10 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { isPunishmentActive, type ActivePunishment } from './punishments'
+import {
+  isPunishmentActive,
+  type ActivePunishment,
+  type HouseActivePunishment,
+} from './punishments'
 
 /**
  * CASTIGO ATIVO DO DEPENDENTE — leitura server-side (o botão só existe para o
@@ -73,34 +77,43 @@ export const getActivePunishment = cache(
 )
 
 /**
- * Perfis da casa que têm castigo ATIVO no momento — usado na visão do ADMIN
- * (gestão de casas) para marcar a linha do dependente e permitir remover o
- * castigo. Não memoizado: é leitura da tela de gestão, não do header.
+ * Castigos ATIVOS da casa, com os dados completos — usado na visão do ADMIN
+ * (gestão de casas) para marcar a linha do dependente e mostrar o castigo atual
+ * no modal (descrição + duração + vencimento). Castigos vencidos não entram na
+ * lista (`isPunishmentActive`).
+ *
+ * Não memoizado: é leitura da tela de gestão, não do header. Um caminho único
+ * para a informação — a página não monta a lista por conta própria.
  */
-export async function getActivePunishmentProfileIds(
+export async function getHouseActivePunishments(
   houseId: string
-): Promise<Set<string>> {
+): Promise<HouseActivePunishment[]> {
   let admin: ReturnType<typeof createAdminClient>
   try {
     admin = createAdminClient()
   } catch {
-    return new Set()
+    return []
   }
 
   try {
-    const nowIso = new Date().toISOString()
+    const now = new Date()
     const { data } = await admin
       .from('dependent_punishments')
-      .select('profile_id, expires_at')
+      .select('id, profile_id, description, duration_days, expires_at, created_at')
       .eq('house_id', houseId)
 
-    return new Set(
-      (data ?? [])
-        .filter((row) => isPunishmentActive(row, new Date(nowIso)))
-        .map((row) => row.profile_id)
-    )
+    return (data ?? [])
+      .filter((row) => isPunishmentActive(row, now))
+      .map((row) => ({
+        id: row.id,
+        profileId: row.profile_id,
+        description: row.description?.trim() || null,
+        durationDays: row.duration_days ?? null,
+        expiresAt: row.expires_at ?? null,
+        createdAt: row.created_at,
+      }))
   } catch (err) {
     console.error('[CASTIGO] Falha ao listar castigos da casa:', err)
-    return new Set()
+    return []
   }
 }

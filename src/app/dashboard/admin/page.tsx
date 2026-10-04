@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Gift, House, ListTodo, Megaphone, SlidersHorizontal } from 'lucide-react'
+import { House, Megaphone, SlidersHorizontal } from 'lucide-react'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import {
@@ -23,20 +23,6 @@ const actions = [
     description: 'Criar, alternar e ver membros.',
     icon: House,
     accent: 'bg-sky-100 text-sky-700',
-  },
-  {
-    href: '/tasks',
-    title: 'Tarefas',
-    description: 'Criar, editar e aprovar tarefas.',
-    icon: ListTodo,
-    accent: 'bg-blue-100 text-blue-700',
-  },
-  {
-    href: '/rewards',
-    title: 'Recompensas',
-    description: 'Loja e aprovação de resgates.',
-    icon: Gift,
-    accent: 'bg-amber-100 text-amber-700',
   },
   {
     href: '/dashboard/admin/settings',
@@ -72,7 +58,7 @@ export default async function AdminDashboardPage() {
         </p>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {actions.map((action) => (
           <Link key={action.href} href={action.href}>
             <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">

@@ -1,5 +1,25 @@
 # CasaSync Web — PROJECT STATUS
 
+## Ajustes da visão geral do ADMIN e do modal de castigo (concluídos — sem mudança de schema)
+
+### O que foi feito
+- **Visão geral do ADMIN (`/dashboard/admin`) sem os cards "Tarefas" e "Recompensas".** A grade de ações ficou só com **Casas**, **Configurações** e **Comunicados** — as telas de tarefas/recompensas continuam accessible pela nav (ícones `ListTodo`/`Gift`), que é onde o ADMIN já trabalha. Com 3 cards, o `xl:grid-cols-5` da grade virou `lg:grid-cols-3` (5 colunas deixaria duas vazias em tela larga).
+- **O modal de castigo do ADMIN passou a mostrar o castigo atual.** Antes ele abria com os campos vazios mesmo havendo castigo ativo — quem só queria editar o texto acabava **apagando a descrição** ao salvar. Agora, ao abrir o modal:
+  - há um **bloco de leitura "Castigo atual"** com a descrição (ou "sem descrição — o dependente vê apenas o aviso"), a **duração** (`punishmentDurationLabel`) e o **vencimento** em `FormattedDateTime` (ou "sem prazo (sai só com 'Remover castigo')"), mais o instante em que foi aplicado;
+  - os campos de **descrição e duração são controlados e inicializados com o castigo atual** — salvar faz *substituir* do que já existe, preservando o texto; "Remover castigo" volta os campos a vazio.
+- **Um caminho único de leitura:** `getActivePunishmentProfileIds` (devolvia só os ids) foi **substituído** por **`getHouseActivePunishments(houseId)`** (`src/utils/active-punishment.ts`), que devolve os castigos ativos **com descrição/duração/vencimento** (`HouseActivePunishment = ActivePunishment & { profileId }` em `src/utils/punishments.ts`). A tela do ADMIN agora recebe `activePunishments: HouseActivePunishment[]` e monta um `Map` por `profileId` (`useMemo`) — o botão "Castigo" (âmbar quando ativo) e o modal leem do mesmo lugar, sem refazer a consulta. Nada de schema, action ou regra nova: a forma de exibir mudou, os dados são os mesmos.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). A classe da grade foi conferida **no CSS gerado** (`.lg\:grid-cols-3` presente em `.next/static/chunks/*.css`), já que `lint`/`typecheck`/`build` não pegam classe não emitida.
+
+### Pontos de atenção
+- **Campos do castigo passaram a ser controlados** — são estado do React, mas **não são credenciais** (a regra do ADR-0003 é só para senha/PIN), então não há conflito com "credencial fora do estado React".
+- **Remover limpa os campos:** depois de "Remover castigo" o modal fica com o formulário vazio, evitando sugerir que o texto apagado ainda vale.
+- **A visão geral ficou com 3 cards**; se outra tela voltar a usar `xl:grid-cols-5` nesse contêiner, reavaliar a grade.
+- Requer deploy para valer online.
+
+---
+
 ## Castigo do dependente — aviso no cabeçalho, sem efeito em regra nenhuma (implementado — SQL aplicado no banco)
 
 ### O que foi implementado
@@ -8,8 +28,8 @@
 - **Um castigo ativo por dependente** (`UNIQUE (profile_id)`): aplicar de novo **substitui** o anterior (upsert), em vez de acumular avisos. O botão na linha do ADMIN vira "Substituir castigo" quando já existe.
 - **Sem Realtime (decisão de produto, mesma premissa dos comunicados — ADR-0017):** o castigo chega ao dependente no **render server-side**; ele o vê ao atualizar a tela ou navegar. As actions chamam `revalidatePath` nas 4 rotas para a próxima renderização já trazer o dado novo. **Nada de notificação/push**: castigo não gera `notifications` nem entra na fila de alertas — é leitura, não evento.
 - **Escopo derivado da sessão:** `applyPunishment(profileId, input)`/`removePunishment(profileId)` recebem **só o alvo** — a casa vem de `getActiveAdminHouse` (nunca de parâmetro público) e o alvo precisa ser `DEPENDENT` dela (um ADMIN nunca é punido). Qualquer **ADMIN da casa ativa** pode aplicar (inclusive co-ADMIN): punição é rotina, ao contrário de excluir conta/trocar PIN, que seguem restritos ao autor (ADR-0014).
-- **Leitura com limpeza lazy:** `getActivePunishment(profileId, houseId)` (`src/utils/active-punishment.ts`, `React.cache`) apaga o castigo vencido na próxima leitura (best-effort) e **ainda assim** checa `expires_at` no código (`isPunishmentActive`), então falha no delete não mostra aviso vencido. `getActivePunishmentProfileIds(houseId)` devolve quem está com castigo ativo para a tela do ADMIN marcar a linha.
-- **UI ADMIN** (`houses-manager.tsx`): botão **"Castigo"** (`TriangleAlert`, âmbar quando há castigo ativo) na linha de cada `DEPENDENT`, com `Modal` que explica que é só um aviso, campo de descrição (textarea, `maxLength` 500) e de duração (number, 1–365, vazio = sem prazo), feedback inline + toast + `router.refresh()`.
+- **Leitura com limpeza lazy:** `getActivePunishment(profileId, houseId)` (`src/utils/active-punishment.ts`, `React.cache`) apaga o castigo vencido na próxima leitura (best-effort) e **ainda assim** checa `expires_at` no código (`isPunishmentActive`), então falha no delete não mostra aviso vencido. `getHouseActivePunishments(houseId)` devolve os castigos ativos **com descrição/duração/vencimento** — um caminho único para a tela do ADMIN marcar a linha e mostrar o castigo atual no modal.
+- **UI ADMIN** (`houses-manager.tsx`): botão **"Castigo"** (`TriangleAlert`, âmbar quando há castigo ativo) na linha de cada `DEPENDENT`, com `Modal` que explica que é só um aviso, campo de descrição (textarea, `maxLength` 500) e de duração (number, 1–365, vazio = sem prazo), feedback inline + toast + `router.refresh()`. O modal **mostra o castigo ATUAL** em um bloco de leitura (descrição ou "sem descrição", duração e vencimento em `FormattedDateTime`) e os campos de descrição/duração são **controlados, inicializados do castigo atual** — assim salvar substitui/edita o que já existia em vez de apagar o texto por engano; "Remover castigo" limpa os campos.
 - **UI DEPENDENT:** `PunishmentIndicator` (`src/components/punishments/punishment-indicator.tsx`) é o botão de triângulo âmbar + modal de leitura ("Aviso de punição", com botão "Entendi" e o vencimento em `FormattedDateTime`). A `DashboardNav` ganhou a prop `punishment?: ActivePunishment | null` e renderiza o indicador **ao lado do sino**, logo depois de `NotificationsBell` — só o DEPENDENT recebe a prop.
 - **Limpeza:** `expelMember`/`deleteDependentAccount` removem o castigo do alvo e `deleteHouse` remove os castigos da casa (FK também tem cascade, mas o fluxo é explícito, como o resto).
 
@@ -92,7 +112,7 @@ alter table public.dependent_punishments enable row level security;
 
 ### O que foi implementado
 - **Shells mais largos (10 pontos):** todos os containers de página que usavam `max-w-5xl` passaram para **`max-w-7xl`** — layouts admin e dependente, `/tasks`, `/rewards`, `/achievements`, `/dashboard/admin/settings`, `/dashboard/admin/comunicados` (incluindo os retornos de "Nenhuma casa ativa") e o header do `DashboardNav`. As telas de auth (`max-w-md`) **não** foram tocadas.
-- **A largura extra virou colunas, não faixa vazia** (por container): visão geral do ADMIN `sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5`; dashboard do dependente com **saldo + tutores lado a lado** em `lg:grid-cols-2` (as ações continuam em `sm:grid-cols-2`); catálogo de recompensas do dependente `xl:grid-cols-3`; catálogo de conquistas do dependente `xl:grid-cols-3`; conquistas do ADMIN e comunicados `xl:grid-cols-2`; configurações `lg:grid-cols-2` com o banner `lg:col-span-2`; recompensas do ADMIN em coluna fixa + lista (`xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]`).
+- **A largura extra virou colunas, não faixa vazia** (por container): visão geral do ADMIN `sm:grid-cols-2 lg:grid-cols-3` (hoje só 3 cards — Casas/Configurações/Comunicados — depois de remover "Tarefas"/"Recompensas", que seguem na nav); dashboard do dependente com **saldo + tutores lado a lado** em `lg:grid-cols-2` (as ações continuam em `sm:grid-cols-2`); catálogo de recompensas do dependente `xl:grid-cols-3`; catálogo de conquistas do dependente `xl:grid-cols-3`; conquistas do ADMIN e comunicados `xl:grid-cols-2`; configurações `lg:grid-cols-2` com o banner `lg:col-span-2`; recompensas do ADMIN em coluna fixa + lista (`xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]`).
 - **Listas longas em 2 colunas:** as seções de tarefas (`tasks-admin.tsx` — pendentes/concluídas/aprovadas/em espera — e `tasks-dependent.tsx`) e de recompensas (`rewards-admin.tsx`, `rewards-dependent.tsx`) viraram `grid gap-3 xl:grid-cols-2`; o **heading interno** de cada uma ganhou `xl:col-span-2` (sem isso o título fica preso na 1ª coluna).
 - **Casas ficaram em 2 colunas:** `houses-manager.tsx` mantém `md:grid-cols-2` com o card de membros `md:col-span-2` — chegou a ser `xl:grid-cols-3`, mas em 3 colunas os formulários de casa/dependente ficam estreitos demais, então a casa continua com largura de comfortably 2 colunas.
 

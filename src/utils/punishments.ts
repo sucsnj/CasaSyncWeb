@@ -29,6 +29,15 @@ export type PunishmentInput = {
 }
 
 /**
+ * Castigo ativo de um dependente da casa, **com o `profileId`** — é o que a tela
+ * de gestão do ADMIN recebe para marcar a linha e abrir o castigo atual no modal
+ * (ver `HousesManager`).
+ */
+export type HouseActivePunishment = ActivePunishment & {
+  profileId: string
+}
+
+/**
  * Linhas cruas de `dependent_punishments` — o suficiente para decidir se o
  * castigo ainda vale (`isPunishmentActive`).
  */

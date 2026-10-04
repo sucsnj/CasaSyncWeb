@@ -7,7 +7,8 @@ import {
   getSessionProfile,
 } from '@/utils/house'
 import { HousesManager } from '@/components/houses/houses-manager'
-import { getActivePunishmentProfileIds } from '@/utils/active-punishment'
+import { getHouseActivePunishments } from '@/utils/active-punishment'
+import type { HouseActivePunishment } from '@/utils/punishments'
 
 export const metadata: Metadata = {
   title: 'Casas',
@@ -42,7 +43,7 @@ export default async function AdminHousesPage() {
     points: number
     role: 'ADMIN' | 'DEPENDENT'
   }[] = []
-  let punishedProfileIds: string[] = []
+  let activePunishments: HouseActivePunishment[] = []
 
   if (activeHouse) {
     const { data: houseMembers } = await admin
@@ -83,9 +84,10 @@ export default async function AdminHousesPage() {
         }
       }) ?? []
 
-    // Castigos ativos da casa (ADR-0020): marcam a linha do dependente e liberam
-    // a remoção. Castigo sem prazo continua na lista até o ADMIN tirar.
-    punishedProfileIds = [...(await getActivePunishmentProfileIds(activeHouse.id))]
+    // Castigos ativos da casa (ADR-0020): marcam a linha do dependente, abrem o
+    // castigo atual no modal e liberam a remoção. Castigo sem prazo continua na
+    // lista até o ADMIN tirar.
+    activePunishments = await getHouseActivePunishments(activeHouse.id)
   }
 
   return (
@@ -97,7 +99,7 @@ export default async function AdminHousesPage() {
       activeHouseOwnerId={activeHouse?.owner_id ?? null}
       currentUserId={user.id}
       members={members}
-      punishedProfileIds={punishedProfileIds}
+      activePunishments={activePunishments}
     />
   )
 }

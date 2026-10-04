@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -23,6 +23,8 @@ import {
   PUNISHMENT_MAX_DESCRIPTION,
   PUNISHMENT_MAX_DURATION_DAYS,
   PUNISHMENT_MIN_DURATION_DAYS,
+  punishmentDurationLabel,
+  type HouseActivePunishment,
 } from '@/utils/punishments'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
@@ -30,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
   Coins,
   Copy,
@@ -74,10 +77,11 @@ type HousesManagerProps = {
   currentUserId: string
   members: Member[]
   /**
-   * Dependentes com castigo ATIVO no momento (ADR-0020). Marca a linha e permite
-   * remover o castigo. Vem do servidor (castigos vencidos não entram na lista).
+   * Castigos ATIVOS da casa (ADR-0020), com a descrição/duração de cada um.
+   * Marca a linha do dependente e alimenta o bloco "castigo atual" do modal.
+   * Vem do servidor — castigos vencidos não entram na lista.
    */
-  punishedProfileIds: string[]
+  activePunishments: HouseActivePunishment[]
 }
 
 type ConfirmAction =
@@ -93,7 +97,7 @@ export function HousesManager({
   activeHouseOwnerId,
   currentUserId,
   members,
-  punishedProfileIds,
+  activePunishments,
 }: HousesManagerProps) {
   const router = useRouter()
   const [houseName, setHouseName] = useState('')
@@ -131,6 +135,36 @@ export function HousesManager({
   const [punishError, setPunishError] = useState<string | null>(null)
   const [punishSuccess, setPunishSuccess] = useState<string | null>(null)
   const [punishPending, setPunishPending] = useState(false)
+  // Descrição/duração em edição. São controladas (e não credenciais) para
+  // começarem preenchidas com o castigo ATUAL — salvar um campo vazio nunca
+  // deve apagar o que o ADMIN escreveu antes.
+  const [punishDescription, setPunishDescription] = useState('')
+  const [punishDuration, setPunishDuration] = useState('')
+
+  // Castigo ativo por dependente — busca O(1) na linha da lista e no modal.
+  const punishmentByProfile = useMemo(
+    () => new Map(activePunishments.map((punishment) => [punishment.profileId, punishment])),
+    [activePunishments]
+  )
+
+  // Castigo que o modal está editando agora (undefined = nenhum ativo).
+  const currentPunishment = punishMember
+    ? punishmentByProfile.get(punishMember.profileId)
+    : undefined
+
+  /** Abre o modal já com o castigo atual nos campos. */
+  function openPunishmentModal(member: Member) {
+    const current = punishmentByProfile.get(member.profileId)
+    setPunishError(null)
+    setPunishSuccess(null)
+    setPunishDescription(current?.description ?? '')
+    setPunishDuration(
+      current?.durationDays === null || current?.durationDays === undefined
+        ? ''
+        : String(current.durationDays)
+    )
+    setPunishMember(member)
+  }
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
@@ -367,17 +401,15 @@ export function HousesManager({
     event.preventDefault()
     if (!punishMember) return
 
-    const form = event.currentTarget
     setPunishError(null)
     setPunishSuccess(null)
     setPunishPending(true)
 
     try {
-      const formData = new FormData(form)
-      const durationRaw = String(formData.get('durationDays') ?? '').trim()
+      const durationRaw = punishDuration.trim()
 
       const result = await applyPunishment(punishMember.profileId, {
-        description: String(formData.get('description') ?? ''),
+        description: punishDescription,
         durationDays: durationRaw === '' ? null : Number(durationRaw),
       })
 
@@ -389,9 +421,8 @@ export function HousesManager({
 
       toast.success('Castigo aplicado!')
       setPunishSuccess(result.message ?? 'Castigo aplicado.')
-      // Limpa o form, mas mantém o modal aberto (o estado de "castigo ativo" da
-      // linha chega pelo refresh).
-      form.reset()
+      // Os campos já são o que foi gravado — o `router.refresh()` traz o
+      // castigo atual (com vencimento novo) para o bloco de leitura.
       router.refresh()
     } catch (err) {
       console.error('Falha ao aplicar castigo:', err)
@@ -419,6 +450,10 @@ export function HousesManager({
 
       toast.success('Castigo removido!')
       setPunishSuccess('Castigo removido.')
+      // Sem castigo ativo os campos ficam vazios, para não sugerir que o texto
+      // apagado ainda vale.
+      setPunishDescription('')
+      setPunishDuration('')
       router.refresh()
     } catch (err) {
       console.error('Falha ao remover castigo:', err)
@@ -888,18 +923,14 @@ export function HousesManager({
                         size="sm"
                         className={cn(
                           'min-h-9 px-2 text-xs',
-                          punishedProfileIds.includes(member.profileId)
+                          punishmentByProfile.has(member.profileId)
                             ? 'font-semibold text-amber-700 hover:bg-amber-50 hover:text-amber-800'
                             : 'text-slate-500'
                         )}
-                        onClick={() => {
-                          setPunishError(null)
-                          setPunishSuccess(null)
-                          setPunishMember(member)
-                        }}
+                        onClick={() => openPunishmentModal(member)}
                         title={
-                          punishedProfileIds.includes(member.profileId)
-                            ? 'Este dependente está com castigo ativo — clique para editar ou remover'
+                          punishmentByProfile.has(member.profileId)
+                            ? 'Este dependente está com castigo ativo — clique para ver, substituir ou remover'
                             : 'Aplicar um castigo (apenas um aviso no app, não altera pontos)'
                         }
                       >
@@ -1258,22 +1289,57 @@ export function HousesManager({
                 O castigo é <strong>só um aviso</strong>: o dependente verá um
                 ícone de triângulo no cabeçalho do app. Nenhum ponto, tarefa ou
                 recompensa é alterado.
-                {punishedProfileIds.includes(punishMember.profileId)
-                  ? ' Este dependente já tem um castigo ativo — salvar abaixo substitui o atual.'
+                {currentPunishment
+                  ? ' Salvar abaixo substitui o castigo atual.'
                   : ''}
               </p>
             </div>
 
+            {currentPunishment ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  Castigo atual
+                </p>
+                <p className="text-sm whitespace-pre-wrap text-slate-800">
+                  {currentPunishment.description ??
+                    'Sem descrição — o dependente vê apenas o aviso.'}
+                </p>
+                <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="text-slate-500">Duração</dt>
+                    <dd className="font-medium text-slate-800">
+                      {punishmentDurationLabel(currentPunishment.durationDays)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">
+                      {currentPunishment.expiresAt ? 'Vence em' : 'Prazo'}
+                    </dt>
+                    <dd className="font-medium text-slate-800">
+                      {currentPunishment.expiresAt ? (
+                        <FormattedDateTime iso={currentPunishment.expiresAt} />
+                      ) : (
+                        'Sem prazo (sai só com "Remover castigo")'
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="text-xs text-slate-500">
+                  Aplicado em{' '}
+                  <FormattedDateTime iso={currentPunishment.createdAt} />
+                </p>
+              </div>
+            ) : null}
+
             <div className="grid gap-2">
-              <Label htmlFor="punish-description">
-                Descrição (opcional)
-              </Label>
+              <Label htmlFor="punish-description">Descrição (opcional)</Label>
               <textarea
                 id="punish-description"
                 name="description"
                 rows={3}
                 maxLength={PUNISHMENT_MAX_DESCRIPTION}
-                defaultValue=""
+                value={punishDescription}
+                onChange={(event) => setPunishDescription(event.target.value)}
                 placeholder="Explique ao dependente o motivo do castigo."
                 className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               />
@@ -1293,7 +1359,8 @@ export function HousesManager({
                 min={PUNISHMENT_MIN_DURATION_DAYS}
                 max={PUNISHMENT_MAX_DURATION_DAYS}
                 step={1}
-                defaultValue=""
+                value={punishDuration}
+                onChange={(event) => setPunishDuration(event.target.value)}
                 placeholder="Ex.: 7"
               />
               <p className="text-xs text-muted-foreground">
@@ -1319,11 +1386,11 @@ export function HousesManager({
               <Button type="submit" disabled={punishPending}>
                 {punishPending
                   ? 'Salvando...'
-                  : punishedProfileIds.includes(punishMember.profileId)
+                  : currentPunishment
                     ? 'Substituir castigo'
                     : 'Aplicar castigo'}
               </Button>
-              {punishedProfileIds.includes(punishMember.profileId) ? (
+              {currentPunishment ? (
                 <Button
                   type="button"
                   variant="outline"
