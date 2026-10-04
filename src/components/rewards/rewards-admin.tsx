@@ -532,7 +532,7 @@ export function RewardsAdmin({
         </Card>
       </div>
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <Lightbulb className="size-4 text-violet-500" />
           Sugestões dos dependentes
@@ -601,7 +601,7 @@ export function RewardsAdmin({
       </section>
 
       {dismissedSuggestions.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="font-heading text-sm font-semibold text-slate-500 xl:col-span-2">
             Sugestões resolvidas
           </h2>
@@ -632,7 +632,7 @@ export function RewardsAdmin({
         </section>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ClipboardList className="size-4 text-amber-500" />
           Solicitações de resgate
@@ -687,7 +687,7 @@ export function RewardsAdmin({
       </section>
 
       {resolvedRedemptions.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <Layers className="size-4 text-slate-500" />
             Histórico

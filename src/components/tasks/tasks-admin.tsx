@@ -827,7 +827,7 @@ export function TasksAdmin({
         ) : null}
       </Card>
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ListTodo className="size-4 text-blue-600" />
           Pendentes
@@ -1122,7 +1122,7 @@ export function TasksAdmin({
       {/* Tarefas pausadas: visíveis só para o ADMIN, com o botão de reativar
           sempre à vista (fora do toggle), como o "Restaurar" das aprovadas. */}
       {heldTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <PauseCircle className="size-4 text-slate-400" />
             Em espera
@@ -1270,7 +1270,7 @@ export function TasksAdmin({
         </section>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ClipboardList className="size-4 text-amber-500" />
           Concluídas — aguardando aprovação
@@ -1385,7 +1385,7 @@ export function TasksAdmin({
       </section>
 
       {approvedTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <CircleCheckBig className="size-4 text-emerald-500" />
             Aprovadas

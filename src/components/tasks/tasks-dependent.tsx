@@ -167,7 +167,7 @@ export function TasksDependent({
         </p>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <ListTodo className="size-4 text-blue-600" />
           Suas tarefas
@@ -314,7 +314,7 @@ export function TasksDependent({
       </section>
 
       {awaitingTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             Aguardando aprovação
           </h2>
@@ -394,7 +394,7 @@ export function TasksDependent({
       ) : null}
 
       {doneTasks.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             Concluídas
           </h2>

@@ -341,7 +341,7 @@ export function RewardsDependent({
             Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
           </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 sm:items-start xl:grid-cols-3">
             {filteredRewards.map((reward) => {
               const inactive = !reward.active
               const disabled =
@@ -418,7 +418,7 @@ export function RewardsDependent({
       </section>
 
       {suggestions.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2">
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <Lightbulb className="size-4 text-violet-500" />
             Suas sugestões
@@ -457,7 +457,7 @@ export function RewardsDependent({
         </section>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <PartyPopper className="size-4 text-amber-500" />
           Seus resgates

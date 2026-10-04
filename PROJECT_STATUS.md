@@ -18,12 +18,31 @@
 
 ---
 
+## Cards com a altura do próprio conteúdo — card vizinho não herda a altura do outro (concluído — sem mudança de schema)
+
+### O que foi feito
+- **Sintoma relatado:** em Configurações, Tarefas e Recompensas, ao expandir um card (o de tarefa aberta do ADMIN, um card de configuração mais alto etc.) **o card vizinho crescia junto**, ficando com um vão vazio embaixo.
+- **Causa raiz:** `align-items: stretch`, que é o **padrão do CSS Grid**. Todo item de uma linha de grid ocupa a altura da linha, e a altura da linha é a do item mais alto. Ou seja, não era a `Card` esticando — era a grade. Isso atinge **qualquer** card que vire item de grid, e é por isso que aparecia nas três telas ao mesmo tempo.
+- **Correção:** `items-start` **no breakpoint em que a grade ganha colunas** — `lg:items-start` na grade de Configurações, `xl:items-start` nas seções de 2 colunas de Tarefas/Recompensas e `sm:items-start` na loja do dependente (3 colunas). Cada card passa a ter a altura do seu próprio conteúdo, mantendo a **largura** que já tinha (só o eixo vertical muda). Abaixo do breakpoint a grade tem 1 coluna, então `items-start` é inofensivo — e por isso ele é escopado no breakpoint, seguindo o mesmo padrão do `md:items-start` que já existia no form de tarefas.
+- **Efeito colateral bem-vindo:** os botões "Salvar" de Configurações voltaram a ser simplesmente o **último filho** do `CardContent`. O `flex-1` no `CardContent` e o `mt-auto` no wrapper do botão (tricks da entrega anterior, que forçavam altura igual para alinhar os botões) foram **removidos** — com o card ajustando ao conteúdo, eles não tinham mais efeito, e mantê-los só voltaria a induzir quem lê o código a "consertar" a altura de um jeito que desfaz esta regra.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓. Como a regra do projeto é não confiar no build para classe de Tailwind, as 4 variantes foram conferidas **no CSS gerado** (`.next/static/chunks/*.css`): `.items-start`, `.sm\:items-start`, `.lg\:items-start` e `.xl\:items-start` presentes, todas com `align-items:flex-start`. Varredura confirmou que `mt-auto`/`flex-1` sobraram só em `settings-admin.tsx` e **nenhum** restou ligado à altura do card.
+
+### Pontos de atenção
+- **Regra: card lado a lado não herda altura do vizinho.** Se um card novo for posto em grade com colunas, a grade precisa de `items-start` no breakpoint das colunas — sem isso o bug volta, e `lint`/`typecheck`/`build` **não** reclamam (é layout, não erro).
+- **Não reintroduzir `flex-1`/`mt-auto` como truque de alinhamento** em `CardContent`/wrapper de botão: eles só fazem sentido com altura igual entre vizinhos, que é exatamente o que esta mudança eliminou.
+- **Mesmo padrão, ainda NÃO aplicado, fora do que foi pedido:** as telas de **Conquistas** (`achievements-admin.tsx` e `achievements-dependent.tsx`) e **Comunicados** (`comunicados-admin.tsx`) também têm grades de cards com colunas e sufferiam do mesmo alongamento. Ficaram de fora porque o pedido foi Configurações/Tarefas/Recompensas — se quiser o mesmo comportamento lá, é acrescentar `items-start` na grade.
+- Requer deploy para valer online.
+
+---
+
 ## Espaçamento das telas internas do ADMIN e ajustes na tela de Configurações (concluído — sem mudança de schema)
 
 ### O que foi feito
 - **Causa do "recuo em relação à navbar" em Configurações e Comunicados: padding dobrado.** O `DashboardNav` é `fixed` com `h-16` (4rem), e o recuo correto vem do container do **layout** (`app/dashboard/admin/layout.tsx`, `pt-20`/`md:pt-24`). As páginas `/dashboard/admin/settings` e `/dashboard/admin/comunicados` **aninhadas nesse layout** traziam um segundo container com o mesmo padding — então o topo somava `80px + 80px` (mobile) e `96px + 96px` (desktop), e o conteúdo ficava ~96px abaixo da navbar em vez de ~16px. Removido o container redundante das duas páginas: agora elas só têm `<div className="flex flex-col gap-6">`, **igual a Visão geral** (`/dashboard/admin/page.tsx`) e a página de Casas, que já estavam no padrão.
   - **Regra:** container com `p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6` só existe na **raiz** de uma rota (`/tasks`, `/rewards`, `/achievements` e os dois `layout.tsx` do dashboard). Página aninhada dentro de um layout **não** repete o padding — o layout já resolveu isso.
-- **Botões "Salvar" no fundo-direita do próprio card.** Os 8 cards de Configurações tinham o botão logo abaixo do último campo, então em cards de alturas diferentes ele ficava no meio do card. Como `Card` já é `flex flex-col` (primitiva shadcn), bastou `flex-1` no `CardContent` e `mt-auto` no wrapper do botão — agora ele encosta no fundo do **seu** card, e os botões de cards vizinhos ficam alinhados na mesma linha.
+- **Cards com a altura do próprio conteúdo (correção seguinte — ver seção abaixo).** Hoje a regra é `items-start`; o `flex-1`/`mt-auto` que alinhava os botões "Salvar" foi removido.
 - **Fuso: lista rolável com a diferença de horas visível.** O `<select>` nativo virou um **dropdown próprio** (`TimezoneSelect`) — são 19 fusos e a lista precisa mostrar a diferença de cada um em relação ao UTC (o nome da cidade sozinho não diz isso, e é o offset que torna a escolha visível). Cada opção mostra o rótulo **e o offset** (`Recife · UTC-03:00`, `Manaus · UTC-04:00`, `UTC`, `Lisboa · UTC+01:00`). Fecha no `Esc` e ao clicar fora, com `role="combobox"`/`listbox` + `aria-controls`/`aria-expanded`.
   - **A lista é renderizada em portal (`document.body`) com `position: fixed`**, e não dentro do card. Dois motivos: a primitiva `Card` tem `overflow-hidden` (para o raio dos cantos e a imagem de topo), então uma lista `absolute` dentro dela era **recortada pelos limites do card** — nem abrir para cima resolveria; e being aninhada, ela ainda era limitada pelo fim da página.
   - **Posicionamento calculado na abertura:** a lista abre **para baixo** quando há espaço e **para cima** quando não há (trocando de lado conforme o espaço real), com a altura máxima limitada ao que sobrou — assim nunca invade a barra de navegação inferior. Reposiciona em `scroll`/`resize` enquanto aberta. Com `fixed`, "abrir para cima" é ancorar `bottom` (só `top` cresceria para baixo).

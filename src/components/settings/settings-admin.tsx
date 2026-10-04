@@ -554,7 +554,7 @@ export function SettingsAdmin({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25 lg:col-span-2">
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-white/85">
@@ -576,7 +576,7 @@ export function SettingsAdmin({
             aprovado.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex min-w-0 flex-col">
               <span className="text-sm font-semibold text-slate-700">
@@ -663,7 +663,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -690,7 +690,7 @@ export function SettingsAdmin({
             sino.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field
               label="Máximo de caracteres"
@@ -745,7 +745,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -772,7 +772,7 @@ export function SettingsAdmin({
             prazo acende o chip &quot;Prazo próximo&quot; (SLA).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Prazo padrão de criação/restauro"
@@ -813,7 +813,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -841,7 +841,7 @@ export function SettingsAdmin({
             prazo da mesma tarefa pode ser esticado.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="grid gap-4 sm:max-w-xs">
             <Field
               label="Máximo de adiamentos"
@@ -940,7 +940,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -967,7 +967,7 @@ export function SettingsAdmin({
             já lida fica no sino antes de ser apagada.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <span className="text-sm font-semibold text-slate-700">
               Silenciar por categoria
@@ -1031,7 +1031,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -1058,7 +1058,7 @@ export function SettingsAdmin({
             criação, o valor cai até o prazo (depois de vencida não perde mais).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex min-w-0 flex-col">
               <span className="text-sm font-semibold text-slate-700">
@@ -1119,7 +1119,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -1146,7 +1146,7 @@ export function SettingsAdmin({
             dependente crescer sem limite. Zero desliga cada limite.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Teto de pontos"
@@ -1185,7 +1185,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -1212,7 +1212,7 @@ export function SettingsAdmin({
             são cobrados e o dia que conta na Streak.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <label
               htmlFor="house-timezone"
@@ -1246,7 +1246,7 @@ export function SettingsAdmin({
             </p>
           ) : null}
 
-<div className="mt-auto flex justify-end">
+<div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
