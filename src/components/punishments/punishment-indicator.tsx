@@ -33,7 +33,7 @@ export function PunishmentIndicator({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Você está com um aviso do seu tutor. Toque para ver."
+        title="Você está com um aviso de punição. Toque para ver."
         aria-label="Ver aviso do tutor"
         className="relative rounded-full p-2 text-amber-300 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
       >
@@ -43,7 +43,7 @@ export function PunishmentIndicator({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Aviso do seu tutor"
+        title="Aviso de punição"
       >
         <div className="flex flex-col gap-4">
           <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
