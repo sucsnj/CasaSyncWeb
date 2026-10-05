@@ -141,29 +141,68 @@ async function assertAdminCanManage(
 }
 
 /**
+ * Resultado de um crédito/débito em `profiles.points`. `'not_found'` é separado
+ * de `'failed'` porque as duas falhas viram mensagens diferentes na UI.
+ */
+type PointsAdjustResult = 'credited' | 'not_found' | 'failed'
+
+/**
  * Ajusta o saldo do dependente somando `delta` (pode ser negativo — o saldo
- * pode ficar negativo por penalidade de "não entregue"). Retorna `false` se o
- * perfil não existir ou a escrita falhar.
+ * pode ficar negativo por penalidade de "não entregue").
+ *
+ * **Update guardado** (`.eq('points', valor lido)`) + 1 retry relendo: sem o
+ * guard, o read-modify-write perde um crédito quando duas ações mexem no mesmo
+ * saldo ao mesmo tempo (apostar duas aprovações, ou aprovar tarefa e resgatar
+ * recompensa). Mesmo padrão de `incrementDependentStat` em `actions/stats.ts` —
+ * se o guard falha, o valor foi mudado por outra requisição entre a leitura e a
+ * escrita e a tentativa é refeita sobre o valor novo.
  */
 async function adjustPoints(
   admin: ReturnType<typeof createAdminClient>,
   profileId: string,
   delta: number
-): Promise<boolean> {
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', profileId)
-    .maybeSingle()
+): Promise<PointsAdjustResult> {
+  let current: number | null = null
 
-  if (!profile) return false
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (current === null) {
+      const { data: profile, error } = await admin
+        .from('profiles')
+        .select('points')
+        .eq('id', profileId)
+        .maybeSingle()
 
-  const { error } = await admin
-    .from('profiles')
-    .update({ points: profile.points + delta })
-    .eq('id', profileId)
+      if (error) {
+        console.error('[TASKS] Falha ao ler o saldo do dependente:', error)
+        return 'failed'
+      }
+      if (!profile) return 'not_found'
+      // `points` é `int not null` (default 0); o `?? 0` é só uma rede de
+      // segurança para um dado legado/null — sem ele, `null + delta` seria NaN e
+      // o guard `.eq('points', …)` compararia contra NaN, nunca casando.
+      current = profile.points ?? 0
+    }
 
-  return !error
+    const { data: updated, error } = await admin
+      .from('profiles')
+      .update({ points: current + delta })
+      .eq('id', profileId)
+      .eq('points', current) // guard: não sobrescreve um saldo mudado na hora
+      .select('id')
+
+    if (error) {
+      console.error('[TASKS] Falha ao ajustar o saldo do dependente:', error)
+      return 'failed'
+    }
+    if (updated && updated.length > 0) return 'credited'
+
+    // Guard falhou: outra requisição mexeu no saldo. Relê e tenta de novo.
+    current = null
+  }
+
+  // Contenção extrema (2 colisões seguidas): a tarefa volta ao estado
+  // anterior pelo rollback do chamador — nunca fica aprovada sem crédito.
+  return 'failed'
 }
 
 /** Detecta fuso embutido no fim da string (Z ou ±HH:MM). */
@@ -632,26 +671,20 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'A tarefa já foi aprovada por outra pessoa.' }
   }
 
-  const { data: dependent } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', task.assigned_to)
-    .maybeSingle()
-
-  if (!dependent) {
-    await admin.from('tasks').update({ status: 'COMPLETED' }).eq('id', taskId)
-    return { ok: false, error: 'Dependente não encontrado. Crédito revertido.' }
-  }
-
-  const { error: pointsError } = await admin
-    .from('profiles')
-    .update({ points: dependent.points + currentPoints })
-    .eq('id', task.assigned_to)
-
-  if (pointsError) {
+  // Crédito com update guardado (`adjustPoints`) — o read-modify-write inline
+  // perdia um crédito quando duas aprovações (ou uma aprovação e um resgate)
+  // mexessem no mesmo saldo ao mesmo tempo.
+  const credit = await adjustPoints(admin, task.assigned_to, currentPoints)
+  if (credit !== 'credited') {
     // Rollback: devolve a tarefa ao estado anterior para não perder o histórico.
     await admin.from('tasks').update({ status: 'COMPLETED' }).eq('id', taskId)
-    return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
+    return {
+      ok: false,
+      error:
+        credit === 'not_found'
+          ? 'Dependente não encontrado. Crédito revertido.'
+          : 'Falha ao creditar pontos. Tarefa revertida.',
+    }
   }
 
   await notifyUser(admin, {
@@ -815,7 +848,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
   }
 
   const debited = await adjustPoints(admin, task.assigned_to, -currentPoints)
-  if (!debited) {
+  if (debited !== 'credited') {
     await admin.from('tasks').update({ status: previousStatus }).eq('id', taskId)
     return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
   }
@@ -1158,30 +1191,11 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'A tarefa já foi finalizada.' }
   }
 
-  const { data: dependent } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', task.assigned_to)
-    .maybeSingle()
-
-  if (!dependent) {
-    await admin
-      .from('tasks')
-      .update({
-        status: task.status,
-        completed_by: null,
-        completed_at: null,
-      })
-      .eq('id', taskId)
-    return { ok: false, error: 'Dependente não encontrado. Crédito revertido.' }
-  }
-
-  const { error: pointsError } = await admin
-    .from('profiles')
-    .update({ points: dependent.points + currentPoints })
-    .eq('id', task.assigned_to)
-
-  if (pointsError) {
+  // Crédito com update guardado (`adjustPoints`) — mesmo caminho do
+  // `approveTask`, então as duas aprovações compartilham a defesa contra
+  // saldo mudado na hora.
+  const credit = await adjustPoints(admin, task.assigned_to, currentPoints)
+  if (credit !== 'credited') {
     // Rollback: devolve a tarefa ao estado anterior.
     await admin
       .from('tasks')
@@ -1191,7 +1205,13 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
         completed_at: null,
       })
       .eq('id', taskId)
-    return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
+    return {
+      ok: false,
+      error:
+        credit === 'not_found'
+          ? 'Dependente não encontrado. Crédito revertido.'
+          : 'Falha ao creditar pontos. Tarefa revertida.',
+    }
   }
 
   await notifyUser(admin, {

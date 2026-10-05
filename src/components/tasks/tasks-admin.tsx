@@ -131,6 +131,45 @@ export function TasksAdmin({
   // Estado para rastrear status de salvamento de cada card.
   const [savingStatuses, setSavingStatuses] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
 
+  // Ids das tarefas com aprovação/conclusão em andamento (Aprovar / Concluir e
+  // creditar). NÃO usa o `pending` do `useTransition`: `startTransition(async …)`
+  // nunca marca `isPending` — o React não rastreia a Promise devolvida pelo
+  // callback — então o "Aprovando…" e o `disabled` ficavam permanentemente
+  // falsos e o botão parecia travado durante todo o trabalho do servidor.
+  // Um Set (e não um lock de tela) porque o ADMIN pode agir em vários cards ao
+  // mesmo tempo; cada card trava só o próprio botão.
+  const [pendingCreditIds, setPendingCreditIds] = useState<Set<string>>(
+    new Set()
+  )
+
+  function setPendingCredit(id: string, on: boolean) {
+    setPendingCreditIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  /**
+   * Desfaz o update otimista **só se o card ainda estiver no estado que o
+   * otimista gravou** — ou seja, se o Realtime não tiver trazido nada novo.
+   *
+   * O caso que isso resolve: o dependente conclui a tarefa no mesmo instante em
+   * que o ADMIN clica em aprovar/concluir. Durante o `await` (~2-4s) o Realtime
+   * entrega o `COMPLETED` real, que é **mais novo** que o `task` capturado no
+   * render. Um rollback cego sobrescreveria esse dado e o card voltaria a uma
+   * seção que não existe mais no banco — e ele só sairia da tela com um F5,
+   * porque o evento do Realtime já foi consumido.
+   */
+  function rollbackOptimistic(task: Task) {
+    setTasks((prev) =>
+      prev.map((item) =>
+        item.id === task.id && item.status === 'APPROVED' ? task : item
+      )
+    )
+  }
+
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
   // (UPDATE), o payload chega aqui instantaneamente e a lista do ADMIN é
   // atualizada sem refresh manual. O inverso também vale.
@@ -297,21 +336,36 @@ export function TasksAdmin({
   }
 
   function handleApprove(task: Task) {
-    startTransition(async () => {
-      const result = await approveTask(task.id)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
+    if (pendingCreditIds.has(task.id)) return
+    setFormError(null)
+    setPendingCredit(task.id, true)
+    // Otimista ANTES do `await`: o card sai da seção na hora e o botão trava.
+    // O rollback é por id e só se o card ainda estiver no estado otimista (ver
+    // `rollbackOptimistic`) — nada de snapshot do array, que com aprovação em
+    // paralelo desfaria também a atualização de outra tarefa.
+    setTasks((prev) => upsertTask(prev, { ...task, status: 'APPROVED' }))
 
-      toast.success(result.message ?? 'Tarefa aprovada')
-      // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
-      setTasks((prev) =>
-        upsertTask(prev, { ...task, status: 'APPROVED' })
-      )
-      router.refresh()
-    })
+    void (async () => {
+      try {
+        const result = await approveTask(task.id)
+        if (!result.ok) {
+          rollbackOptimistic(task)
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success(result.message ?? 'Tarefa aprovada')
+        router.refresh()
+      } catch {
+        rollbackOptimistic(task)
+        // Erro de rede é ambíguo: pode ser que o servidor tenha gravado e só a
+        // resposta não chegou. O `refresh` re-sincroniza com o estado real.
+        router.refresh()
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setPendingCredit(task.id, false)
+      }
+    })()
   }
 
   function handleRejectComplete(task: Task) {
@@ -339,22 +393,33 @@ export function TasksAdmin({
   }
 
   function handleAdminComplete(task: Task) {
+    if (pendingCreditIds.has(task.id)) return
     setFormError(null)
-    startTransition(async () => {
-      const result = await adminCompleteTask(task.id)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
+    setPendingCredit(task.id, true)
+    // Otimista ANTES do `await` (ver `handleApprove`). O servidor também grava
+    // `completed_by`/`completed_at`; não é preciso aqui porque o card já sai da
+    // seção de pendentes — o Realtime e o `router.refresh()` completam o resto.
+    setTasks((prev) => upsertTask(prev, { ...task, status: 'APPROVED' }))
 
-      toast.success(result.message ?? 'Tarefa concluída e creditada')
-      // Otimista: reflete o APPROVED na hora (Realtime confirma/refina).
-      setTasks((prev) =>
-        upsertTask(prev, { ...task, status: 'APPROVED' })
-      )
-      router.refresh()
-    })
+    void (async () => {
+      try {
+        const result = await adminCompleteTask(task.id)
+        if (!result.ok) {
+          rollbackOptimistic(task)
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success(result.message ?? 'Tarefa concluída e creditada')
+        router.refresh()
+      } catch {
+        rollbackOptimistic(task)
+        router.refresh()
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setPendingCredit(task.id, false)
+      }
+    })()
   }
 
   function handleMarkNotDelivered(task: Task) {
@@ -1074,10 +1139,10 @@ export function TasksAdmin({
                               <Button
                                 type="button"
                                 onClick={() => handleAdminComplete(task)}
-                                disabled={pending}
+                                disabled={pendingCreditIds.has(task.id)}
                                 className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
                               >
-                                {pending
+                                {pendingCreditIds.has(task.id)
                                   ? 'Concluindo...'
                                   : 'Aprovar Tarefa e Creditar'}
                               </Button>
@@ -1336,10 +1401,10 @@ export function TasksAdmin({
                         </Button>
                         <Button
                           onClick={() => handleApprove(task)}
-                          disabled={pending}
+                          disabled={pendingCreditIds.has(task.id)}
                           className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                         >
-                          {pending ? (
+                          {pendingCreditIds.has(task.id) ? (
                             'Aprovando...'
                           ) : (
                             <>
