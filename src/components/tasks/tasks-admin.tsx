@@ -468,23 +468,28 @@ export function TasksAdmin({
         toast.info('Pedido de adiamento rejeitado')
       }
 
-      // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar reabre a
-      // tarefa com 0 pontos conforme o novo prazo (a penalidade é definitiva).
-      const restored =
-        approve && task.status === 'NOT_DELIVERED'
+      // O `due_date` novo é calculado no servidor (base = prazo futuro, senão
+      // agora), então a linha devolvida pela action é a fonte da verdade: usa-se
+      // ela inteira em vez de remontar o patch aqui — onde o prazo ficaria
+      // velho até o F5, porque o `router.refresh()` não ressincroniza o estado
+      // local de um client component já montado. O `fallback` cobre o caso
+      // extraordinário de o servidor gravar e não devolver a linha (aí o banner
+      // some na hora e o prazo se ajusta no refresh seguinte).
+      const fallback: Task = {
+        ...task,
+        extension_requested: false,
+        extension_reason: null,
+        extension_count: approve
+          ? task.extension_count + 1
+          : task.extension_count,
+        // Numa tarefa "não entregue", aprovar reabre valendo 0 pontos conforme o
+        // novo prazo (a penalidade é definitiva).
+        ...(approve && task.status === 'NOT_DELIVERED'
           ? { points: 0, status: 'PENDING' as Task['status'] }
-          : {}
-
+          : {}),
+      }
       setTasks((prev) =>
-        upsertTask(prev, {
-          ...task,
-          extension_requested: false,
-          extension_reason: null,
-          // Aprovar soma o contador de adiamentos da tarefa (mesmo passo do
-          // servidor), para o "N de M" não ficar velho até o refresh.
-          extension_count: approve ? task.extension_count + 1 : task.extension_count,
-          ...restored,
-        })
+        upsertTask(prev, result.data?.task ?? fallback)
       )
       router.refresh()
     })

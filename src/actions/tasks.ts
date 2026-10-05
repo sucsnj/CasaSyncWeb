@@ -1314,7 +1314,7 @@ export async function resolveTaskExtension(
   taskId: string,
   approve: boolean,
   days = 3
-): Promise<ActionResult> {
+): Promise<ActionResult<{ task: Task }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -1383,12 +1383,16 @@ export async function resolveTaskExtension(
   // primeiro clique resolve o pedido. Sem ela, dois cliques rápidos em
   // "Aprovar (+N dias)" lêm o pedido pendente e aplicam o adiamento DUAS vezes
   // (o que também somaria o contador duas vezes).
+  // `.select('*')` (e não só `'id'`) devolve a linha já gravada: o `due_date`
+  // novo é calculado aqui, no servidor, e é isso que o card mostra. Sem a
+  // releitura, o client teria de refazer o cálculo (base = prazo futuro, senão
+  // agora) e o prazo só apareceria novo depois do F5.
   const { data: resolved, error } = await admin
     .from('tasks')
     .update(updates)
     .eq('id', taskId)
     .eq('extension_requested', true)
-    .select('id')
+    .select('*')
 
   if (error) return { ok: false, error: 'Falha ao resolver o pedido.' }
   if (!resolved || resolved.length === 0) {
@@ -1397,6 +1401,7 @@ export async function resolveTaskExtension(
       error: 'Este pedido de adiamento já foi resolvido por outra pessoa.',
     }
   }
+  const resolvedTask = resolved[0]
 
   if (task.assigned_to) {
     await notifyUser(admin, {
@@ -1419,11 +1424,16 @@ export async function resolveTaskExtension(
   }
 
   if (!approve) {
-    return { ok: true, message: 'Pedido de adiamento rejeitado.' }
+    return {
+      ok: true,
+      data: { task: resolvedTask },
+      message: 'Pedido de adiamento rejeitado.',
+    }
   }
 
   return {
     ok: true,
+    data: { task: resolvedTask },
     message: isNotDelivered
       ? `Adiamento aprovado (+${days} dias). Tarefa reaberta valendo 0 pontos.`
       : `Adiamento aprovado (+${days} dias).`,
