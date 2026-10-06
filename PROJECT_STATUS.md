@@ -49,6 +49,12 @@
   `houses-manager.tsx` viraram flags por operação (dois deles por id), e o
   `setFormError(null)` que apagava erro do form de criação saiu da transição de
   card. `lint`/`typecheck`/`build` ✓. Ver a seção no topo do documento.
+- **Adiamento aceito nunca devolve os pts originais:** quando um adiamento é
+  aceito (botão "Aprovar" ou o auto-aceite ao editar o prazo com pedido
+  pendente), o **valor corrente** da tarefa passa a ser a nova base e o relógio
+  do decaimento reinicia — 10 que decaiu para 7 **passa a valer 7** e volta a
+  decair com o prazo estendido. A "não entregue" segue valendo **0**
+  (penalidade definitiva). Ver a seção no topo do documento.
 - **Limitação de plataforma do Web Push (aceita, não é bug):** com o app
   **varrido dos recentes**, o SO mata o Web Push e a notificação nativa não
   chega em nenhum navegador (Chrome, Edge e Firefox testados). O **sino continua
@@ -57,6 +63,49 @@
   **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
   registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
   no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## Adiamento aceito nunca devolve os pts originais (implementado — sem mudança de schema)
+
+### O que mudou
+**Regra nova:** quando um adiamento é **aceito** — por qualquer um dos dois caminhos — os pontos originais da tarefa **não voltam**. O valor corrente no instante do aceite vira a **nova base**, e o relógio do decaimento reinicia para ela decair de novo durante o prazo estendido.
+
+> Exemplo do usuário: tarefa de **10 pts** que decaiu para **7** → ao aceitar o adiamento ela **passa a valer 7** (e volta a decair: 7 → 6 → 5…).
+
+**Os dois caminhos de aceite** (a mesma regra nos dois, senão o ADMIN teria dois resultados para o mesmo ato):
+- **`resolveTaskExtension(approve: true, days)`** — o botão "Aprovar (+N dias)".
+- **auto-aceite do `updateTask`** — o ADMIN altera o prazo direto no card com um pedido **pendente** (o pedido é considerado aceito com a nova data).
+
+### O que foi encontrado no caminho
+A documentação afirmava que "as devoluções restauram esse mesmo valor corrente", mas **isso nunca foi implementado**: nenhum dos dois caminhos escrevia em `tasks.points`. O que existia no código era só a revalidação (`revalidateHouseContext`) e, para `NOT_DELIVERED`, o zero. A frase estava errando a documentação ou describindo uma intenção que se perdeu — e foi justamente por isso que a regra ficou ambígua quando o usuário pediu a mudança.
+
+### Detalhe que decide a implementação
+**Trocar a base sem reiniciar o relógio contaria o decaimento duas vezes.** Se `tasks.points` passasse a 7 mantendo `decay_started_at` antigo, um dia depois o valor seria `7 − 4 = 3` em vez de `6` (a perda antiga contaria de novo em cima da base já reduzida). Por isso os dois passos são ** inseparáveis**:
+
+1. `points` = valor corrente calculado **com o prazo ANTIGO** — que é o que capava a janela; usar o prazo novo somaria períodos que ainda não aconteceram;
+2. `decay_started_at` = agora (novo ciclo a partir da base nova).
+
+**`isAdiamento` saiu do `updateTask`:** a exceção que existed ("adiamento não reinicia o relógio") existia só porque o adiamento não mexia na base — com a base trocada, ela virou redundante e até perigosa (num pedido de adiamento + edição de pontos na mesma chamada, a base explícita ficaria com o relógio antigo). Agora **toda** edição reinicia o relógio, sem guarda. A reabertura de `NOT_DELIVERED` continua inofensiva: base 0 não decai (`getTaskCurrentPoints` devolve 0 na hora).
+
+### A tarefa "não entregue" NÃO mudou
+Segue valendo **0 pontos** — a penalidade é definitiva (ADR-0007/0018) e aceitar o adiamento **não devolve** o que foi debitado. Foi uma decisão explícita do usuário ao ser consultado, e é coerente com a regra nova (0 também é "não restaurar os originais"). O crédito de uma aprovação futura continua sendo 0.
+
+### UI
+Os dois caminhos de cliente **espelham a regra do servidor** com o mesmo helper puro (`getTaskCurrentPoints` + prop `taskDecay`), para o card não ficar um instante mostrando o valor antigo:
+- `saveDueDate` (auto-aceite): além de limpar as flags, grava `points` = valor corrente e `decay_started_at` = agora;
+- `handleResolveExtension` (botão "Aprovar"): o otimista faz o mesmo (o servidor já devolvia a linha autoritativa, então a reconciliação vem junto).
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (16 rotas).
+Módulo puro real executado com `node --experimental-strip-types` (script temporário fora do repo): o cenário do usuário fecha — base 10, 3 períodos decorridos, prazo +2d → **valor no aceite 7**; com a nova base e o relógio reiniciado, 1 dia depois **6**, 2 dias **5**, 5 dias **2**. O **contra-teste do decaimento em dobro** (base 7 com o relógio velho) daria **3** em vez de 6 — confirmando que a troca de base sem o reset seria um bug. Casos-limite: base 0 → 0; decaimento desligado → base intacta; sem prazo → janela até agora; `getTaskDecayStart` com `decay_started_at` nulo → fallback `created_at`; tarefa atrasada (janela capada) → valor estável no aceite e novo ciclo depois.
+
+### Pontos de atenção
+- **Não há como "voltar" os pontos originais depois do aceite** — é proposital. Quem quiser aumentar o valor edita o campo de pontos do card (isso reinicia o relógio por ser uma edição).
+- **O valor materializado é sempre o do instante do aceite.** Se o ADMIN abrir o pedido e aprovar 5 dias depois, a base vira o valor de agora, não o de quando o dependente pediu.
+- **Editar o prazo sem pedido pendente não é adiamento:** continua sendo uma edição comum — o relógio reinicia e a base **não** é materializada (o decaimento segue a partir da base, como sempre). O contador de `extension_count` também não conta esse caminho, como já era.
+- **Patch de pontos explícito tem precedência** sobre a materialização, se vierem na mesma chamada (a UI nunca faz isso — cada campo é enviado separado).
+- O `README`/ADR-0007 já descrevem a penalidade como definitiva; **nenhum ADR novo foi necessário** — a regra do decaimento nunca teve ADR próprio, e o ADR-0007 continua válido (a emenda já dizia "o débito não é mais devolvido").
 
 ---
 
@@ -1250,10 +1299,10 @@ alter publication supabase_realtime add table public.dependent_achievements;
 ## Decaimento de pontos — o relógio reinicia na edição, não em adiamentos (concluída — SQL aplicado no banco)
 
 ### O que foi implementado
-- **O ponto de partida do decaimento deixou de ser a criação e passou a ser dinâmico:** o relógio agora começa no `decay_started_at` da tarefa — definido na **criação** e atualizado para o **momento de cada edição** (`updateTask`). **Adiamentos NÃO reiniciam o relógio:** aprovar adiamento (`resolveTaskExtension`), o auto-aceite via edição de `due_date` de tarefa com pedido pendente e a reversão de uma `NOT_DELIVERED` via prazo são situações de adiamento e não afetam o decaimento.
+- **O ponto de partida do decaimento deixou de ser a criação e passou a ser dinâmico:** o relógio agora começa no `decay_started_at` da tarefa — definido na **criação** e atualizado para o **momento de cada edição** (`updateTask`). ~~**Adiamentos NÃO reiniciam o relógio:** aprovar adiamento (`resolveTaskExtension`), o auto-aceite via edição de `due_date` de tarefa com pedido pendente e a reversão de uma `NOT_DELIVERED` via prazo são situações de adiamento e não afetam o decaimento.~~ **Superado pela seção no topo do documento (2026):** o adiamento **aceito** abre um novo ciclo a partir do valor **corrente** (ver "Adiamento aceito nunca devolve os pts originais" no topo), e a reabertura de `NOT_DELIVERED` zera a base — pelo que o relógio deixou de ter exceção no `updateTask` e agora **toda** edição o reinicia.
 - **`restoreTask` reinicia o relógio:** a tarefa aprovada restaurada nasce com o `decay_started_at` = momento do restauro (novo ciclo, pontos cheios na base).
 - **Nova coluna `tasks.decay_started_at timestamptz` (nullable):** tarefas antigas (coluna vazia) caem no fallback `created_at` até a primeira edição/restauro — comportamento antigo preservado. **Coluna já aplicada no banco (registro abaixo).**
-- **Aplicações:** `getTaskDecayStart(createdAt, decayStartedAt)` (`src/utils/task-decay.ts`) resolve o start (`decay_started_at ?? created_at`); crédito (`approveTask`/`adminCompleteTask`), débito (`markTaskNotDelivered`), devoluções (`resolveTaskExtension`/`updateTask`) e a exibição nos cards ADMIN/dependente passam a usar o start resolvido. `tasks.points` (base) continua intocada.
+- **Aplicações:** `getTaskDecayStart(createdAt, decayStartedAt)` (`src/utils/task-decay.ts`) resolve o start (`decay_started_at ?? created_at`); crédito (`approveTask`/`adminCompleteTask`), débito (`markTaskNotDelivered`), o aceite do adiamento (`resolveTaskExtension`/`updateTask`) e a exibição nos cards ADMIN/dependente passam a usar o start resolvido. `tasks.points` (base) deixa de ser intocada **no aceite do adiamento** — ali ela passa a ser o valor corrente (seção nova no topo).
 - `getTaskCurrentPoints` teve o parâmetro `createdAt` renomeado/documented como **startAt** (ponto de partida do relógio).
 
 ### SQL aplicado no Supabase (registro — aplicado pelo usuário com sucesso)
@@ -1267,7 +1316,7 @@ alter table public.tasks add column if not exists decay_started_at timestamptz;
 
 ### Pontos de atenção
 - **A coluna já está no banco** — tarefas novas nascem com o relógio em `decay_started_at`; tarefas antigas caem no fallback `created_at` até a primeira edição/restauro (comportamento documentado).
-- **Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — correção exigiria guardar o valor debitado numa coluna (fora de escopo).
+- ~~**Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — correção exigiria guardar o valor debitado numa coluna (fora de escopo).~~ **Superado:** não existe mais devolução — a reabertura de uma `NOT_DELIVERED` zera a base em 0 (penalidade definitiva), então não há mais nada que recalcular.
 
 ---
 
@@ -1275,7 +1324,7 @@ alter table public.tasks add column if not exists decay_started_at timestamptz;
 
 ### O que foi implementado
 - **Nova mecânica de "decrescimento" de pontos de tarefas:** a cada **`periodHours` completas desde a criação** (default **24h**), a tarefa perde **`pointsPerPeriod`** pontos (default **1 pt**), com **piso em 0** (nunca fica negativo por essa mecânica). A janela de perda é **capada no `due_date`** — depois que o prazo vence a perda não cresce mais; uma tarefa com menos de um período até o vencimento não perde nada. `tasks.points` continua guardando o **valor-base** intocado; o valor corrente é **calculado em runtime** por `getTaskCurrentPoints` (`src/utils/task-decay.ts`).
-- **Onde o valor corrente é aplicado:** o **crédito da aprovação** (`approveTask` e `adminCompleteTask`) e o **débito de "não entregue"** (`markTaskNotDelivered`) usam o valor corrente no momento da ação. As **devoluções** de uma tarefa `NOT_DELIVERED` (`resolveTaskExtension` aprovado e `updateTask` alterando o prazo) restauram o **mesmo valor decrescido** debitado — para tarefa atrasada a janela está capada no prazo, então o valor é estável (nenhuma inflação de saldo).
+- **Onde o valor corrente é aplicado:** o **crédito da aprovação** (`approveTask` e `adminCompleteTask`) e o **débito de "não entregue"** (`markTaskNotDelivered`) usam o valor corrente no momento da ação. ~~As **devoluções** de uma tarefa `NOT_DELIVERED` (`resolveTaskExtension` aprovado e `updateTask` alterando o prazo) restauram o **mesmo valor decrescido** debitado~~ **Superado:** a reabertura de uma `NOT_DELIVERED` **não devolve nada** — zera `tasks.points` (penalidade definitiva, ADR-0007/0018); e o adiamento aceito de uma tarefa **aberta** materializa o valor corrente como nova base (seção no topo do documento).
 - **Configurável pelo ADMIN:** novo card **Decaimento de pontos** (`Hourglass`) em `/dashboard/admin/settings` — toggle liga/desliga + **Período** (horas, inteiro 1–8760) + **Pontos por período** (inteiro 1–1000). Chave `task_decay` em `HouseSettingsKey`, defaults em `DEFAULT_TASK_DECAY` (`enabled: true`, `periodHours: 24`, `pointsPerPeriod: 1`); leitura por `getHouseTaskDecaySettings` (getter cached em `src/utils/house-settings.ts`); validação fail-closed `validateTaskDecay` em `src/actions/settings.ts` (+ revalidação de `/tasks`).
 - **UI:** o pill de pontos nos cards exibe o **valor corrente** e, quando decrescido, o valor-base ao lado em **line-through** (pendentes e concluídos de ADMIN e dependente; "aprovadas" seguem mostrando o valor-base, histórico). Avisos de `NOT_DELIVERED` usam o valor debitado real.
 
@@ -1285,7 +1334,7 @@ alter table public.tasks add column if not exists decay_started_at timestamptz;
 ### Pontos de atenção
 - **Sem mudança de schema/no banco:** a chave `task_decay` é só mais um valor jsonb em `house_settings`; linhas ausentes caem no default.
 - **Default `enabled: true`:** logo após o deploy, todas as casas passam a ter o decaimento ativo (24h/1pt) — tarefas abertas criadas há mais de 24h já exibem o valor reduzido. O ADMIN pode desligar no menu.
-- **Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — a janela capada no prazo mantém a divergência pequena/nula no caso comum; corrigir exigiria guardar o valor debitado numa coluna (fora de escopo).
+- ~~**Limite conhecido (aceito):** trocar as settings de decaimento **entre** o débito e a devolução de uma `NOT_DELIVERED` faz a devolução recalcular pelo setting novo (não pelo valor debitado em si) — a janela capada no prazo mantém a divergência pequena/nula no caso comum; corrigir exigiria guardar o valor debitado numa coluna (fora de escopo).~~ **Superado:** não existe mais devolução — a reabertura de uma `NOT_DELIVERED` **não devolve nada** — zera `tasks.points` (penalidade definitiva, ADR-0007/0018), então não há mais nada que recalcular.
 - **Não requer deploy urgente,** mas só vale online depois de subir.
 
 ---

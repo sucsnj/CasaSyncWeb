@@ -571,6 +571,9 @@ async function runTaskTransition(
     // Numa tarefa "não entregue", aprovar reabre valendo 0 pontos conforme o novo
     // prazo (a penalidade é definitiva) — o servidor recalcula o prazo, então o
     // otimista só faz a troca de seção; a linha autoritativa vem na resposta.
+    // Numa tarefa aberta, o aceite espelha a regra do decaimento: novo ciclo a
+    // partir do valor CORRENTE, com o relógio reiniciado (calculado com o prazo
+    // ANTIGO, que é o que capava a janela).
     void runTaskTransition(
       task,
       () => ({
@@ -582,6 +585,17 @@ async function runTaskTransition(
           : task.extension_count,
         ...(approve && task.status === 'NOT_DELIVERED'
           ? { points: 0, status: 'PENDING' as Task['status'] }
+          : {}),
+        ...(approve && task.status !== 'NOT_DELIVERED'
+          ? {
+              points: getTaskCurrentPoints(
+                task.points,
+                getTaskDecayStart(task.created_at, task.decay_started_at),
+                task.due_date,
+                decay
+              ),
+              decay_started_at: new Date().toISOString(),
+            }
           : {}),
       }),
       async () => {
@@ -630,28 +644,52 @@ async function runTaskTransition(
     // Atualização determinística do card local: o auto-aceite do adiamento por
     // edição de prazo limpa as flags no banco; refletir aqui sem depender do
     // eco do Realtime. Só limpa se houver pedido pendente E o instante mudou.
-    // Numa tarefa "não entregue", mudar o prazo reabre com 0 pontos: zera a
-    // tarefa conforme o novo prazo, sem devolver o que foi debitado.
+    //
+    // Reflete as DUAS regras do aceite (as mesmas do servidor, calculadas com o
+    // prazo ANTIGO que capava a janela do decaimento): numa tarefa "não
+    // entregue", mudar o prazo reabre com 0 pontos — a penalidade é definitiva e
+    // o que foi debitado não volta; numa tarefa aberta, o adiamento aceito abre
+    // um NOVO CICLO a partir do valor CORRENTE (10 que decaiu para 7 → a nova
+    // base é 7), então o relógio do decaimento também reinicia.
     setTasks((prev) =>
       prev.map((item) => {
         if (item.id !== taskId) return item
         const changed =
           (item.due_date ? new Date(item.due_date).getTime() : null) !==
           (nextDue ? new Date(nextDue).getTime() : null)
-        const cleared =
-          item.extension_requested && changed
-            ? { extension_requested: false, extension_reason: null }
-            : {}
-        const restored =
+        const accepted = Boolean(item.extension_requested) && changed
+        const cleared = accepted
+          ? { extension_requested: false, extension_reason: null }
+          : {}
+        const reopened =
           item.status === 'NOT_DELIVERED' && changed
             ? {
-              points: 0,
-              status: (nextDue && new Date(nextDue).getTime() < Date.now()
-                ? 'NOT_DELIVERED'
-                : 'PENDING') as Task['status'],
-            }
+                points: 0,
+                status: (nextDue && new Date(nextDue).getTime() < Date.now()
+                  ? 'NOT_DELIVERED'
+                  : 'PENDING') as Task['status'],
+              }
             : {}
-        return { ...item, due_date: nextDue, ...cleared, ...restored }
+        const recycled =
+          accepted && item.status !== 'NOT_DELIVERED'
+            ? {
+                points: getTaskCurrentPoints(
+                  item.points,
+                  getTaskDecayStart(item.created_at, item.decay_started_at),
+                  item.due_date,
+                  decay
+                ),
+                decay_started_at: new Date().toISOString(),
+              }
+            : {}
+        return {
+          ...item,
+          due_date: nextDue,
+          decay_started_at: new Date().toISOString(),
+          ...cleared,
+          ...reopened,
+          ...recycled,
+        }
       })
     )
     router.refresh()

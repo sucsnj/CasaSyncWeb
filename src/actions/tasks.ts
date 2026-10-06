@@ -444,21 +444,35 @@ export async function updateTask(
     // Pedido de adiamento pendente + prazo alterado para um valor diferente
     // do atual => o pedido é considerado aceito automaticamente com a nova data.
     if (dueDateChanged(task.due_date, nextDue)) {
-      if (task.extension_requested) {
+      const accepted = Boolean(task.extension_requested)
+      if (accepted) {
         updates.extension_requested = false
         updates.extension_reason = null
       }
 
-      // Tarefa não entregue: alterar o prazo tem o mesmo efeito de um adiamento
-      // aprovado — reabre a tarefa, mas a PENALIDADE É DEFINITIVA: os pontos
-      // debitados NÃO voltam e a tarefa passa a valer 0 (numa aprovação futura
-      // não credita nada). O status passa a ser o equivalente ao novo prazo.
       if (isNotDelivered) {
+        // Tarefa não entregue: alterar o prazo tem o mesmo efeito de um adiamento
+        // aprovado — reabre a tarefa, mas a PENALIDADE É DEFINITIVA: os pontos
+        // debitados NÃO voltam e a tarefa passa a valer 0 (numa aprovação futura
+        // não credita nada). O status passa a ser o equivalente ao novo prazo.
         updates.points = 0
         updates.status =
           nextDue && new Date(nextDue).getTime() < Date.now()
             ? 'NOT_DELIVERED'
             : 'PENDING'
+      } else if (accepted && !('points' in patch)) {
+        // Mesma regra do botão "Aprovar (+N dias)": o adiamento aceito abre um
+        // NOVO CICLO a partir do valor CORRENTE, sem devolver os pontos
+        // originais (10 que decaiu para 7 → a nova base é 7). Um patch de
+        // `points` explícito do ADMIN tem precedência — é uma edição direta da
+        // base, não uma consequência do adiamento.
+        const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+        updates.points = getTaskCurrentPoints(
+          task.points,
+          getTaskDecayStart(task.created_at, task.decay_started_at),
+          task.due_date,
+          decaySettings
+        )
       }
     }
   }
@@ -499,19 +513,18 @@ export async function updateTask(
     updates.image_url = patch.image_url?.trim() ? patch.image_url.trim() : null
   }
 
-  // Decaimento: o relógio reinicia a cada EDIÇÃO (momento da edição vira o novo
-// ponto de partida). Exceto quando o prazo mudou por um ADIAMENTO — o
-// auto-aceite do pedido pendente ou a reabertura de uma "não entregue" — que
-// não deve afetar o decaimento.
-  const isAdiamento =
-    'due_date' in updates &&
-    updates.due_date !== undefined &&
-    dueDateChanged(task.due_date, updates.due_date) &&
-    (task.extension_requested || isNotDelivered)
-
-  if (!isAdiamento) {
-    updates.decay_started_at = new Date().toISOString()
-  }
+  // Decaimento: o relógio reinicia a cada EDIÇÃO (o momento da edição vira o
+  // novo ponto de partida).
+  //
+  // Antes havia uma exceção para "adiamento" (o auto-aceite do pedido pendente e
+  // a reabertura de uma "não entregue"), que existia porque o adiamento NÃO
+  // mudava a base — reiniciar o relógio ali só faria a tarefa voltar a valer o
+  // base intocado. Isso não vale mais: no aceite a base JÁ foi trocada pelo valor
+  // corrente, e na reabertura de "não entregue" ela vale 0 (com base 0 o decaimento
+  // nem roda — `getTaskCurrentPoints` devolve 0 na hora). Nos dois casos
+  // reiniciar é o comportamento certo, então a exceção saiu: agora toda edição
+  // reinicia, sem guarda.
+  updates.decay_started_at = new Date().toISOString()
 
   if (Object.keys(updates).length === 0) return { ok: true }
 
@@ -1413,7 +1426,7 @@ export async function resolveTaskExtension(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, extension_count, assigned_to, title'
+      'house_id, status, due_date, extension_requested, extension_reason, extension_count, assigned_to, title, points, created_at, decay_started_at'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -1441,6 +1454,7 @@ export async function resolveTaskExtension(
     extension_count?: number
     due_date?: string
     points?: number
+    decay_started_at?: string
     status?: 'PENDING' | 'NOT_DELIVERED'
   } = {
     extension_requested: false,
@@ -1458,12 +1472,29 @@ export async function resolveTaskExtension(
     // card também não — são decisões do ADMIN, não adiamentos.
     updates.extension_count = task.extension_count + 1
 
-    // Reabertura de uma tarefa "não entregue": os pontos debitados NÃO voltam
-    // (penalidade definitiva) e a tarefa passa a valer 0 pontos.
     if (isNotDelivered) {
+      // Reabertura de uma tarefa "não entregue": os pontos debitados NÃO voltam
+      // (penalidade definitiva, ADR-0007/0018) e a tarefa passa a valer 0.
       updates.points = 0
       updates.status =
         nextDue.getTime() < Date.now() ? 'NOT_DELIVERED' : 'PENDING'
+    } else {
+      // ADIAMENTO ACEITO = NOVO CICLO DE DECAIMENTO A PARTIR DO VALOR ATUAL.
+      // Os pontos originais NUNCA voltam: o que a tarefa valia no instante do
+      // aceite (10 que já decaiu para 7 → 7) vira a nova base, e o relógio
+      // reinicia para decair de novo durante o prazo estendido (7 → 6 → 5…).
+      //
+      // O valor é calculado com o PRAZO ANTIGO, que é o que capava a janela: usar
+      // o novo somaria períodos que ainda não aconteceram. E sem trocar a base
+      // junto, o decaimento contaria duas vezes sobre o mesmo tempo.
+      const decaySettings = await getHouseTaskDecaySettings(activeHouse.id)
+      updates.points = getTaskCurrentPoints(
+        task.points,
+        getTaskDecayStart(task.created_at, task.decay_started_at),
+        task.due_date,
+        decaySettings
+      )
+      updates.decay_started_at = new Date().toISOString()
     }
   }
 
