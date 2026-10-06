@@ -63,6 +63,7 @@ import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
   taskChipByStatus,
+  taskExtensionChip,
   taskSlaBadge,
   taskSlaCardClass,
 } from './task-styles'
@@ -1043,6 +1044,21 @@ async function runTaskTransition(
                         >
                           {taskChipByStatus[task.status].label}
                         </span>
+                        {/* Pedido de adiamento esperando decisão: fica NO
+                            cabeçalho, e não só no banner do corpo expandido —
+                            os cards vêm recolhidos por padrão, então o ADMIN só
+                            percebia o pedido ao expandir (ou pela notificação). */}
+                        {task.extension_requested ? (
+                          <span
+                            className={cn(
+                              'shrink-0',
+                              taskExtensionChip.className
+                            )}
+                          >
+                            <Clock3 className="size-3" />
+                            {taskExtensionChip.label}
+                          </span>
+                        ) : null}
                       </span>
                       <span
                         className={cn(

@@ -21,6 +21,7 @@ import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
   taskChipByStatus,
+  taskExtensionChip,
   taskSlaBadge,
   taskSlaCardClass,
 } from './task-styles'
@@ -348,9 +349,14 @@ export function TasksDependent({
                           </span>
                         ) : null}
                         {task.extension_requested ? (
-                          <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          <span
+                            className={cn(
+                              'shrink-0',
+                              taskExtensionChip.className
+                            )}
+                          >
                             <Clock3 className="size-3" />
-                            Aguardando adiamento
+                            {taskExtensionChip.label}
                           </span>
                         ) : null}
                       </div>

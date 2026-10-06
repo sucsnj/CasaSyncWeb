@@ -70,6 +70,64 @@
 
 ---
 
+## Chip de pedido de adiamento pendente no card (implementado — sem mudança de schema)
+
+### O que mudou
+Um pedido de adiamento agora é visível **sem expandir o card**, nos dois lados.
+
+- **ADMIN (o que faltava):** os cards da seção Pendentes vêm **recolhidos por
+  padrão**, e o pedido só aparecia no banner **dentro do corpo expandido** — então
+  o ADMIN só percebia pela notificação ou ao clicar em cada tarefa. Entrou um
+  chip **"Pedido de adiamento"** (`Clock3`) no grupo de chips do **cabeçalho**,
+  ao lado do SLA e do status, visível com o card fechado.
+- **DEPENDENTE (o que estava fraco):** o chip já existia (`tasks-dependent.tsx`,
+  seção "Suas tarefas"), mas era `bg-blue-50 text-blue-700` — quase branco sobre o
+  card branco, e ao lado do `sky-100` do chip de status ficava indistinto. Passou
+  a usar a **mesma constante** do ADMIN (`bg-blue-100`, `text-blue-800`,
+  `font-semibold`).
+
+### Fonte única do estilo
+Novo `taskExtensionChip` em **`src/components/tasks/task-styles.ts`** (`label` +
+`className`), importado pelos dois componentes. Sem ele, a cor do aviso de
+adiamento viveria hard-coded em dois arquivos — que é exatamente como o chip do
+dependente já tinha divergido do banner do ADMIN. A identidade (azul + `Clock3`) é
+a que **já** existia no banner do ADMIN e no botão "Pedir mais tempo", então o chip
+é a mesma coisa em miniatura. `Clock3` já era importado nos dois arquivos.
+
+**Nota de shape:** é o primeiro chip **com ícone** do arquivo, então ele usa
+`flex items-center gap-1` + `px-2 py-1` (o shape do chip com ícone), enquanto os
+chips de status seguem sem ícone e com `px-2.5 py-1`.
+
+### Onde o chip **não** aparece (e por quê)
+- **"Em espera"** (ADMIN): `setTaskOnHold` **descarta** o pedido pendente de
+  propósito (ADR-0018) — nunca há o que avisar.
+- **"Concluídas — aguardando aprovação" e "Aprovadas"**: conclusão/aprovação
+  limpam as flags; `COMPLETED` e `APPROVED` nunca têm `extension_requested`.
+- **Dependente, "Aguardando aprovação"/"Concluídas"**: pelo mesmo motivo.
+
+### Mudança de texto no dependente
+O rótulo era **"Aguardando adiamento"** e passou a **"Pedido de adiamento"**, para
+os dois lados mostrarem a mesma coisa. É o vocabulário que o app já usa no banner
+do ADMIN, no título da notificação e no toast. A nuance de "aguardando" continua
+implícita: o chip só existe quando há pedido pendente.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(16 rotas). Classes conferidas **no CSS gerado** (`.next/static/chunks/*.css`),
+como manda o `AGENTS.md` §2: `.bg-blue-100` (nova — só este chip usa),
+`.text-blue-800`, `.size-3`, `.font-semibold`, `.shrink-0`, `.px-2` e `.py-1`,
+todas presentes.
+
+### Pontos de atenção
+- **Aviso que exige ação do usuário fica no cabeçalho, não só no corpo
+  expandido.** Card recolhido por padrão + aviso escondido = o usuário só
+  descobre pela notificação. Vale para qualquer aviso novo nesta tela.
+- Não confunda com o chip do sino (`Clock` + `sky-100`) nem com o card
+  "Adiamento de tarefas" das Configurações (`Clock3` + `emerald-100`): o aviso
+  **na tarefa** é azul, como o banner.
+
+---
+
 ## X de dispensar nos toasts internos (implementado — sem mudança de schema)
 
 ### O que mudou
