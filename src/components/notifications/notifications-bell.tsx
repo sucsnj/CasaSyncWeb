@@ -12,6 +12,7 @@ import {
   Clock,
   Flame,
   Gift,
+  House,
   Lightbulb,
   ListTodo,
   MessageSquare,
@@ -34,6 +35,8 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/actions/notifications'
+import { selectHouse } from '@/actions/houses'
+import { toast } from 'sonner'
 import type { NotificationRow, NotificationType } from '@/types/notifications'
 
 const TYPE_META: Record<
@@ -98,11 +101,20 @@ export function NotificationsBell({
   initialNotifications,
   canSend = false,
   quickMessageSettings,
+  activeHouseId,
+  houseNames,
 }: {
   userId: string
   initialNotifications: NotificationRow[]
   canSend?: boolean
   quickMessageSettings?: QuickMessageSettings
+  /**
+   * Casa ativa do ADMIN (quem controla várias). Só o ADMIN recebe: o
+   * dependente pertence a uma casa só, então nunca há notificação de outra.
+   */
+  activeHouseId?: string | null
+  /** `house_id → nome` das casas que o ADMIN controla, para o chip e o aviso. */
+  houseNames?: Record<string, string>
 }) {
   const router = useRouter()
   const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
@@ -145,9 +157,47 @@ export function NotificationsBell({
     void markNotificationRead(id).catch(() => {})
   }
 
-  function openItem(item: NotificationRow) {
+  /**
+   * Notificação de uma casa que **não** é a casa ativa. Só acontece com ADMIN
+   * multi-casa: o sino é global (fica no header de todas as telas) e as
+   * notificações de todas as casas se misturam. Sem isso, clicar numa
+   * notificação da casa B levava para `/tasks` da casa A — o `link` é relativo
+   * e a página resolve pela casa ativa.
+   */
+  function isOtherHouse(item: NotificationRow) {
+    return !!activeHouseId && item.house_id !== activeHouseId
+  }
+
+  async function openItem(item: NotificationRow) {
     if (!item.read_at) markRead(item.id)
-    if (item.link) router.push(item.link)
+    if (!item.link) {
+      setOpen(false)
+      return
+    }
+
+    if (isOtherHouse(item)) {
+      // Troca a casa ANTES de navegar: o cookie é `httpOnly`, então o fetch do
+      // RSC precisa esperar a gravação para já ler a casa certa.
+      const result = await selectHouse(item.house_id)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      const name = houseNames?.[item.house_id]
+      toast.info(
+        name
+          ? `Você mudou para a casa ${name} para ver isso.`
+          : 'Você mudou de casa para ver isso.'
+      )
+      router.push(item.link)
+      // `router.push` para a MESMA rota é no-op e não traz props novas — o
+      // `refresh` é o que garante que a página já renderize a casa nova.
+      router.refresh()
+      setOpen(false)
+      return
+    }
+
+    router.push(item.link)
     setOpen(false)
   }
 
@@ -259,6 +309,13 @@ export function NotificationsBell({
               const meta = metaFor(item.type)
               const expanded =
                 item.type === 'QUICK_MESSAGE' && expandedQuickIds.has(item.id)
+              // Notificação de outra casa que este ADMIN controla: ganha chip
+              // com o nome (é o que evita o clique na casa errada) e, ao clicar,
+              // troca a casa antes de navegar.
+              const otherHouse = isOtherHouse(item)
+              const otherHouseName = otherHouse
+                ? (houseNames?.[item.house_id] ?? null)
+                : null
               return (
                 <li
                   key={item.id}
@@ -305,6 +362,12 @@ export function NotificationsBell({
                         <span className="truncate text-sm font-semibold text-slate-800">
                           {item.title}
                         </span>
+                        {otherHouseName ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            <House className="size-3" />
+                            {otherHouseName}
+                          </span>
+                        ) : null}
                         {!item.read_at ? (
                           <span className="size-2 shrink-0 rounded-full bg-blue-600" />
                         ) : null}

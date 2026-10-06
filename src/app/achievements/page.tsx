@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
+  getAdminHouses,
   getDependentHouse,
   getHouseAssignees,
   getSessionProfile,
@@ -82,11 +83,19 @@ export default async function AchievementsPage() {
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  const [notifications, activeHouse, dependentHouse] = await Promise.all([
-    getMyNotifications(user.id),
-    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
-    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-  ])
+  const [notifications, activeHouse, dependentHouse, adminHouses] =
+    await Promise.all([
+      getMyNotifications(user.id),
+      isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+      isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graça:
+      // `getActiveAdminHouse` já chama `getAdminHouses` e ambos são `React.cache`.
+      isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
+    ])
+
+  const houseNames = Object.fromEntries(
+    adminHouses.map((house) => [house.id, house.name])
+  )
 
   const quickMessageSettings = !isAdmin && dependentHouse
     ? await getHouseQuickMessageSettings(dependentHouse.id)
@@ -198,6 +207,8 @@ export default async function AchievementsPage() {
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
         punishment={isAdmin ? null : punishment}
+        activeHouseId={isAdmin ? (activeHouse?.id ?? null) : null}
+        houseNames={isAdmin ? houseNames : undefined}
       />
       <main className="flex flex-col gap-6">{content}</main>
     </div>

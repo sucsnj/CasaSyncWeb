@@ -42,6 +42,8 @@ export function DashboardNav({
   quickMessageSettings,
   hasClaimableAchievement,
   punishment,
+  activeHouseId,
+  houseNames,
 }: {
   items: NavItem[]
   userName?: string | null
@@ -58,6 +60,14 @@ export function DashboardNav({
    * aplica/remove o castigo), e sem Realtime: vem do render server-side.
    */
   punishment?: ActivePunishment | null
+  /**
+   * Casa ativa (ADMIN multi-casa) — o sino usa para saber quando uma
+   * notificação é de outra casa: mostra o nome dela no card e troca a casa
+   * antes de navegar. Só o ADMIN precisa (o dependente tem uma casa só).
+   */
+  activeHouseId?: string | null
+  /** `house_id → nome` das casas do ADMIN, para o chip e o aviso de troca. */
+  houseNames?: Record<string, string>
 }) {
   const pathname = usePathname()
   const [showAccount, setShowAccount] = useState(false)
@@ -115,6 +125,8 @@ export function DashboardNav({
                 initialNotifications={notifications ?? []}
                 canSend={role === 'DEPENDENT'}
                 quickMessageSettings={quickMessageSettings}
+                activeHouseId={activeHouseId}
+                houseNames={houseNames}
               />
             ) : null}
             {punishment ? <PunishmentIndicator punishment={punishment} /> : null}

@@ -1,5 +1,9 @@
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
-import { getSessionProfile } from '@/utils/house'
+import {
+  getActiveAdminHouse,
+  getAdminHouses,
+  getSessionProfile,
+} from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
@@ -19,7 +23,19 @@ export default async function AdminDashboardLayout({
   children: React.ReactNode
 }) {
   const { user, profile } = await getSessionProfile()
-  const notifications = user ? await getMyNotifications(user.id) : []
+  const [notifications, activeHouse, adminHouses] = await Promise.all([
+    user ? getMyNotifications(user.id) : Promise.resolve([]),
+    user ? getActiveAdminHouse() : Promise.resolve(null),
+    // Casas do ADMIN: o sino precisa do nome de cada uma para marcar as
+    // notificações de outras casas e trocar a casa antes de navegar. De graça —
+    // `getActiveAdminHouse` chama `getAdminHouses` por dentro e ambos são
+    // `React.cache`, então as páginas do grupo não pagam query extra.
+    user ? getAdminHouses(user.id) : Promise.resolve([]),
+  ])
+
+  const houseNames = Object.fromEntries(
+    adminHouses.map((house) => [house.id, house.name])
+  )
 
   return (
     <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
@@ -29,6 +45,8 @@ export default async function AdminDashboardLayout({
         userId={user?.id}
         notifications={notifications}
         role="ADMIN"
+        activeHouseId={activeHouse?.id ?? null}
+        houseNames={houseNames}
       />
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}
