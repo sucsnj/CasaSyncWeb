@@ -117,6 +117,45 @@ export async function getActiveAdminHouse(): Promise<ActiveHouse | null> {
 }
 
 /**
+ * Grava a casa ativa no cookie, **validando a sessão e a membresia ADMIN** (o
+ * `houseId` nunca é_confiado). Núcleo compartilhado por:
+ * - `selectHouse` (Server Action, botão "Trocar de casa" e clique em notificação);
+ * - `POST /api/active-house` (chamada pelo **service worker** quando o app está
+ *   fechado — não há Server Action acessível de lá, então o SW grava a casa
+ *   por esta rota antes de abrir a janela).
+ *
+ * Server-only: usa `cookies()` e o cliente service-role.
+ */
+export async function persistActiveHouseCookie(
+  userId: string,
+  houseId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient()
+
+  // Controla a casa como ADMIN (criador ou co-gerente via PIN).
+  const { data: membership } = await admin
+    .from('house_members')
+    .select('id')
+    .eq('house_id', houseId)
+    .eq('profile_id', userId)
+    .eq('role', 'ADMIN')
+    .maybeSingle()
+
+  if (!membership) {
+    return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.set(ACTIVE_HOUSE_COOKIE, houseId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  return { ok: true }
+}
+
+/**
  * Casa do DEPENDENTE: primeira associação em `house_members`.
  * (Um dependente não escolhe casa; ela é definida pelo ADMIN na criação.)
  *

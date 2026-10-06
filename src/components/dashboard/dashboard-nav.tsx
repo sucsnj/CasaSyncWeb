@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { CircleCheck, Gift, House, LayoutDashboard, ListTodo, Trophy } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Modal } from '@/components/ui/modal'
 import { useClaimableAchievement } from '@/hooks/use-claimable-achievement'
 import { PunishmentIndicator } from '@/components/punishments/punishment-indicator'
+import { selectHouse } from '@/actions/houses'
 import type { NotificationRow } from '@/types/notifications'
 import type { QuickMessageSettings } from '@/utils/settings'
 import type { ActivePunishment } from '@/utils/punishments'
@@ -70,10 +72,65 @@ export function DashboardNav({
   houseNames?: Record<string, string>
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [showAccount, setShowAccount] = useState(false)
   const claimable = useClaimableAchievement(hasClaimableAchievement)
   const initial = userName?.trim()?.[0]?.toUpperCase() ?? 'U'
   const brandHref = items[0]?.href ?? '/'
+
+  /**
+   * Clique numa notificação **push** (o app estava em background ou fechado).
+   *
+   * O `notificationclick` do service worker manda esta mensagem; antes não havia
+   * listener nenhum, então o clique no push simplesmente não navegava. O `url` é
+   * **relativo** e a página resolve pela casa ativa — então, se a notificação for
+   * de outra casa do ADMIN, trocamos a casa ANTES de navegar (mesmo caminho do
+   * clique no sino).
+   */
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'NOTIFICATION_CLICK') return
+      const url: unknown = event.data?.url
+      const houseId: unknown = event.data?.houseId
+      if (typeof url !== 'string') return
+
+      const open = async () => {
+        // Só o ADMIN tem várias casas e pode trocar de casa.
+        if (
+          role === 'ADMIN' &&
+          typeof houseId === 'string' &&
+          houseId &&
+          houseId !== activeHouseId
+        ) {
+          const result = await selectHouse(houseId)
+          if (!result.ok) {
+            toast.error(result.error)
+            return
+          }
+          const name = houseNames?.[houseId]
+          toast.info(name ? `Você mudou para a casa ${name}.` : 'Casa ativa alterada.')
+        }
+        router.push(url)
+        // `push` para a MESMA rota é no-op e não traz props novas; o `refresh`
+        // garante que a página já renderize a casa nova.
+        router.refresh()
+      }
+
+      void open()
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+    }
+    // `houseNames`/`activeHouseId` entram no dep de propósito: sem eles o
+    // closure usaria a casa ativa antiga depois de uma troca. São props do
+    // servidor, então só mudam quando o app navega de verdade.
+  }, [role, router, activeHouseId, houseNames])
 
   return (
     <>

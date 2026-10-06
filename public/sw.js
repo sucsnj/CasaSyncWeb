@@ -1,5 +1,8 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-const CACHE_NAME = 'casasync-v3';
+// v4: o `notificationclick` passou a trocar a casa ativa antes de navegar (o
+// `link` é relativo e abria a tela da casa errada). Bump para forçar reinstalação
+// nos browsers com a versão antiga em uso.
+const CACHE_NAME = 'casasync-v4';
 // Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
 // é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
 const STATIC_ASSETS = [
@@ -126,23 +129,57 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Web Push: clique na notificação abre/foca o app
+// Web Push: clique na notificação abre/foca o app.
+//
+// A notificação carrega a `houseId` de origem (`toPushPayload` espalha o
+// `NotifyInput` em `data`). Como o `link` é RELATIVO e a página resolve pela casa
+// ativa, abrir `/tasks` sem trocar a casa levava o ADMIN para a tela errada — o
+// mesmo bug do sino. A troca acontece em UM dos dois caminhos:
+//
+//   - app ABERTO: a janela tem sessão e Server Action, então quem troca a casa é
+//     o app (listener `NOTIFICATION_CLICK` no `DashboardNav`) — o SW só avisa;
+//   - app FECHADO: não há janela nem Server Action, então o próprio SW grava o
+//     cookie via POST same-origin **antes** de abrir a janela.
+//
+// Best-effort: se a gravação falhar (casa de que o ADMIN não participa mais,
+// sessão expirada), a navegação acontece normalmente — sem a troca, não quebrada.
+async function persistActiveHouse(houseId) {
+  if (!houseId) return;
+  try {
+    await fetch('/api/active-house', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ houseId }),
+    });
+  } catch (error) {
+    console.log('Falha ao gravar a casa ativa antes de abrir:', error);
+  }
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url ?? '/';
+  const data = event.notification.data ?? {};
+  const urlToOpen = data.url ?? '/';
+  const houseId = data.houseId ?? null;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Verifica se já tem uma janela aberta do app
+      // App aberto: a janela troca a casa e navega. O `url` é relativo à casa
+      // ativa, então quem resolve o destino é o app, não o SW.
       for (const client of windowClients) {
         if (client.url.includes(location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICK', url: urlToOpen });
+          client.postMessage({
+            type: 'NOTIFICATION_CLICK',
+            url: urlToOpen,
+            houseId,
+          });
           return client.focus();
         }
       }
-      // Abre nova janela se não tiver nenhuma
-      return clients.openWindow(urlToOpen);
+      // App fechado: grava a casa no cookie antes de abrir a janela.
+      return persistActiveHouse(houseId).then(() => clients.openWindow(urlToOpen));
     })
   );
 });

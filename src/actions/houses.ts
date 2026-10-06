@@ -7,6 +7,7 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import {
   ACTIVE_HOUSE_COOKIE,
   getSessionProfile,
+  persistActiveHouseCookie,
 } from '@/utils/house'
 import type { ActionResult } from './types'
 import {
@@ -134,27 +135,10 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
     return { ok: false, error: 'Apenas administradores podem trocar de casa.' }
   }
 
-  const admin = createAdminClient()
-
-  // Controla a casa como ADMIN (criador ou co-gerente via PIN).
-  const { data: membership } = await admin
-    .from('house_members')
-    .select('id')
-    .eq('house_id', houseId)
-    .eq('profile_id', user.id)
-    .eq('role', 'ADMIN')
-    .maybeSingle()
-
-  if (!membership) {
-    return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
-  }
-
-  const cookieStore = await cookies()
-  cookieStore.set(ACTIVE_HOUSE_COOKIE, houseId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-  })
+  // Valida a sessão e a MEMBRESIA ADMIN (nunca confia no houseId) e grava o
+  // cookie — mesmo núcleo usado pela rota do service worker.
+  const persisted = await persistActiveHouseCookie(user.id, houseId)
+  if (!persisted.ok) return persisted
 
   revalidatePath('/dashboard/admin')
   revalidatePath('/dashboard/admin/houses')
