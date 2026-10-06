@@ -515,8 +515,29 @@ export async function updateTask(
 
   if (Object.keys(updates).length === 0) return { ok: true }
 
-  const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
+  // Guarda de transição: `.in('status', …)` aceita só os 4 status editáveis (ver
+  // `isEditableStatus`) e `.eq('extension_requested', …)` é a própria checagem de
+  // "não há pedido pendente". Sem o guard, a validação acima (que é uma LEITURA
+  // separada) fica racing com o write: o dependente concluindo a tarefa, ou o
+  // ADMIN pausando/aprovando, no meio da edição faria o `update` gravar por
+  // cima de uma tarefa já concluída/aprovada — que é o que a regra proíbe. Ele
+  // também protege a reaberação de `NOT_DELIVERED` (`updates.status`) de cair
+  // sobre um `APPROVED`.
+  const { data: updated, error } = await admin
+    .from('tasks')
+    .update(updates)
+    .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED', 'ON_HOLD'])
+    .select('id')
+
   if (error) return { ok: false, error: 'Falha ao salvar a tarefa.' }
+  if (!updated || updated.length === 0) {
+    return {
+      ok: false,
+      error:
+        'A tarefa mudou de estado agora há pouco (o dependente pode tê-la concluído).',
+    }
+  }
 
   revalidatePath('/tasks')
   return { ok: true }
@@ -694,7 +715,14 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   const credit = await adjustPoints(admin, task.assigned_to, currentPoints)
   if (credit !== 'credited') {
     // Rollback: devolve a tarefa ao estado anterior para não perder o histórico.
-    await admin.from('tasks').update({ status: 'COMPLETED' }).eq('id', taskId)
+    // `.eq('status','APPROVED')` para o rollback não sobrescrever o que outro
+    // ADMIN mexeu na janela entre a transição e esta tentativa de crédito (ex.:
+    // um `restoreTask` parallelo já devolveu a tarefa para `PENDING`).
+    await admin
+      .from('tasks')
+      .update({ status: 'COMPLETED' })
+      .eq('id', taskId)
+      .eq('status', 'APPROVED')
     return {
       ok: false,
       error:
@@ -866,7 +894,14 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
 
   const debited = await adjustPoints(admin, task.assigned_to, -currentPoints)
   if (debited !== 'credited') {
-    await admin.from('tasks').update({ status: previousStatus }).eq('id', taskId)
+    // Rollback só se a tarefa ainda for a `NOT_DELIVERED` que esta chamada
+    // gravou — se outro ADMIN já a mudou na janela do débito, o rollback não
+    // sobrescreve o estado dele.
+    await admin
+      .from('tasks')
+      .update({ status: previousStatus })
+      .eq('id', taskId)
+      .eq('status', 'NOT_DELIVERED')
     return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
   }
 
@@ -1222,6 +1257,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
         completed_at: null,
       })
       .eq('id', taskId)
+      .eq('status', 'APPROVED') // rollback não sobrescreve estado de outro ADMIN
     return {
       ok: false,
       error:
@@ -1316,12 +1352,27 @@ export async function requestTaskExtension(
     }
   }
 
-  const { error } = await admin
+  // Guarda de transição: `.in('status', …)` são os 3 status em que o pedido é
+  // válido e `.eq('extension_requested', false)` é a checagem de "não há pedido
+  // pendente". Sem o guard, a validação acima (LEITURA separada) fica racing com
+  // o write: se o ADMIN pausar, aprovar ou concluir a tarefa no mesmo instante, o
+  // pedido era gravado numa tarefa que não deveria mais ter um — a pausa descarta
+  // o pedido pendente de propósito (ADR-0018). Também impede pedido duplicado.
+  const { data: requested, error } = await admin
     .from('tasks')
     .update({ extension_requested: true, extension_reason: justification })
     .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+    .eq('extension_requested', false)
+    .select('id')
 
   if (error) return { ok: false, error: 'Falha ao registrar o pedido.' }
+  if (!requested || requested.length === 0) {
+    return {
+      ok: false,
+      error: 'A tarefa mudou de estado agora há pouco. Atualize a tela e tente de novo.',
+    }
+  }
 
   await notifyHouse(admin, {
     houseId: house.id,
