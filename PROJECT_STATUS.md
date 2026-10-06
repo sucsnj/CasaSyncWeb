@@ -55,6 +55,10 @@
   do decaimento reinicia — 10 que decaiu para 7 **passa a valer 7** e volta a
   decair com o prazo estendido. A "não entregue" segue valendo **0**
   (penalidade definitiva). Ver a seção no topo do documento.
+- **X de dispensar nos toasts internos:** todo toast (notificação por Realtime e
+  retorno de ação) tem um **X** para tirar o aviso da tela sem esperar o tempo.
+  Ele remove **só o toast** — a notificação continua gravada e não lida no sino.
+  Ver a seção no topo do documento.
 - **Limitação de plataforma do Web Push (aceita, não é bug):** com o app
   **varrido dos recentes**, o SO mata o Web Push e a notificação nativa não
   chega em nenhum navegador (Chrome, Edge e Firefox testados). O **sino continua
@@ -63,6 +67,94 @@
   **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
   registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
   no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## X de dispensar nos toasts internos (implementado — sem mudança de schema)
+
+### O que mudou
+Todos os toasts internos (os que chegam por Realtime **e** os de retorno das
+ações) ganharam um **X de dispensar**: o atalho para tirar o aviso da tela
+quando ele atrapalha, sem esperar o tempo.
+
+**Remove só o toast — nunca a notificação.** A linha em `notifications` continua
+gravada e não lida, aparecendo no sino como sempre. Isso é garantido por
+construção, não por convenção: `realtime-toast-listener.tsx` só chama
+`toast[style](...)` sem `action`/`onDismiss`, e o X do sonner dispara
+`dismiss` — um caminho separado do clique na notificação.
+
+### Onde foi mexido
+- **`src/app/layout.tsx`** — `closeButton` no `<Toaster>` e
+  `toastOptions.closeButtonAriaLabel: 'Dispensar aviso'`. É o único lugar:
+  o `Toaster` é global, então os ~13 arquivos que disparam toast herdam o X sem
+  tocar em nenhum deles.
+- **`src/app/globals.css`** — o visual do botão.
+
+### Por que o visual precisou de CSS e não de classe
+O padrão do sonner é um **círculo de 20px pendurado pela metade para fora** do
+canto superior **esquerdo** — do lado do ícone de status e pequeno demais para o
+dedo. Dois motivos explicam por que não dá para resolver com
+`classNames.closeButton`: a folha do sonner é injetada em runtime e usa
+especificação maior que a de qualquer classe utilitária
+(`[data-sonner-toast][data-styled=true] [data-close-button]`, e o `!important`
+é o que garante), então um `right-2` do Tailwind seria ignorado. Vale o mesmo
+caminho do X nativo dos campos de busca, que já estava lá em `globals.css`.
+
+O que mudou: alvo de **40px dentro da borda direita, centralizado na
+vertical** (`top: 50%` + `transform: translateY(-50%)` — o `translate` do sonner,
+o círculo meio pendurado para fora, é zerado por isso), com **ícone maior e
+traço mais grosso** — o SVG da lib tem 12px e `strokeWidth` 1.5, ou seja
+uns 0.75px de linha renderizada, fino demais para ler; agora o ícone é 20px com
+`stroke-width` 2.25. O botão tem **fundo já em repouso** (`slate-500` a 12%),
+que é o que faz o X ler como botão e não como um risco na borda do card, com
+`opacity` 0.75 → 1 no hover (fundo a 24%) e `color: inherit` (serve nos dois
+temas, porque o sonner troca a cor do texto em `data-sonner-theme` em vez de o
+app ter um toggle de tema). A regra `[data-sonner-toast]:has([data-close-button])`
+reserva `padding-right` (3.5rem = 40px do X + 8px de margem + folga) para o texto
+não passar por baixo do X — **com `!important`, e por um motivo diferente dos de
+acima**: sem ele a regra **empata** em especificidade com a do sonner
+(`[data-sonner-toast][data-styled=true]` são duas hashtags de atributo = (0,2,0);
+`[data-sonner-toast]:has([data-close-button])` = atributo + `:has()` = (0,2,0)) e
+quem vence é a última folha — e a do sonner é injetada em runtime, depois do
+`globals.css`. Sem o `!important` o X **cobre o texto do toast** (achado em tela).
+
+**Armadilha do mesmo tipo, achada na releitura:** o `globals.css` tinha **duas**
+regras `:hover` do X empilhadas (a antiga com 12% e a nova com 24%) — a última
+vence, então o valor pretendido nunca valia. Por isso a conferência do CSS
+gerado olha a **contagem** de regras, não só se elas existem: uma regra duplicada
+é invisível numa busca por nome.
+
+### Sobre o gesto de deslizar (não implementado de propósito)
+O sonner **já traz swipe-to-dismiss** ligado por padrão, e as direções vêm da
+posição do `Toaster`: como o nosso é `bottom-right`, ele aceita deslizar para
+**baixo** ou para a **direita** para dispensar. Não há nada a fazer no código —
+decisão consciente: o X já é o caminho descobrível, acessível e universal
+(teclado/leitor de tela/dedo), e um gesto que ninguém conhece quase não acrescenta
+(valor de dica visual: polui o toast e some em uma semana). O custo do gesto é
+conhecido: o toast tem `touch-action: none`, então deslizar sobre ele não rola a
+página — correto para o elemento, mas bom saber. **Suporte de navegador desigual
+não é motivo para mexer nisso** (decisão do usuário).
+
+### Detalhes que valem registro
+- **`closeButtonAriaLabel` NÃO é prop do `<Toaster>`** — é de `toastOptions`
+  (`ToastOptions` no `.d.ts`). No `Toaster` o TS recusa; o default da lib seria
+  "Close toast", em inglês.
+- O X **não aparece** em toast do tipo `loading` nem em toast com `jsx`
+  próprio (regra do próprio sonner) — o app não usa nenhum dos dois.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+As 4 regras novas foram conferidas **no CSS gerado** (`.next/static/chunks/*.css`),
+como manda o `AGENTS.md` §2: `[data-sonner-toast] [data-close-button]{...}` com os
+`!important`, o `svg` (tamanho + `stroke-width`), o `:hover` e a regra `:has()` de
+`padding-right` — todas presentes.
+
+### Pontos de atenção
+- **Não confunda dispensar com arquivar:** o X some com o toast, nada acontece no
+  banco. Se um dia alguém quiser "dispensar também do sino", é uma action nova
+  (`markNotificationRead`/`deleteNotification`), não um efeito do `dismiss`.
+- O `duration: 5000` dos toasts de notificação segue igual — o X é o atalho, não
+  um substituto da leitura (o sino é quem garante que nada se perca).
 
 ---
 
@@ -2498,7 +2590,7 @@ Sem saber se o CLD é invocável por modelo (`disable-model-invocation: true`), 
 ## Notificações Internas Visuais (Toasts) + Tempo Real (concluída)
 
 ### O que foi implementado
-- **Toast Provider (`src/app/layout.tsx`)**: instalado e configurado `sonner` com `Toaster` no `RootLayout`. Estilo consistente com o app: fundo branco com blur, bordas arredondadas (`rounded-xl`), sombra, ícones por tipo (success/error/info/warning).
+- **Toast Provider (`src/app/layout.tsx`)**: instalado e configurado `sonner` com `Toaster` no `RootLayout`. Estilo consistente com o app: fundo branco com blur, bordas arredondadas (`rounded-xl`), sombra, ícones por tipo (success/error/info/warning). **`closeButton` ligado em todos os toasts** (X de dispensar, com `closeButtonAriaLabel="Dispensar aviso"` e o visual ajustado em `globals.css`) — o X remove **só o toast**, nunca a notificação, que segue gravada e não lida no sino.
 - **Listener Global em Tempo Real (`src/components/notifications/realtime-toast-listener.tsx`)**: componente client incluído nos layouts do Dashboard (admin e dependent). Escuta `INSERT` na tabela `notifications` filtrando por `recipient_id=eq.{userId}` via `usePostgresChanges`. Ao receber uma nova notificação, dispara automaticamente o Toast correspondente (`toast[style]`) usando o `title` e `body` gravados no banco.
 - **Mapeamento de tipos para estilo visual**: cada `NotificationType` (18 tipos: TASK_CREATED, TASK_APPROVED, REDEMPTION_APPROVED, QUICK_MESSAGE, etc.) mapeia para `success`/`error`/`info`/`warning` com rótulo amigável.
 - **Gatilhos de Toast em Server Actions / Formulários**: adicionado `toast.success`/`toast.error`/`toast.info` nos handlers das principais ações:

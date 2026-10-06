@@ -44,7 +44,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Toaster
           position="bottom-right"
           theme="system"
+          // X de dispensar em todos os toasts: é o ATALHO para tirar o aviso da
+          // tela quando ele atrapalha, sem esperar o tempo. Ele remove **só o
+          // toast** — a notificação continua gravada e não lida no sino (nenhum
+          // handler de dismiss foi anexado; ver `realtime-toast-listener.tsx`).
+          // O visual do botão é adjusted em `globals.css` (a folha do sonner é
+          // injetada em runtime e ganha de qualquer classe utilitária).
+          closeButton
           toastOptions={{
+            closeButtonAriaLabel: 'Dispensar aviso',
             classNames: {
               toast: 'rounded-xl border bg-white/95 backdrop-blur-sm shadow-lg',
               description: 'text-sm text-slate-600',
