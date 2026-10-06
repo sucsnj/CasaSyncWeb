@@ -156,6 +156,12 @@ export function ComunicadosAdmin({
           setFormError(res.error)
           return
         }
+        // Reconcilia o card com a linha gravada pelo servidor (com o `.trim()` e o
+        // `updated_at` reais). Sem isso o título/descrição editados só apareciam
+        // depois do F5: o `resetForm` fecha o form, o Realtime nem sempre
+        // entrega o próprio write, e o `revalidatePath` não ressincroniza o
+        // estado local de um client component já montado.
+        if (res.data?.comunicado) upsertComunicado(res.data.comunicado)
         toast.success(res.message)
       } else {
         const res = await createComunicado(payload)

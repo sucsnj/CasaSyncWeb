@@ -131,19 +131,21 @@ export function TasksAdmin({
   // Estado para rastrear status de salvamento de cada card.
   const [savingStatuses, setSavingStatuses] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
 
-  // Ids das tarefas com aprovação/conclusão em andamento (Aprovar / Concluir e
-  // creditar). NÃO usa o `pending` do `useTransition`: `startTransition(async …)`
+  // Ids das tarefas com uma transição de status em andamento (aprovar, concluir,
+  // desaprovar, marcar não entregue, pausar/reativar, restaurar, resolver
+  // adiamento). NÃO usa o `pending` do `useTransition`: `startTransition(async …)`
   // nunca marca `isPending` — o React não rastreia a Promise devolvida pelo
-  // callback — então o "Aprovando…" e o `disabled` ficavam permanentemente
-  // falsos e o botão parecia travado durante todo o trabalho do servidor.
-  // Um Set (e não um lock de tela) porque o ADMIN pode agir em vários cards ao
-  // mesmo tempo; cada card trava só o próprio botão.
-  const [pendingCreditIds, setPendingCreditIds] = useState<Set<string>>(
-    new Set()
-  )
+  // callback — então os labels ("Aprovando…") e o `disabled` ficavam
+  // permanentemente falsos e o botão parecia travado durante todo o trabalho do
+  // servidor. Um Set (e não um lock de tela) porque o ADMIN pode agir em vários
+  // cards ao mesmo tempo; cada card trava só o próprio botão.
+  //
+  // `pending` continua existindo (declarado acima) para os 3 botões do FORMULÁRIO
+  // de criação, onde a ação é de escopo único e o `startTransition` faz sentido.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
 
-  function setPendingCredit(id: string, on: boolean) {
-    setPendingCreditIds((prev) => {
+  function setPendingId(id: string, on: boolean) {
+    setPendingIds((prev) => {
       const next = new Set(prev)
       if (on) next.add(id)
       else next.delete(id)
@@ -161,13 +163,77 @@ export function TasksAdmin({
    * render. Um rollback cego sobrescreveria esse dado e o card voltaria a uma
    * seção que não existe mais no banco — e ele só sairia da tela com um F5,
    * porque o evento do Realtime já foi consumido.
+   *
+   * `stillOptimistic` é o predicado que identifica "o card ainda está com o
+   * valor que o otimista gravou" — muda por transição (o status, no caso normal;
+   * as flags de adiamento, quando a transição não muda o status).
    */
-  function rollbackOptimistic(task: Task) {
+  function rollbackOptimistic(
+    task: Task,
+    stillOptimistic: (item: Task) => boolean
+  ) {
     setTasks((prev) =>
       prev.map((item) =>
-        item.id === task.id && item.status === 'APPROVED' ? task : item
+        item.id === task.id && stillOptimistic(item) ? task : item
       )
     )
+  }
+
+type TransitionResult =
+    | { ok: true; message?: string }
+    | { ok: false; error: string }
+
+/**
+ * Executa uma transição de status com **feedback imediato**:
+ * 1. trava o botão da tarefa (id no Set) → label "…" + `disabled`;
+ * 2. aplica o OTIMISTA **antes** do `await` → o card muda de seção no mesmo
+ *    quadro, sem esperar o servidor;
+ * 3. aguarda a action;
+ * 4. em erro, reverte — mas só o que ainda for o valor do otimista (ver
+ *    `rollbackOptimistic`), preservando dado novo do Realtime;
+ * 5. destrava no `finally`.
+ *
+ * Unifica os 7 handlers de transição (aprovar, concluir e creditar, desaprovar,
+ * não entregue, pausa/reativação, restaurar, resolver adiamento) — o ponto de
+ * elas é idêntico; o que muda é o otimista, o predicado de rollback e a action.
+ */
+async function runTaskTransition(
+    task: Task,
+    optimistic: Task,
+    stillOptimistic: (item: Task) => boolean,
+    run: () => Promise<TransitionResult>,
+    options?: {
+      successToast?: 'success' | 'warning' | 'info'
+      fallbackMessage?: string
+    }
+  ) {
+    if (pendingIds.has(task.id)) return
+    setFormError(null)
+    setPendingId(task.id, true)
+    setTasks((prev) => upsertTask(prev, optimistic))
+
+    try {
+      const result = await run()
+      if (!result.ok) {
+        rollbackOptimistic(task, stillOptimistic)
+        setFormError(result.error)
+        toast.error(result.error)
+        return
+      }
+      const message = result.message ?? options?.fallbackMessage ?? ''
+      if (options?.successToast === 'warning') toast.warning(message)
+      else if (options?.successToast === 'info') toast.info(message)
+      else toast.success(message)
+      router.refresh()
+    } catch {
+      // Erro de rede é ambíguo: pode ser que o servidor tenha gravado e só a
+      // resposta não chegou. O `refresh` re-sincroniza com o estado real.
+      rollbackOptimistic(task, stillOptimistic)
+      router.refresh()
+      toast.error('Falha de conexão. Tente novamente.')
+    } finally {
+      setPendingId(task.id, false)
+    }
   }
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
@@ -336,223 +402,172 @@ export function TasksAdmin({
   }
 
   function handleApprove(task: Task) {
-    if (pendingCreditIds.has(task.id)) return
-    setFormError(null)
-    setPendingCredit(task.id, true)
-    // Otimista ANTES do `await`: o card sai da seção na hora e o botão trava.
-    // O rollback é por id e só se o card ainda estiver no estado otimista (ver
-    // `rollbackOptimistic`) — nada de snapshot do array, que com aprovação em
-    // paralelo desfaria também a atualização de outra tarefa.
-    setTasks((prev) => upsertTask(prev, { ...task, status: 'APPROVED' }))
-
-    void (async () => {
-      try {
-        const result = await approveTask(task.id)
-        if (!result.ok) {
-          rollbackOptimistic(task)
-          setFormError(result.error)
-          toast.error(result.error)
-          return
-        }
-        toast.success(result.message ?? 'Tarefa aprovada')
-        router.refresh()
-      } catch {
-        rollbackOptimistic(task)
-        // Erro de rede é ambíguo: pode ser que o servidor tenha gravado e só a
-        // resposta não chegou. O `refresh` re-sincroniza com o estado real.
-        router.refresh()
-        toast.error('Falha de conexão. Tente novamente.')
-      } finally {
-        setPendingCredit(task.id, false)
-      }
-    })()
+    // Otimista: `APPROVED`. O rollback só desfaz se o card ainda estiver
+    // `APPROVED` — se o Realtime já trouxe o `COMPLETED` real (o dependente
+    // concluiu no mesmo instante), o dado novo é preservado.
+    void runTaskTransition(
+      task,
+      { ...task, status: 'APPROVED' },
+      (item) => item.status === 'APPROVED',
+      () => approveTask(task.id),
+      { fallbackMessage: 'Tarefa aprovada' }
+    )
   }
 
   function handleRejectComplete(task: Task) {
-    setFormError(null)
-    startTransition(async () => {
-      const result = await rejectCompletedTask(task.id)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
-
-      toast.success(result.message ?? 'Tarefa devolvida')
-      // Otimista: devolve o card à lista de pendentes na hora.
-      setTasks((prev) =>
-        upsertTask(prev, {
-          ...task,
-          status: 'PENDING',
-          completed_by: null,
-          completed_at: null,
-        })
-      )
-      router.refresh()
-    })
+    // COMPLETED → PENDING. O otimista limpa a conclusão; o rollback só desfaz se
+    // o card ainda estiver `PENDING` (se o dependente reconcluiu nesse meio
+    // tempo, o Realtime traz `COMPLETED` e o dado novo é preservado).
+    void runTaskTransition(
+      task,
+      { ...task, status: 'PENDING', completed_by: null, completed_at: null },
+      (item) => item.status === 'PENDING' && item.completed_at === null,
+      () => rejectCompletedTask(task.id),
+      { fallbackMessage: 'Tarefa devolvida' }
+    )
   }
 
   function handleAdminComplete(task: Task) {
-    if (pendingCreditIds.has(task.id)) return
-    setFormError(null)
-    setPendingCredit(task.id, true)
-    // Otimista ANTES do `await` (ver `handleApprove`). O servidor também grava
-    // `completed_by`/`completed_at`; não é preciso aqui porque o card já sai da
-    // seção de pendentes — o Realtime e o `router.refresh()` completam o resto.
-    setTasks((prev) => upsertTask(prev, { ...task, status: 'APPROVED' }))
-
-    void (async () => {
-      try {
-        const result = await adminCompleteTask(task.id)
-        if (!result.ok) {
-          rollbackOptimistic(task)
-          setFormError(result.error)
-          toast.error(result.error)
-          return
-        }
-        toast.success(result.message ?? 'Tarefa concluída e creditada')
-        router.refresh()
-      } catch {
-        rollbackOptimistic(task)
-        router.refresh()
-        toast.error('Falha de conexão. Tente novamente.')
-      } finally {
-        setPendingCredit(task.id, false)
-      }
-    })()
+    // O servidor também grava `completed_by`/`completed_at`; não é preciso no
+    // otimista porque o card já sai da seção de pendentes — o Realtime e o
+    // `router.refresh()` completam o resto.
+    void runTaskTransition(
+      task,
+      { ...task, status: 'APPROVED' },
+      (item) => item.status === 'APPROVED',
+      () => adminCompleteTask(task.id),
+      { fallbackMessage: 'Tarefa concluída e creditada' }
+    )
   }
 
   function handleMarkNotDelivered(task: Task) {
-    setFormError(null)
-    startTransition(async () => {
-      const result = await markTaskNotDelivered(task.id)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
+    // PENDING/IN_PROGRESS → NOT_DELIVERED (o servidor debita os pontos; a
+    // penalidade é definitiva). O otimista só muda o status — o saldo do
+    // dependente é outro componente, sincronizado pelo Realtime de `profiles`.
+    void runTaskTransition(
+      task,
+      { ...task, status: 'NOT_DELIVERED' },
+      (item) => item.status === 'NOT_DELIVERED',
+      () => markTaskNotDelivered(task.id),
+      {
+        successToast: 'warning',
+        fallbackMessage: 'Tarefa marcada como não entregue',
       }
-
-      toast.warning(result.message ?? 'Tarefa marcada como não entregue')
-      // Otimista: o card passa a exibir o estado "não entregue" na hora.
-      setTasks((prev) =>
-        upsertTask(prev, { ...task, status: 'NOT_DELIVERED' })
-      )
-      router.refresh()
-    })
+    )
   }
 
   function handleSetOnHold(task: Task, onHold: boolean) {
-    setFormError(null)
-    startTransition(async () => {
-      const result = await setTaskOnHold(task.id, onHold)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
+    // Pausar: o card sai da lista de pendentes e some para o dependente. A
+    // reativação devolve para PENDING com prazo novo.
+    // Prefere a linha autoritativa devolvida pela action (status, prazo e
+    // `decay_started_at` reais) — o `run` reconcilia assim que ela responder.
+    const optimistic: Task = onHold
+      ? {
+          ...task,
+          status: 'ON_HOLD',
+          extension_requested: false,
+          extension_reason: null,
+          points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
+        }
+      : {
+          ...task,
+          status: 'PENDING',
+          due_date: new Date(
+            Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+          ).toISOString(),
+          extension_requested: false,
+          extension_reason: null,
+        }
 
-      toast.success(
-        result.message ??
-          (onHold ? 'Tarefa colocada em espera' : 'Tarefa reativada')
-      )
-      // Prefere a linha autoritativa devolvida pela action (status, prazo e
-      // `decay_started_at` reais); o otimista cobre o intervalo até a resposta.
-      const fallback: Task = onHold
-        ? {
-            ...task,
-            status: 'ON_HOLD',
-            extension_requested: false,
-            extension_reason: null,
-            points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
-          }
-        : {
-            ...task,
-            status: 'PENDING',
-            due_date: new Date(
-              Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
-            ).toISOString(),
-            extension_requested: false,
-            extension_reason: null,
-          }
-      setTasks((prev) =>
-        upsertTask(prev, result.data?.task ?? fallback)
-      )
-      router.refresh()
-    })
+    void runTaskTransition(
+      task,
+      optimistic,
+      (item) => item.status === optimistic.status,
+      async () => {
+        const result = await setTaskOnHold(task.id, onHold)
+        if (result.ok && result.data?.task) {
+          setTasks((prev) => upsertTask(prev, result.data!.task))
+        }
+        return result
+      },
+      {
+        fallbackMessage: onHold
+          ? 'Tarefa colocada em espera'
+          : 'Tarefa reativada',
+      }
+    )
   }
 
   function handleRestore(task: Task) {
-    setFormError(null)
-    startTransition(async () => {
-      const result = await restoreTask(task.id)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
-
-      toast.success(result.message ?? 'Tarefa restaurada')
-      // Otimista: volta para Pendentes com o prazo reiniciado (prazo padrão da
-      // casa). Os pontos já creditados são mantidos e a tarefa reaparece para
-      // o dependente. Prefere a linha autoritativa devolvida pela action (com o
-      // `due_date`/`decay_started_at` reais); cai no otimista apenas se faltar.
-      const nextDue = new Date(
+    // APPROVED → PENDING com prazo reiniciado (prazo padrão da casa). Os pontos
+    // já creditados são mantidos e a tarefa reaparece para o dependente.
+    const optimistic: Task = {
+      ...task,
+      status: 'PENDING',
+      due_date: new Date(
         Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
-      ).toISOString()
-      setTasks((prev) =>
-        upsertTask(prev, {
-          ...task,
-          status: 'PENDING',
-          due_date: nextDue,
-          completed_by: null,
-          completed_at: null,
-          extension_requested: false,
-          extension_reason: null,
-        })
-      )
-      if (result.data?.task) {
-        setTasks((prev) => upsertTask(prev, result.data!.task))
-      }
-      router.refresh()
-    })
+      ).toISOString(),
+      completed_by: null,
+      completed_at: null,
+      extension_requested: false,
+      extension_reason: null,
+    }
+
+    void runTaskTransition(
+      task,
+      optimistic,
+      (item) => item.status === 'PENDING',
+      async () => {
+        const result = await restoreTask(task.id)
+        // Linha autoritativa (com o `due_date`/`decay_started_at` reais).
+        if (result.ok && result.data?.task) {
+          setTasks((prev) => upsertTask(prev, result.data!.task))
+        }
+        return result
+      },
+      { fallbackMessage: 'Tarefa restaurada' }
+    )
   }
 
   function handleResolveExtension(task: Task, approve: boolean, days = 3) {
-    setFormError(null)
-    startTransition(async () => {
-      const result = await resolveTaskExtension(task.id, approve, days)
-      if (!result.ok) {
-        setFormError(result.error)
-        toast.error(result.error)
-        return
+    // Esta transição NÃO muda o status na maioria dos casos (só limpa o pedido),
+    // então o rollback se identifica pelas flags — e não pelo status.
+    // Numa tarefa "não entregue", aprovar reabre valendo 0 pontos conforme o novo
+    // prazo (a penalidade é definitiva) — o servidor recalcula o prazo, então o
+    // otimista só faz a troca de seção; a linha autoritativa vem na resposta.
+    const optimistic: Task = {
+      ...task,
+      extension_requested: false,
+      extension_reason: null,
+      extension_count: approve
+        ? task.extension_count + 1
+        : task.extension_count,
+      ...(approve && task.status === 'NOT_DELIVERED'
+        ? { points: 0, status: 'PENDING' as Task['status'] }
+        : {}),
+    }
+
+    void runTaskTransition(
+      task,
+      optimistic,
+      (item) =>
+        item.extension_requested === false &&
+        item.extension_reason === null &&
+        item.extension_count === optimistic.extension_count,
+      async () => {
+        const result = await resolveTaskExtension(task.id, approve, days)
+        if (result.ok && result.data?.task) {
+          setTasks((prev) => upsertTask(prev, result.data!.task))
+        }
+        return result
+      },
+      {
+        successToast: approve ? 'success' : 'info',
+        fallbackMessage: approve
+          ? `Adiamento aprovado (+${days} dias)`
+          : 'Pedido de adiamento rejeitado',
       }
-
-      if (approve) {
-        toast.success(result.message ?? `Adiamento aprovado (+${days} dias)`)
-      } else {
-        toast.info('Pedido de adiamento rejeitado')
-      }
-
-      // Otimista: limpa o pedido. Numa tarefa "não entregue", aprovar reabre a
-      // tarefa com 0 pontos conforme o novo prazo (a penalidade é definitiva).
-      const restored =
-        approve && task.status === 'NOT_DELIVERED'
-          ? { points: 0, status: 'PENDING' as Task['status'] }
-          : {}
-
-      setTasks((prev) =>
-        upsertTask(prev, {
-          ...task,
-          extension_requested: false,
-          extension_reason: null,
-          // Aprovar soma o contador de adiamentos da tarefa (mesmo passo do
-          // servidor), para o "N de M" não ficar velho até o refresh.
-          extension_count: approve ? task.extension_count + 1 : task.extension_count,
-          ...restored,
-        })
-      )
-      router.refresh()
-    })
+    )
   }
 
   const saveTitle = (taskId: string) => async (value: string) =>
@@ -1061,22 +1076,27 @@ export function TasksAdmin({
                                   key={days}
                                   type="button"
                                   size="sm"
-                                  disabled={pending}
+                                  disabled={pendingIds.has(task.id)}
                                   className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
                                   onClick={() => handleResolveExtension(task, true, days)}
                                 >
-                                  Aprovar (+{days} {days === 1 ? 'dia' : 'dias'})
+                                  {pendingIds.has(task.id)
+                                    ? 'Aprovando...'
+                                    : `Aprovar (+${days} ${days === 1 ? 'dia' : 'dias'})`}
                                 </Button>
                               ))}
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                disabled={pending}
+                                disabled={pendingIds.has(task.id)}
                                 className="min-h-9 text-slate-600"
                                 onClick={() => handleResolveExtension(task, false)}
                               >
-                                <X className="size-3.5" /> Rejeitar
+                                <X className="size-3.5" />
+                                {pendingIds.has(task.id)
+                                  ? 'Rejeitando...'
+                                  : 'Rejeitar'}
                               </Button>
                             </div>
                           </div>
@@ -1139,10 +1159,10 @@ export function TasksAdmin({
                               <Button
                                 type="button"
                                 onClick={() => handleAdminComplete(task)}
-                                disabled={pendingCreditIds.has(task.id)}
+                                disabled={pendingIds.has(task.id)}
                                 className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
                               >
-                                {pendingCreditIds.has(task.id)
+                                {pendingIds.has(task.id)
                                   ? 'Concluindo...'
                                   : 'Aprovar Tarefa e Creditar'}
                               </Button>
@@ -1154,10 +1174,12 @@ export function TasksAdmin({
                                 type="button"
                                 variant="outline"
                                 onClick={() => handleMarkNotDelivered(task)}
-                                disabled={pending}
+                                disabled={pendingIds.has(task.id)}
                                 className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
                               >
-                                Marcar como não entregue
+                                {pendingIds.has(task.id)
+                                  ? 'Marcando...'
+                                  : 'Marcar como não entregue'}
                               </Button>
                             ) : null}
                           </div>
@@ -1170,11 +1192,13 @@ export function TasksAdmin({
                             type="button"
                             variant="outline"
                             onClick={() => handleSetOnHold(task, true)}
-                            disabled={pending}
+                            disabled={pendingIds.has(task.id)}
                             className="w-full text-slate-600"
                           >
                             <PauseCircle className="size-4" />
-                            {pending ? 'Colocando...' : 'Colocar em espera'}
+                            {pendingIds.has(task.id)
+                              ? 'Colocando...'
+                              : 'Colocar em espera'}
                           </Button>
                         ) : null}
                       </>
@@ -1242,11 +1266,13 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleSetOnHold(task, false)}
-                          disabled={pending}
+                          disabled={pendingIds.has(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
                           <PlayCircle className="size-4" />
-                          {pending ? 'Reativando...' : 'Voltar para pendente'}
+                          {pendingIds.has(task.id)
+                            ? 'Reativando...'
+                            : 'Voltar para pendente'}
                         </Button>
                       </div>
                     </div>
@@ -1394,17 +1420,19 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleRejectComplete(task)}
-                          disabled={pending}
+                          disabled={pendingIds.has(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
-                          Desaprovar
+                          {pendingIds.has(task.id)
+                            ? 'Desaprovando...'
+                            : 'Desaprovar'}
                         </Button>
                         <Button
                           onClick={() => handleApprove(task)}
-                          disabled={pendingCreditIds.has(task.id)}
+                          disabled={pendingIds.has(task.id)}
                           className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                         >
-                          {pendingCreditIds.has(task.id) ? (
+                          {pendingIds.has(task.id) ? (
                             'Aprovando...'
                           ) : (
                             <>
@@ -1496,10 +1524,12 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleRestore(task)}
-                          disabled={pending}
+                          disabled={pendingIds.has(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
-                          Restaurar
+                          {pendingIds.has(task.id)
+                            ? 'Restaurando...'
+                            : 'Restaurar'}
                         </Button>
                       </div>
                     </div>

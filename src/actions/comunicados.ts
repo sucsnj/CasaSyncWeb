@@ -183,7 +183,7 @@ export type ComunicadoPatch = {
 export async function updateComunicado(
   comunicadoId: string,
   patch: ComunicadoPatch
-): Promise<ActionResult> {
+): Promise<ActionResult<{ comunicado: Comunicado }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -211,7 +211,11 @@ export async function updateComunicado(
   })
   if (validation) return { ok: false, error: validation }
 
-  const { error } = await admin
+  // `.select('*')` devolve a linha já gravada (com o `.trim()` e o `updated_at`
+  // do servidor) para o client reconciliar o card na hora: o Realtime nem
+  // sempre entrega o próprio write, e sem isso o título/descrição editados só
+  // apareciam no card depois do F5.
+  const { data: updated, error } = await admin
     .from('comunicados')
     .update({
       ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
@@ -227,10 +231,18 @@ export async function updateComunicado(
       updated_at: new Date().toISOString(),
     })
     .eq('id', comunicadoId)
-  if (error) return { ok: false, error: 'Falha ao salvar o comunicado.' }
+    .select('*')
+    .single()
+  if (error || !updated) {
+    return { ok: false, error: 'Falha ao salvar o comunicado.' }
+  }
 
   revalidatePath('/dashboard/admin/comunicados')
-  return { ok: true, message: 'Comunicado atualizado.' }
+  return {
+    ok: true,
+    data: { comunicado: updated },
+    message: 'Comunicado atualizado.',
+  }
 }
 
 /**
