@@ -24,28 +24,49 @@ import {
 } from '@/utils/settings'
 import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
 
-type SettingsRow = { value: Record<string, unknown> | null }
+type SettingsRow = { key: HouseSettingsKey; value: Record<string, unknown> | null }
 
 /**
- * Lê o jsonb de uma chave de configuração da casa via service role (o escopo
- * é SEMPRE derivado da sessão pelo chamador: casa ativa do ADMIN ou casa do
- * dependente). Linha ausente cai no default — `mergeSettings` garante que
- * campos omitidos/novos também caiam no default.
+ * Todas as configurações da casa em UMA leitura: `key -> value`.
+ *
+ * Antes cada getter fazia sua própria consulta (`.eq('key', key)`), então as 9
+ * chaves viravam 9 idas ao banco — e o `React.cache` de cada getter não ajudava
+ * entre chaves diferentes. Pior: em `/tasks` as 3 chaves usadas (`task_sla`,
+ * `extension_rules`, `task_decay`) eram awaited em SEQUÊNCIA, então 3 round-trips
+ * em série no caminho crítico para ler 3 linhas da mesma tabela.
+ *
+ * Com o mapa, a casa é lida 1× por request e todas as chaves saem de memória.
+ * O escopo continua derivado da sessão pelo chamador (casa ativa do ADMIN ou casa
+ * do dependente) — aqui só se troca o *como* a linha é buscada.
+ */
+const getHouseSettingsMap = cache(
+  async (houseId: string): Promise<Map<HouseSettingsKey, Record<string, unknown> | null>> => {
+    const admin = createAdminClient()
+
+    const { data } = await admin
+      .from('house_settings')
+      .select('key, value')
+      .eq('house_id', houseId)
+
+    const map = new Map<HouseSettingsKey, Record<string, unknown> | null>()
+    for (const row of (data ?? []) as SettingsRow[]) {
+      map.set(row.key, row.value ?? null)
+    }
+    return map
+  }
+)
+
+/**
+ * Lê o jsonb de uma chave de configuração da casa. Linha ausente cai no default
+ * no getter que consome (`mergeSettings` garante que campos omitidos/novos também
+ * caiam no default).
  */
 async function getHouseSettingsValue(
   houseId: string,
   key: HouseSettingsKey
 ): Promise<Record<string, unknown> | null> {
-  const admin = createAdminClient()
-
-  const { data } = await admin
-    .from('house_settings')
-    .select('value')
-    .eq('house_id', houseId)
-    .eq('key', key)
-    .maybeSingle<SettingsRow>()
-
-  return data?.value ?? null
+  const map = await getHouseSettingsMap(houseId)
+  return map.get(key) ?? null
 }
 
 /** Configuração de encarecimento automático de recompensas da casa. */

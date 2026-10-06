@@ -64,14 +64,32 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Usuário autenticado: resolve a role para guiar os redirecionamentos.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('user_role')
-    .eq('id', user.id)
-    .maybeSingle()
+  // A role do usuário SÓ é necessária para DECIDIR um redirecionamento: a raiz,
+  // as rotas públicas e a proteção das rotas de dashboard por role. Em qualquer
+  // outra rota ela seria buscada e jogada fora — e esse SELECT custa um
+  // round-trip ao banco em TODA requisição que passa pelo proxy, inclusive as
+  // que não redirecionam nada: os GETs RSC da navegação client-side, os
+  // prefetch dos itens da nav e os POST das Server Actions.
+  //
+  // Não é um atalho de autorização: as 4 decisões abaixo só acontecem quando
+  // `needsRole` é verdadeiro, e nesse caso a role é lida exatamente como antes.
+  const needsRole =
+    pathname === '/' ||
+    isPublicPath(pathname) ||
+    pathname.startsWith('/dashboard/admin') ||
+    pathname.startsWith('/dashboard/dependent')
 
-  const role = profile?.user_role
+  let role: Database['public']['Enums']['user_role'] | undefined
+  if (needsRole) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('user_role')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    role = profile?.user_role
+  }
+
   const dashboard = dashboardForRole(role)
 
   // Página inicial: encaminha para o dashboard da role.

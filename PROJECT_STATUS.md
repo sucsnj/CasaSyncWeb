@@ -49,6 +49,13 @@
   `houses-manager.tsx` viraram flags por operação (dois deles por id), e o
   `setFormError(null)` que apagava erro do form de criação saiu da transição de
   card. `lint`/`typecheck`/`build` ✓. Ver a seção no topo do documento.
+- **Navegação entre telas — 3 correções de latência (Tier 1):** o proxy só lê a
+  role quando ela decide um redirecionamento (tira 1 round-trip de toda
+  navegação, prefetch e Server Action), `getDependentHouse` passou a
+  `React.cache` (remove 2 queries duplicadas) e `house_settings` virou **uma
+  leitura por casa** em vez de uma por chave (`/tasks` caiu de 3 round-trips em
+  série para 1). **O caminho autenticado do proxy precisa de teste manual** — o
+  checklist está na seção no topo.
 - **Adiamento aceito nunca devolve os pts originais:** quando um adiamento é
   aceito (botão "Aprovar" ou o auto-aceite ao editar o prazo com pedido
   pendente), o **valor corrente** da tarefa passa a ser a nova base e o relógio
@@ -67,6 +74,90 @@
   **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
   registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
   no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## Navegação entre telas: 3 correções no caminho de render (Tier 1 — concluído)
+
+### O diagnóstico que motivou
+A lentidão entre endpoints **não era** só o rebuild do Server Component (que é
+real: `/tasks`, `/rewards` e `/achievements` são rotas de topo, cada uma monta o
+seu próprio `DashboardNav` e não compartilha layout). Um mapeamento do caminho de
+render achou **três camadas somando-se a ele**:
+
+1. **O proxy paga 2 round-trips em série em TUDO** — `auth.getUser()` (HTTP no
+   GoTrue) e um `SELECT user_role` em `profiles`, sempre sequenciais. Como o
+   matcher não exclui nada de RSC, isso roda na navegação client-side, em **cada
+   prefetch** da nav e em **cada Server Action** (o POST vai para a mesma rota).
+   E o `SELECT profiles` só importa para *decidir redirecionamento* — em ~95% das
+   requisições o resultado era jogado fora.
+2. **A página fazia ~10 a ~20 round-trips em série**, dos quais dois itens são
+   escrita dentro do caminho de leitura: `getMyNotifications` faz `DELETE` antes
+   do `SELECT` (e os loops são `for..of` **por casa**, então um ADMIN de 3 casas
+   multiplica) e `registerLoginDay` é `await` no render (no primeiro acesso do
+   dia deixa de dar early-return e vira UPDATE + 2 avaliações + push).
+3. **Round-trips claramente redundantes:** `getDependentHouse` sem `React.cache`
+   (3 queries idênticas em `/dashboard/dependent`, 2 em série) e as 3 chaves de
+   `house_settings` lidas em `await` separados — 3 round-trips para 3 linhas da
+   **mesma** tabela.
+
+Isso explicava "alguns endpoints são piores": `/dashboard/admin` fica em ~9
+round-trips (a página em si é de custo zero; quem paga é o layout compartilhado)
+enquanto as telas do **dependente** ficam em ~17-20.
+
+### O que foi corrigido (Tier 1 — baixo risco, sem mudança de comportamento)
+
+**1. O proxy só lê a role quando ela decide alguma coisa**
+`src/utils/supabase/middleware.ts` ganhou um `needsRole`, verdadeiro **apenas**
+para as 4 decisões que já usavam a role: a raiz (`/`), as rotas públicas e a
+proteção de `/dashboard/admin` e `/dashboard/dependent`. Nas demais — `/tasks`,
+`/rewards`, `/achievements`, os GETs RSC, os prefetch e os POST das actions — o
+SELECT deixa de acontecer. **Não é atalho de autorização:** os 4 ramos que
+redirecionam só executam quando `needsRole` é verdadeiro, e nesse caso a role é
+lida exatamente como antes. Tira 1 round-trip de toda requisição do app.
+
+**2. `getDependentHouse` passou a `React.cache`** (`src/utils/house.ts`), como as
+vizinhas `getSessionProfile` e `getAdminHouses`. Ela era chamada 3 vezes no mesmo
+request em `/dashboard/dependent` (layout, `getDueComunicados` e a página).
+Remove 2 queries idênticas do caminho crítico.
+
+**3. `house_settings`: uma leitura por casa, não uma por chave**
+`src/utils/house-settings.ts` ganhou `getHouseSettingsMap` (`React.cache`,
+`SELECT key, value WHERE house_id = X`) e `getHouseSettingsValue` agora lê desse
+mapa. As **9 chaves** saem de 1 ida ao banco; em `/tasks` as 3 usadas caem de 3
+round-trips **em série** para 1. Os 9 getters públicos mantêm assinatura e
+comportamento (mesmo `mergeSettings` caindo no default) — mudou só o *como* a
+linha é buscada.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(16 rotas, `ƒ Proxy` ativo). Smoke no `next dev`: `/login` e `/register` **200**;
+`/`, `/tasks`, `/rewards`, `/achievements`, `/dashboard/admin` e
+`/dashboard/dependent` **307 → `/login?redirectedFrom=…`** — o caminho
+**não autenticado** do proxy, que é anterior à mudança. **O caminho autenticado
+(a regra nova do `needsRole`) precisa de um teste manual**, o checklist está nos
+pontos de atenção.
+
+### O que ficou de fora (e por quê)
+O **Tier 2** da mesma análise foi deliberadamente **não** feito agora, porque muda
+*quando* as coisas acontecem e é o que mais merece teste em tela:
+- **`getMyNotifications`: tirar o `DELETE` do caminho da leitura** (listar antes e
+  limpar depois com `after()`) — o maior item isolado, ~4 round-trips de todas as
+  telas;
+- **`registerLoginDay`: não aguardar no render** (tira 1 round-trip sempre e
+  ~10-20 no primeiro acesso do dia);
+- **`getUser()` → `getClaims()` no proxy** (valida o JWT localmente, 0 HTTP) — tira
+  mais 1 round-trip de tudo, inclusive de cada Server Action.
+
+E o **Tier 3** (route group com layout compartilhado para `/tasks`/`/rewards`/
+`/achievements`) é estrutural: elimina a remontagem do `DashboardNav`/canais e
+parar de reexecutar as queries do shell, mas mexe na estrutura de rotas.
+
+### Pontos de atenção
+- **Não reintroduzir o `SELECT profiles` incondicional no proxy.** O teste de regressão do proxy é: (a) ADMIN autenticado em `/dashboard/admin` entra; (b) o mesmo ADMIN em `/dashboard/dependent` é jogado para `/dashboard/admin`; (c) DEPENDENT em `/dashboard/admin` vai para `/dashboard/dependent`; (d) `/` manda para o dashboard da role; (e) `/login` com sessão vai para o dashboard. Os 4 casos usam `needsRole`, então a role continua sendo lida — o atalho só vale para rotas que não redirecionam.
+- **`React.cache` é memoização POR REQUEST**, não um cache persistente: ele só economiza quando a mesma função é chamada com o **mesmo argumento** no mesmo render. Por isso `house_settings` virou "1 leitura por casa" (a chave deixa de ser o eixo) e não "1 leitura no app".
+- **O ganho é de round-trip, não de tempo de render**: 3 a 4 idas ao banco a menos por navegação. Sem medir antes/depois (logs da Vercel), a ordem das prioridades continua sendo uma hipótese razoável, não uma medição.
+- O service worker **não** participa do problema: ele só faz cache de assets estáveis e deixa RSC ir à rede (o bug de "piscar para o dado antigo" já foi corrigido na v4).
 
 ---
 

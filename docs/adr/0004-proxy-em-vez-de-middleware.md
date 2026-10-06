@@ -13,3 +13,4 @@ Next.js 16 substituiu o Middleware por Proxy: o arquivo de interceptação deve 
 ## Consequências
 - Build mostra `ƒ Proxy` (Middleware) — é o esperado; não tentar voltar para `middleware.ts`.
 - `next.config.ts` usa `module.exports` E `export default` (legado com `allowedDevOrigins`) — não "consertar".
+- **O proxy roda em tudo, não só na navegação:** o matcher não exclui nada de RSC, então ele também roda nos GETs RSC da navegação client-side, nos prefetch dos itens da nav e nos POST das Server Actions. Por isso o `SELECT user_role` é guardado por `needsRole` — a role só é lida nas 4 decisões que realmente redirecionam (raiz, rotas públicas e as duas rotas de dashboard). Não é atalho de autorização: nesses 4 ramos a leitura continua exatamente igual. Emenda (Tier 1 de latência).

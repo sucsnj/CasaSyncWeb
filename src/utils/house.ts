@@ -161,21 +161,29 @@ export async function persistActiveHouseCookie(
  *
  * Service-role pelo mesmo motivo de `getAdminHouses`: a associação medida é a
  * do próprio usuário da sessão, sem depender de policies RLS.
+ *
+ * Em `React.cache` (memoização POR REQUEST) pelo mesmo motivo das vizinhas: no
+ * `/dashboard/dependent` esta função era chamada **3 vezes no mesmo request** —
+ * no layout, dentro de `getDueComunicados` e na página —, com 2 delas em série no
+ * caminho crítico. Mesma query, mesmo argumento, mesmo resultado: o cache só
+ * economiza a ida ao banco. O `userId` vem sempre da sessão.
  */
-export async function getDependentHouse(userId: string): Promise<ActiveHouse | null> {
-  const admin = createAdminClient()
+export const getDependentHouse = cache(
+  async (userId: string): Promise<ActiveHouse | null> => {
+    const admin = createAdminClient()
 
-  const { data: membership } = await admin
-    .from('house_members')
-    .select('house_id, houses ( id, name, image_url, owner_id )')
-    .eq('profile_id', userId)
-    .limit(1)
-    .maybeSingle()
+    const { data: membership } = await admin
+      .from('house_members')
+      .select('house_id, houses ( id, name, image_url, owner_id )')
+      .eq('profile_id', userId)
+      .limit(1)
+      .maybeSingle()
 
-  if (!membership?.houses) return null
+    if (!membership?.houses) return null
 
-  return membership.houses
-}
+    return membership.houses
+  }
+)
 
 /**
  * Lista os dependentes de uma casa: id + full_name (para vincular tarefas).
