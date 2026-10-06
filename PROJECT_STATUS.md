@@ -56,6 +56,13 @@
   leitura por casa** em vez de uma por chave (`/tasks` caiu de 3 round-trips em
   série para 1). **O caminho autenticado do proxy precisa de teste manual** — o
   checklist está na seção no topo.
+- **Medindo antes de decidir o Tier 2:** existe uma instrumentação **temporária**
+  (`src/utils/perf.ts`) que loga `[PERF] <label>: <ms>ms` nos 5 gargalos do
+  render — notadamente as **duas limpezas (DELETE) que rodam dentro do caminho de
+  leitura** e o `registerLoginDay`. Feita **sem nenhuma dependência nova**: o
+  `@vercel/speed-insights` foi descartado porque mede Web Vitals no cliente, e a
+  latência daqui é server-side (round-trips em série). Desligar com `PERF_LOG=0`;
+  **remover** assim que o Tier 2 estiver decidido. Ver a seção no topo.
 - **Adiamento aceito nunca devolve os pts originais:** quando um adiamento é
   aceito (botão "Aprovar" ou o auto-aceite ao editar o prazo com pedido
   pendente), o **valor corrente** da tarefa passa a ser a nova base e o relógio
@@ -74,6 +81,71 @@
   **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
   registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
   no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## Instrumentação de latência no render (TEMPORÁRIA — feita para medir, não para ficar)
+
+### Por que existe
+O Tier 1 foi entregue com base numa **contagem de round-trips**, não numa medição
+de tempo: "3 a 4 idas ao banco a menos" é contagem, não milissegundo. Antes de
+atacar o Tier 2 (que muda *quando* as coisas acontecem e é o que mais merece
+teste em tela), o caminho é medir. A alternativa descartada foi instalar o
+`@vercel/speed-insights`: ele mede **Web Vitals no cliente** (LCP/INP/CLS de
+usuários reais), e a latência daqui é **server-side** — número de round-trips em
+série no proxy e no render. Dado de campo também fica preso à Vercel. Então a
+medição é feita **no código**, com zero dependência nova, e o tempo total por
+invocação continua vindo dos Function Logs.
+
+### O que foi instrumentado
+`src/utils/perf.ts` (novo, descartável) expõe `timeServer(label, fn)`, que mede
+um bloco e loga **uma linha** `[PERF] <label>: <ms>ms`. Foi colocado nos **5
+gargalos** do caminho de render — em utilitários **compartilhados**, então uma
+edição cobre as 7 telas onde eles aparecem (em vez de espalhar pelas páginas):
+
+| Label | Onde | Por que importa |
+|---|---|---|
+| `notificações/limpeza-lidas` | `utils/notifications.ts` | **DELETE no caminho da leitura** — candidato nº1 do Tier 2 |
+| `notificações/limpeza-rápidas` | idem | DELETE por par (casa+remetente), em `for..of` |
+| `notificações/listagem` | idem | o SELECT que o sino realmente precisa |
+| `castigo/limpeza` / `castigo/leitura` | `utils/active-punishment.ts` | **outro DELETE na leitura** (só DEPENDENT) |
+| `login-dia/timezone` · `leitura` · `gravação` · `conquistas` | `actions/stats.ts` | candidato nº2: no 1º acesso do dia vira escrita + 2 avaliações |
+| `comunicados/casa` · `consulta` · `entregas` · `fuso` | `actions/comunicados.ts` | a função com mais round-trips das telas do dependente |
+| `settings/leitura` | `utils/house-settings.ts` | **confere o Tier 1**: deve sair 1 vez por casa por request (era 1 por chave) |
+
+### Como ler
+1. Deploy com a instrumentação (o default é **ligado**).
+2. Navegar pelas telas e, no Vercel (**Logs → filtrar `[PERF]`**), olhar os
+   números. O que interessa é comparar `notificações/*` e `login-dia/*` com o
+   **Function Duration** da mesma invocação: o que sobra depois dos blocos
+   medidos é proxy + o resto do render.
+3. Em ADMIN multi-casa, `notificações/limpeza-lidas` deve **crescer** com o número
+   de casas (os loops são `for..of` por casa) — é o custo que mais cresce em uso.
+
+### Como desligar / remover
+- **Desligar:** `PERF_LOG=0` no ambiente da Vercel. Sem deploy novo.
+- **Remover (obrigatório quando o Tier 2 estiver decidido):** apagar
+  `src/utils/perf.ts` e as **15 chamadas** `timeServer(...)` nos 5 arquivos
+  acima. Nada de comportamento depende disso — o helper só mede e registra, e
+  desligado ele nem mede.
+
+### Detalhes que valem registro
+- **A assinatura aceita `PromiseLike`, não `Promise`:** os builders do
+  `supabase-js` são *thenables* (`PostgrestFilterBuilder`). Com `Promise<T>` o `T`
+  saía como `unknown` e o typecheck quebrava em todas as 15 chamadas — o erro
+  apontava `Property 'data' does not exist on type 'unknown'`.
+- **`PERF_LOG` é lido por chamada, e não no topo do módulo:** avaliado no
+  import, o interruptor só valeria se a env já existisse no boot. Foi achado
+  executando o módulo real (o caso 4 do teste).
+- O log vai no `finally`: se o bloco lançar, a linha ainda aparece e passa a
+  apontar onde foi a exceção — sem ela, o bloco sumiria do gráfico.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+O módulo `perf.ts` real foi executado com `node --experimental-strip-types`
+(script temporário fora do repo): mede e propaga o valor, **propaga erro e ainda
+loga**, aceita *thenable* (o caso dos builders), e `PERF_LOG=0` não emite nada.
+Encoding dos 6 arquivos conferido (0 caracteres de substituição).
 
 ---
 

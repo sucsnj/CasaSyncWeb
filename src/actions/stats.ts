@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { syncAchievementProgress } from '@/utils/achievement-progress'
 import { getHouseTimezoneSettings } from '@/utils/house-settings'
+import { timeServer } from '@/utils/perf'
 import { zonedDay } from '@/utils/timezone'
 import {
   DEPENDENT_STAT_COLUMNS,
@@ -210,32 +211,41 @@ export async function registerLoginDay(
     return
   }
 
+  // Blocos medidos por instrumentação TEMPORÁRIA (ver `src/utils/perf.ts`): esta
+  // função é `await` no render das 4 telas do dependente, e no primeiro acesso do
+  // dia ela deixa de dar early-return e vira escrita + avaliações.
   try {
-    const { timezone } = await getHouseTimezoneSettings(houseId)
+    const { timezone } = await timeServer('login-dia/timezone', () =>
+      getHouseTimezoneSettings(houseId)
+    )
     const today = houseDay(timezone, 0)
     const yesterday = houseDay(timezone, -1)
 
-    const { data: row } = await admin
-      .from('dependent_stats')
-      .select(
-        'profile_id, house_id, last_login_day, app_login_days_count, streak_login_days'
-      )
-      .eq('profile_id', profileId)
-      .maybeSingle()
+    const { data: row } = await timeServer('login-dia/leitura', () =>
+      admin
+        .from('dependent_stats')
+        .select(
+          'profile_id, house_id, last_login_day, app_login_days_count, streak_login_days'
+        )
+        .eq('profile_id', profileId)
+        .maybeSingle()
+    )
 
     if (row && row.last_login_day === today) return
 
     const now = new Date().toISOString()
 
     if (!row) {
-      await admin.from('dependent_stats').insert({
-        profile_id: profileId,
-        house_id: houseId,
-        app_login_days_count: 1,
-        streak_login_days: 1,
-        last_login_day: today,
-        updated_at: now,
-      })
+      await timeServer('login-dia/gravação', () =>
+        admin.from('dependent_stats').insert({
+          profile_id: profileId,
+          house_id: houseId,
+          app_login_days_count: 1,
+          streak_login_days: 1,
+          last_login_day: today,
+          updated_at: now,
+        })
+      )
     } else {
       const nextDays = (row.app_login_days_count ?? 0) + 1
       const nextStreak =
@@ -259,7 +269,9 @@ export async function registerLoginDay(
           ? query.eq('last_login_day', row.last_login_day)
           : query.is('last_login_day', null)
 
-      const { data: updated } = await query.select('profile_id')
+      const { data: updated } = await timeServer('login-dia/gravação', () =>
+        query.select('profile_id')
+      )
 
       // Outra aba do mesmo dia contou primeiro — não duplica.
       if (!updated || updated.length === 0) return
@@ -269,6 +281,8 @@ export async function registerLoginDay(
     return
   }
 
-  await evaluateAchievements(houseId, profileId, 'APP_LOGIN_DAYS', 1)
-  await evaluateAchievements(houseId, profileId, 'STREAK_LOGIN_DAYS', 1)
+  await timeServer('login-dia/conquistas', async () => {
+    await evaluateAchievements(houseId, profileId, 'APP_LOGIN_DAYS', 1)
+    await evaluateAchievements(houseId, profileId, 'STREAK_LOGIN_DAYS', 1)
+  })
 }

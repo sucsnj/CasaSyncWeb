@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { timeServer } from '@/utils/perf'
 import {
   isPunishmentActive,
   type ActivePunishment,
@@ -40,25 +41,31 @@ export const getActivePunishment = cache(
     // Limpeza lazy: castigo vencido some do banco na próxima leitura. Best-effort
     // (a expiração já é tratada na leitura abaixo — se o delete falhar, o usuário
     // continua sem ver o ícone).
+    // Medido por instrumentation TEMPORÁRIA (ver `src/utils/perf.ts`): este é
+    // outro DELETE dentro do caminho de leitura, igual às notificações.
     try {
-      await admin
-        .from('dependent_punishments')
-        .delete()
-        .eq('house_id', houseId)
-        .eq('profile_id', profileId)
-        .not('expires_at', 'is', null)
-        .lte('expires_at', now.toISOString())
+      await timeServer('castigo/limpeza', () =>
+        admin
+          .from('dependent_punishments')
+          .delete()
+          .eq('house_id', houseId)
+          .eq('profile_id', profileId)
+          .not('expires_at', 'is', null)
+          .lte('expires_at', now.toISOString())
+      )
     } catch (err) {
       console.error('[CASTIGO] Falha na limpeza de castigos vencidos:', err)
     }
 
     try {
-      const { data } = await admin
-        .from('dependent_punishments')
-        .select('id, description, duration_days, expires_at, created_at')
-        .eq('house_id', houseId)
-        .eq('profile_id', profileId)
-        .maybeSingle()
+      const { data } = await timeServer('castigo/leitura', () =>
+        admin
+          .from('dependent_punishments')
+          .select('id, description, duration_days, expires_at, created_at')
+          .eq('house_id', houseId)
+          .eq('profile_id', profileId)
+          .maybeSingle()
+      )
 
       if (!data || !isPunishmentActive(data, now)) return null
 

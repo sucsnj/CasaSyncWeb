@@ -6,6 +6,7 @@ import {
   getHouseQuickMessageSettings,
 } from '@/utils/house-settings'
 import { isNotificationMuted } from '@/utils/notification-mute'
+import { timeServer } from '@/utils/perf'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -254,20 +255,29 @@ export async function getMyNotifications(
 ): Promise<NotificationRow[]> {
   const admin = createAdminClient()
 
+  // As 3 fases são medidas separadas (instrumentação TEMPORÁRIA — ver
+  // `src/utils/perf.ts`): as duas limpezas são ESCRITAS no caminho da leitura, e
+  // é exatamente aqui que mora a maior parte da latência do sino.
   try {
-    await cleanupReadNotifications(admin, userId)
+    await timeServer('notificações/limpeza-lidas', () =>
+      cleanupReadNotifications(admin, userId)
+    )
   } catch {
     // Best-effort: falha na limpeza não impede a listagem.
   }
 
   // Limpeza lazy de mensagens rápidas expiradas (tempo).
   try {
-    const { data: quickRows } = await admin
-      .from('notifications')
-      .select('house_id, actor_id')
-      .eq('recipient_id', userId)
-      .eq('type', 'QUICK_MESSAGE')
-      .not('actor_id', 'is', null)
+    const { data: quickRows } = await timeServer(
+      'notificações/busca-rápidas',
+      () =>
+        admin
+          .from('notifications')
+          .select('house_id, actor_id')
+          .eq('recipient_id', userId)
+          .eq('type', 'QUICK_MESSAGE')
+          .not('actor_id', 'is', null)
+    )
 
     const pairs = new Map<string, { houseId: string; actorId: string }>()
     for (const row of (quickRows ?? [])) {
@@ -279,23 +289,27 @@ export async function getMyNotifications(
     }
     for (const pair of pairs.values()) {
       const settings = await getHouseQuickMessageSettings(pair.houseId)
-      await cleanupQuickMessages(
-        admin,
-        pair.houseId,
-        pair.actorId,
-        settings.readRetentionDays
+      await timeServer('notificações/limpeza-rápidas', () =>
+        cleanupQuickMessages(
+          admin,
+          pair.houseId,
+          pair.actorId,
+          settings.readRetentionDays
+        )
       )
     }
   } catch {
     // Best-effort: falha na limpeza não impede a listagem.
   }
 
-  const { data } = await admin
-    .from('notifications')
-    .select('*')
-    .eq('recipient_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  const { data } = await timeServer('notificações/listagem', () =>
+    admin
+      .from('notifications')
+      .select('*')
+      .eq('recipient_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+  )
 
   return data ?? []
 }
