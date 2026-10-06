@@ -579,7 +579,15 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'Tarefa já finalizada.' }
   }
 
-  const { error } = await admin
+  // Guarda de transição: `.in('status', ['PENDING','IN_PROGRESS'])`. Sem ela,
+  // a checagem acima (que é uma LEITURA separada) fica racing com o write: se o
+  // ADMIN aprovar entre as duas, esta chamada gravaria `COMPLETED` por cima do
+  // `APPROVED` e a tarefa voltaria a "aguardando aprovação" depois de já ter
+  // sido creditada. Com o guard, **o primeiro clique vence** e o segundo é
+  // recusado — o mesmo padrão das demais transições (`approveTask`,
+  // `rejectCompletedTask`, `markTaskNotDelivered`, `setTaskOnHold`,
+  // `restoreTask`).
+  const { data: completed, error } = await admin
     .from('tasks')
     .update({
       status: 'COMPLETED',
@@ -587,8 +595,17 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
       completed_at: new Date().toISOString(),
     })
     .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+    .select('id')
 
   if (error) return { ok: false, error: 'Falha ao concluir a tarefa.' }
+  if (!completed || completed.length === 0) {
+    return {
+      ok: false,
+      error:
+        'Esta tarefa mudou de estado agora há pouco (o administrador pode tê-la aprovado).',
+    }
+  }
 
   const notifInput: NotifyHouseInput = {
     houseId: house.id,
