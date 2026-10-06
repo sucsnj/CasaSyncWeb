@@ -210,7 +210,11 @@ async function runTaskTransition(
     }
   ) {
     if (pendingIds.has(task.id)) return
-    setFormError(null)
+    // NÃO mexe em `formError`: esse state é renderizado dentro do FORM DE
+    // CRIAÇÃO (que nasce colapsado), então usá-lo para uma transição de card
+    // tinha dois efeitos ruins — o erro nunca aparecia ali, e o `setFormError(null)`
+    // de início apagava um erro do form que ainda era válido. O erro da transição
+    // sai pelo `toast.error`, que é o canal visível perto do card.
     setPendingId(task.id, true)
     setOptimistic(task.id, true)
     // A factory é avaliada AQUI (no clique), nunca durante o render: o
@@ -223,7 +227,6 @@ async function runTaskTransition(
       const result = await run()
       if (!result.ok) {
         rollbackOptimistic(task)
-        setFormError(result.error)
         toast.error(result.error)
         return
       }
@@ -339,6 +342,10 @@ async function runTaskTransition(
     setReuseTask(null)
     setConfirmDuplicate(false)
     setSuggestionsOpen(false)
+    // Erro do form pertence ao form: some junto com ele (aqui ou no próximo
+    // submit), em vez de depender de alguma ação de card — que nunca teve nada
+    // a ver com esta tela.
+    setFormError(null)
   }
 
   function applySuggestion(task: Task) {
@@ -1493,9 +1500,16 @@ async function runTaskTransition(
                               `${task.points} pts`
                             )}
                           </span>
-                          {task.completed_at
-                            ? ` · concluída em ${new Date(task.completed_at).toLocaleString('pt-BR')}`
-                            : ''}
+                          {task.completed_at ? (
+                            <>
+                              {' · concluída em '}
+                              {/* `FormattedDateTime` e não `toLocaleString` direto:
+                                  este card é renderizado no SSR, e formatar com
+                                  getters locais no servidor (Vercel/Netlify = UTC)
+                                  gera hydration mismatch + flash — ver ADR-0013. */}
+                              <FormattedDateTime iso={task.completed_at} />
+                            </>
+                          ) : null}
                         </p>
                       </>
                     ) : null}

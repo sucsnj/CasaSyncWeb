@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -102,7 +102,6 @@ export function HousesManager({
   const router = useRouter()
   const [houseName, setHouseName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [pending, startTransition] = useTransition()
 
   const [depError, setDepError] = useState<string | null>(null)
   const [depPending, setDepPending] = useState(false)
@@ -169,43 +168,69 @@ export function HousesManager({
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState(false)
+  // Um flag por operação (mesmo padrão de `depPending`/`pointsPending`). Não usa o
+  // `pending` do `useTransition`: `startTransition(async …)` nunca marca
+  // `isPending` — o React não rastreia a Promise devolvida pelo callback — então o
+  // "Criando..."/"Salvando..." e o `disabled` ficavam permanentemente falsos e o
+  // botão parecia travado durante todo o trabalho do servidor.
+  const [housePending, setHousePending] = useState(false)
+  const [editHousePending, setEditHousePending] = useState(false)
+  const [editDependentPending, setEditDependentPending] = useState(false)
+  /** Id da casa cuja troca de casa ativa está em andamento (null = nenhuma). */
+  const [selectingHouseId, setSelectingHouseId] = useState<string | null>(null)
+  /** Id da casa cujo PIN está sendo rotacionado (null = nenhuma). */
+  const [rotatingPinFor, setRotatingPinFor] = useState<string | null>(null)
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setHousePending(true)
 
-    startTransition(async () => {
-      const result = await createHouse(houseName)
-      if (!result.ok) {
-        setError(result.error)
-        toast.error(result.error)
-        return
+    void (async () => {
+      try {
+        const result = await createHouse(houseName)
+        if (!result.ok) {
+          setError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success('Casa criada!')
+        setHouseName('')
+        setShowHouseForm(false)
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setHousePending(false)
       }
-      toast.success('Casa criada!')
-      setHouseName('')
-      setShowHouseForm(false)
-      router.refresh()
-    })
+    })()
   }
 
   function handleJoin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
     setError(null)
+    setHousePending(true)
 
-    startTransition(async () => {
-      const result = await joinHouseByPin(
-        String(new FormData(form).get('pin') ?? '')
-      )
-      if (!result.ok) {
-        setError(result.error)
-        toast.error(result.error)
-        return
+    void (async () => {
+      try {
+        const result = await joinHouseByPin(
+          String(new FormData(form).get('pin') ?? '')
+        )
+        if (!result.ok) {
+          setError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success(result.message ?? 'Casa vinculada!')
+        setShowHouseForm(false)
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setHousePending(false)
       }
-      toast.success(result.message ?? 'Casa vinculada!')
-      setShowHouseForm(false)
-      router.refresh()
-    })
+    })()
   }
 
   function copyPin(code: string) {
@@ -251,16 +276,26 @@ export function HousesManager({
   }
 
   function handleSelect(houseId: string) {
-    startTransition(async () => {
-      const result = await selectHouse(houseId)
-      if (!result.ok) {
-        setError(result.error)
-        toast.error(result.error)
-      } else {
-        toast.success('Casa ativa alterada!')
+    if (selectingHouseId) return
+    setError(null)
+    setSelectingHouseId(houseId)
+
+    void (async () => {
+      try {
+        const result = await selectHouse(houseId)
+        if (!result.ok) {
+          setError(result.error)
+          toast.error(result.error)
+        } else {
+          toast.success('Casa ativa alterada!')
+        }
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setSelectingHouseId(null)
       }
-      router.refresh()
-    })
+    })()
   }
 
   function handleSaveHouse(event: React.FormEvent<HTMLFormElement>) {
@@ -268,23 +303,30 @@ export function HousesManager({
     if (!editingHouse) return
     const form = event.currentTarget
     setError(null)
+    setEditHousePending(true)
     const formData = new FormData(form)
 
-    startTransition(async () => {
-      const result = await updateHouse(editingHouse.id, {
-        name: String(formData.get('houseName') ?? ''),
-        imageUrl: String(formData.get('image_url') ?? '') || null,
-      })
-      if (!result.ok) {
-        setError(result.error)
-        toast.error(result.error)
-        return
+    void (async () => {
+      try {
+        const result = await updateHouse(editingHouse.id, {
+          name: String(formData.get('houseName') ?? ''),
+          imageUrl: String(formData.get('image_url') ?? '') || null,
+        })
+        if (!result.ok) {
+          setError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success('Casa atualizada!')
+        setEditingHouse(null)
+        setHouseImageUrl(null)
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setEditHousePending(false)
       }
-      toast.success('Casa atualizada!')
-      setEditingHouse(null)
-      setHouseImageUrl(null)
-      router.refresh()
-    })
+    })()
   }
 
   function handleSaveDependent(event: React.FormEvent<HTMLFormElement>) {
@@ -292,24 +334,31 @@ export function HousesManager({
     if (!editingDependent) return
     const form = event.currentTarget
     setDepError(null)
+    setEditDependentPending(true)
     const formData = new FormData(form)
 
-    startTransition(async () => {
-      const result = await updateDependentProfile(editingDependent.profileId, {
-        fullName: String(formData.get('dependentName') ?? ''),
-        username: String(formData.get('dependentUsername') ?? ''),
-        avatarUrl: String(formData.get('avatar_url') ?? '') || null,
-      })
-      if (!result.ok) {
-        setDepError(result.error)
-        toast.error(result.error)
-        return
+    void (async () => {
+      try {
+        const result = await updateDependentProfile(editingDependent.profileId, {
+          fullName: String(formData.get('dependentName') ?? ''),
+          username: String(formData.get('dependentUsername') ?? ''),
+          avatarUrl: String(formData.get('avatar_url') ?? '') || null,
+        })
+        if (!result.ok) {
+          setDepError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success('Dependente atualizado!')
+        setEditingDependent(null)
+        setDependentAvatarUrl(null)
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setEditDependentPending(false)
       }
-      toast.success('Dependente atualizado!')
-      setEditingDependent(null)
-      setDependentAvatarUrl(null)
-      router.refresh()
-    })
+    })()
   }
 
   async function handleSavePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -379,15 +428,24 @@ export function HousesManager({
   }
 
   function handleRotatePin(house: House) {
-    startTransition(async () => {
-      const result = await rotateHousePin(house.id)
-      if (!result.ok) {
-        toast.error(result.error)
-        return
+    if (rotatingPinFor) return
+    setRotatingPinFor(house.id)
+
+    void (async () => {
+      try {
+        const result = await rotateHousePin(house.id)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
+        toast.success(result.message ?? 'PIN atualizado!')
+        router.refresh()
+      } catch {
+        toast.error('Falha de conexão. Tente novamente.')
+      } finally {
+        setRotatingPinFor(null)
       }
-      toast.success(result.message ?? 'PIN atualizado!')
-      router.refresh()
-    })
+    })()
   }
 
   /**
@@ -585,8 +643,8 @@ export function HousesManager({
                   </p>
                 ) : null}
 
-                <Button type="submit" disabled={pending}>
-                  {pending ? 'Criando...' : 'Criar casa'}
+                <Button type="submit" disabled={housePending}>
+                  {housePending ? 'Criando...' : 'Criar casa'}
                 </Button>
               </form>
             ) : (
@@ -618,8 +676,8 @@ export function HousesManager({
                   </p>
                 ) : null}
 
-                <Button type="submit" disabled={pending}>
-                  {pending ? 'Entrando...' : 'Entrar na casa'}
+                <Button type="submit" disabled={housePending}>
+                  {housePending ? 'Entrando...' : 'Entrar na casa'}
                 </Button>
               </form>
             )}
@@ -654,7 +712,7 @@ export function HousesManager({
                     <button
                       type="button"
                       onClick={() => handleSelect(house.id)}
-                      disabled={pending || active}
+                      disabled={housePending || active}
                       className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
                       {house.image_url ? (
@@ -1032,8 +1090,8 @@ export function HousesManager({
                   {error}
                 </p>
               ) : null}
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Salvando...' : 'Salvar alterações'}
+              <Button type="submit" disabled={editHousePending}>
+                {editHousePending ? 'Salvando...' : 'Salvar alterações'}
               </Button>
             </form>
             {editingHouse.owner_id === currentUserId ? (
@@ -1045,7 +1103,7 @@ export function HousesManager({
                   type="button"
                   variant="outline"
                   className="min-h-11 justify-start"
-                  disabled={pending}
+                  disabled={rotatingPinFor === editingHouse.id}
                   onClick={() => handleRotatePin(editingHouse)}
                 >
                   <RefreshCw className="size-4" />
@@ -1115,8 +1173,8 @@ export function HousesManager({
                 {depError}
               </p>
             ) : null}
-            <Button type="submit" disabled={pending}>
-              {pending ? 'Salvando...' : 'Salvar alterações'}
+            <Button type="submit" disabled={editDependentPending}>
+              {editDependentPending ? 'Salvando...' : 'Salvar alterações'}
             </Button>
           </form>
         ) : null}
