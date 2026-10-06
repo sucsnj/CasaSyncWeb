@@ -20,6 +20,41 @@ import { getPushTable } from '@/lib/push-service'
 
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
+/**
+ * Rotas que resolvem o **contexto da casa ativa** (tarefas, recompensas,
+ * conquistas, visões de admin e de dependente).
+ *
+ * Toda action que muda esse contexto — trocar/ criar/ excluir casa, criar ou
+ * editar dependente, alterar pontos, expulsar membro — precisa revalidar a lista
+ * INTEIRA. Uma rota esquecida não dá erro: ela simplesmente serve o payload
+ * antigo, e a tela mostra dados da casa anterior (ou de uma casa que não existe
+ * mais, no caso do `deleteHouse`).
+ *
+ * A lista é única de propósito: com `revalidatePath` repetido à mão em cada
+ * action, a omissão é invisível na revisão — foi assim que `/achievements`
+ * ficou fora de sete actions e só apareceu quando a troca automática de casa
+ * (clique na notificação) passou a navegar para lá.
+ *
+ * Vale a lista cheia mesmo em actions cujo dado é mais estreito (o
+ * `rotateHousePin`, por exemplo, só muda o código exibido): como todas as rotas
+ * são dinâmicas, invalidar a mais não custa nada — e um bloco "curto" deixado
+ * no arquivo é exatamente o que a próxima action copiaria por engano.
+ */
+const HOUSE_CONTEXT_ROUTES = [
+  '/dashboard/admin',
+  '/dashboard/admin/houses',
+  '/dashboard/dependent',
+  '/tasks',
+  '/rewards',
+  '/achievements',
+] as const
+
+function revalidateHouseContext() {
+  for (const route of HOUSE_CONTEXT_ROUTES) {
+    revalidatePath(route)
+  }
+}
+
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 function generateJoinCode(): string {
@@ -120,10 +155,7 @@ export async function createHouse(name: string): Promise<ActionResult> {
     path: '/',
   })
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: `Casa "${houseName}" criada.` }
 }
@@ -140,11 +172,7 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
   const persisted = await persistActiveHouseCookie(user.id, houseId)
   if (!persisted.ok) return persisted
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
-  revalidatePath('/achievements')
+  revalidateHouseContext()
 
   return { ok: true }
 }
@@ -215,10 +243,7 @@ export async function joinHouseByPin(pin: string): Promise<ActionResult> {
     path: '/',
   })
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: `Você agora controla a casa "${house.name}".` }
 }
@@ -367,10 +392,7 @@ export async function createDependent(
     return { ok: false, error: 'Falha ao vincular o dependente à casa.' }
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return {
     ok: true,
@@ -433,10 +455,7 @@ export async function updateHouse(
   const { error } = await admin.from('houses').update(updates).eq('id', houseId)
   if (error) return { ok: false, error: 'Falha ao atualizar a casa.' }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: 'Casa atualizada.' }
 }
@@ -525,10 +544,7 @@ export async function updateDependentProfile(
     .eq('id', dependentId)
   if (error) return { ok: false, error: 'Falha ao atualizar o dependente.' }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: 'Dependente atualizado.' }
 }
@@ -735,11 +751,7 @@ export async function updateDependentPoints(
     })
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/dashboard/dependent')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: `Pontos atualizados para ${newPoints}.` }
 }
@@ -856,11 +868,7 @@ export async function expelMember(
     return { ok: false, error: 'Falha ao remover o vínculo do membro.' }
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/dashboard/dependent')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   const roleLabel = membership.role === 'ADMIN' ? 'Administrador' : 'Dependente'
   return {
@@ -1072,10 +1080,7 @@ export async function deleteDependentAccount(
     return { ok: false, error: 'Falha ao remover a conta de login.' }
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return {
     ok: true,
@@ -1121,8 +1126,7 @@ export async function rotateHousePin(
     return { ok: false, error: 'Falha ao trocar o PIN da casa.' }
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
+  revalidateHouseContext()
 
   return { ok: true, message: `Novo PIN da casa: ${code}`, data: { code } }
 }
@@ -1274,10 +1278,7 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
     cookieStore.set(ACTIVE_HOUSE_COOKIE, '', { maxAge: 0, path: '/' })
   }
 
-  revalidatePath('/dashboard/admin')
-  revalidatePath('/dashboard/admin/houses')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
+  revalidateHouseContext()
 
   return { ok: true, message: `Casa "${house.name}" excluída.` }
 }

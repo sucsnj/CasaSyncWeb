@@ -40,8 +40,116 @@
   no mesmo quadro (otimista antes do `await`, com rollback condicional) e
   **toda** escrita em `tasks` ganhou guard de transição — `completeTask`,
   `requestTaskExtension`, `updateTask` e os 3 rollbacks estavam sem ele, e o
-  `completeTask` permitia sobrescrever um `APPROVED` já creditado. Ver a seção no
-  topo do documento.
+  `completeTask` permitia sobrescrever um `APPROVED` já creditado. Ver a seção
+  no topo do documento.
+- **Quatro correções de uma revisão de código (P2/P3/P4/R4):** revalidação de
+  contexto de casa virou **fonte única** (`revalidateHouseContext()` nas 11
+  actions de casa), o `toLocaleString` que quebrava a hidratação do card de
+  concluídas virou `FormattedDateTime`, os 6 `startTransition(async …)` do
+  `houses-manager.tsx` viraram flags por operação (dois deles por id), e o
+  `setFormError(null)` que apagava erro do form de criação saiu da transição de
+  card. `lint`/`typecheck`/`build` ✓. Ver a seção no topo do documento.
+- **Limitação de plataforma do Web Push (aceita, não é bug):** com o app
+  **varrido dos recentes**, o SO mata o Web Push e a notificação nativa não
+  chega em nenhum navegador (Chrome, Edge e Firefox testados). O **sino continua
+  funcionando**, porque vem do Realtime do Supabase — as notificações aparecem
+  ao reabrir o app. A-distinto disso, no **Edge em HyperOS** o push não chega
+  **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
+  registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
+  no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## Quatro correções de um achado da revisão (concluídas — lint/typecheck/build ✓, sem mudança de schema)
+
+A revisão do padrão de transição de tarefa (seção seguinte) deixou uma lista de
+achados "fora do escopo". Três deles foram fechados agora, mais um quarto
+achado do mesmo tipo. Nenhum deles quebrava o build — `lint`/`typecheck`/`build`
+passavam com todos os quatro no código.
+
+### P2 — a lista de revalidação das actions de casa era escrita à mão (7 actions)
+
+Cada action de casa repetia seu próprio bloco de `revalidatePath`, e os blocos
+**divergiam**: `/achievements` estava só no `selectHouse` (faltando em 7) e
+`/dashboard/dependent` só em `updateDependentPoints` e `expelMember`.
+
+A omissão **não dá erro** — a rota simplesmente serve o payload antigo e a tela
+mostra dado da casa anterior. O pior caso era o `deleteHouse`: ele apaga a casa
+e zera o cookie da casa ativa, mas deixava `/tasks`, `/rewards`, `/achievements`
+e `/dashboard/dependent` servindo dados de uma casa que não existe mais.
+
+**Correção — fonte única em `src/actions/houses.ts`:** `HOUSE_CONTEXT_ROUTES`
+(6 rotas) + `revalidateHouseContext()`. As **11 actions** de casa agora chamam o
+helper: `createHouse`, `selectHouse`, `joinHouseByPin`, `createDependent`,
+`updateHouse`, `updateDependentProfile`, `updateDependentPoints`, `expelMember`,
+`deleteDependentAccount`, `rotateHousePin` e `deleteHouse`.
+
+A lista cheia vale mesmo nas actions cujo dado é mais estreito (`rotateHousePin`
+só muda o código exibido, e antes revalidava 2 rotas): todas as rotas são
+dinâmicas, então invalidar a mais não custa nada — e um bloco "curto" deixado
+no arquivo é exatamente o que a próxima action copiaria por engano, que é como o
+achado nasceu.
+
+### P3 — `toLocaleString` em card renderizado no SSR (hydration mismatch)
+
+O card "Concluídas — aguardando aprovação" (`tasks-admin.tsx`) formatava a data
+de conclusão com `new Date(task.completed_at).toLocaleString('pt-BR')` **no
+JSX**. Esse card é renderizado já no servidor (UTC) e re-hidratava no cliente
+(fuso do dispositivo) — logo, hora errada no HTML e hydration mismatch.
+
+**Correção:** `FormattedDateTime` (ADR-0013), que renderiza placeholder
+estável até hidratar. O import já existia no arquivo; o ADR já proibia esse
+padrão — a linha era uma violação da regra vigente, não uma regra nova.
+
+### P4 — `startTransition(async …)` em `houses-manager.tsx` (6 handlers)
+
+Mesmo anti-padrão já proibido pelo `AGENTS.md` §3: `startTransition` **nunca**
+marca `isPending` (o React não rastreia a Promise do callback), então todo
+`disabled={pending}` e todo `{pending ? 'Criando...' : 'Criar casa'}` era
+**código morto** e o botão parecia travado durante todo o trabalho do servidor.
+
+**Correção — um flag por operação**, seguindo o padrão que o próprio arquivo já
+usava (`depPending`/`pointsPending`/`actionPending`):
+
+| Handler | Flag |
+|---|---|
+| Criar casa / Entrar com PIN | `housePending` |
+| Salvar casa (edição) | `editHousePending` |
+| Salvar dependente (edição) | `editDependentPending` |
+| Trocar casa ativa | `selectingHouseId` (**id**) |
+| Rotacionar PIN | `rotatingPinFor` (**id**) |
+
+Os dois últimos são **por id** em vez de lock de tela: o ADMIN pode trocar de
+casa ou rotacionar o PIN de casas diferentes sem ficar bloqueado. Os 6 handlers
+ganharam `try/catch/finally` (o `startTransition` não tinha — exceção de rede
+deixava o botão travado sem volta). `useTransition`/`startTransition`
+**removidos** do arquivo; não sobrou nenhum.
+
+### R4 — `setFormError(null)` apagava erro válido do formulário
+
+`runTaskTransition` usava `formError` para o erro da transição. Esse state é
+renderizado **dentro do form de criação de tarefa**, que nasce colapsado — ou
+ seja, o erro de uma transição de card nunca aparecia ali. E o
+`setFormError(null)` do início de **toda** transição apagava um erro do form que
+ainda era válido.
+
+**Correção:** `runTaskTransition` não mexe mais em `formError` — o erro da
+transição sai só pelo `toast.error`, que é o canal visível perto do card. A
+limpeza do erro foi para `resetForm()`, que é onde ela pertence (o erro morre
+junto com o form).
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(16 rotas). `houses-manager.tsx` +224/−? (o peso é a reindentação dos handlers),
+`tasks-admin.tsx` +24/−? e `houses.ts` 46/45 — este último quase todo
+reindentação: o diff real é a lista de rotas + 11 chamadas de uma linha.
+Encoding dos 3 arquivos conferido (0 caracteres de substituição).
+
+### Pontos de atenção
+- **Toda rota nova que resolver contexto de casa entra em `HOUSE_CONTEXT_ROUTES`** — a omissão agora é estruturalmente impossível (não existe um segundo bloco para copiar errado). Quando uma tela nova passar a depender da casa ativa, o sintoma é "dados da casa anterior": a resposta é adicionar a rota **na lista**, não criar um bloco novo na action.
+- **`formError` é do form de criação.** Não usar para erro de card/modal — cada um tem seu state (`depError`, `actionError`, `pointsPending`...) ou o toast.
+- **R5 continua aberto:** os labels de carregamento em `tasks-admin.tsx` são por **card** e não por ação (um card mostra "Aprovando..." enquanto outro está em "Restaurando", porque o texto é fixo na seção). O `pendingIds` já é por id; falta rotular pela ação em voo.
+- Web Push: ver a limitação de plataforma na seção de estado atual acima.
 
 ---
 
@@ -82,7 +190,8 @@ Otimista passou a ser uma **factory** (`() => Task`) em vez de um objeto pronto:
 ### Pontos de atenção
 - **Ao adicionar uma transição nova:** passe o otimista como **factory**, deixe o `runTaskTransition` marcar o id em `optimisticIdsRef` e **não** escreva um predicado de rollback.
 - **A limpeza do registro no `finally` é o que garante a ordem** — o rollback roda ANTES dela (branches mutuamente exclusivos). Inverter quebra o rollback.
-- **Ainda não corrigidos** (achados da mesma revisão, fora do escopo): o Web Push não tem listener de `NOTIFICATION_CLICK` (`public/sw.js` — app fechado abre a casa errada); 7 actions de casa não revalidam `/achievements`; `toLocaleString` em JSX sempre renderizado (`tasks-admin.tsx`, hydration mismatch); `houses-manager.tsx` usa `startTransition(async …)`; os labels de carregamento são por card e não por ação.
+- **Ainda não corrigidos** (achados da mesma revisão): o Web Push não tem listener de `NOTIFICATION_CLICK` (`public/sw.js` — app fechado abre a casa errada); os labels de carregamento são por card e não por ação (R5 — ver a seção do R4 no topo).
+- **~~Corrigido depois~~**: 7 actions de casa não revalidavam `/achievements` (P2) e `/dashboard/dependent`; `toLocaleString` em JSX sempre renderizado (`tasks-admin.tsx`, hydration mismatch — P3); `houses-manager.tsx` usava `startTransition(async …)` (P4). Os quatro estão detalhados na seção no topo do documento.
 
 ---
 
