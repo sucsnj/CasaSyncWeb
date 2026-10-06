@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import { after } from 'next/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'Visão geral' },
+  { href: '/dashboard/admin', label: 'VisÃ£o geral' },
   { href: '/dashboard/admin/houses', label: 'Casas' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
@@ -34,7 +35,7 @@ const adminItems: NavItem[] = [
 ]
 
 const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'Visão geral' },
+  { href: '/dashboard/dependent', label: 'VisÃ£o geral' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
   { href: '/achievements', label: 'Conquistas' },
@@ -49,23 +50,23 @@ export default async function RewardsPage() {
     redirect('/login')
   }
 
-  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
-  // (sessão), não por policies RLS — o co-gerente precisa ver a loja/resgates
-  // da casa mesmo não sendo o `owner_id`.
+  // Service-role: a visibilidade Ã© decidida pela posse/co-controle da casa
+  // (sessÃ£o), nÃ£o por policies RLS â€” o co-gerente precisa ver a loja/resgates
+  // da casa mesmo nÃ£o sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
-  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
+  // NotificaÃ§Ãµes e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
+  // sessÃ£o Ã© reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
 const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
     await Promise.all([
       getMyNotifications(user.id),
       isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
       isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-      // Item "Conquistas" da nav dourado quando hǭ resgate dispon��vel.
+      // Item "Conquistas" da nav dourado quando hÇ­ resgate disponï¿½ï¿½vel.
       isAdmin ? Promise.resolve(false) : hasClaimableAchievement(user.id),
-      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graça:
-      // `getActiveAdminHouse` já chama `getAdminHouses` e ambos são `React.cache`.
+      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graÃ§a:
+      // `getActiveAdminHouse` jÃ¡ chama `getAdminHouses` e ambos sÃ£o `React.cache`.
       isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
     ])
 
@@ -77,8 +78,8 @@ const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
-  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
-  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
+  // Castigo ativo do tutor (ADR-0020): Ã­cone de triÃ¢ngulo ao lado do sino, sÃ³ do
+  // DEPENDENT. Sem Realtime â€” lido no render desta tela (como os comunicados).
   const punishment =
     !isAdmin && dependentHouse
       ? await getActivePunishment(user.id, dependentHouse.id)
@@ -181,12 +182,13 @@ const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
     if (!dependentHouse) {
       content = (
         <p className="text-sm text-muted-foreground">
-          Você ainda não foi vinculado a uma casa.
+          VocÃª ainda nÃ£o foi vinculado a uma casa.
         </p>
       )
     } else {
-      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
-      await registerLoginDay(dependentHouse.id, user.id)
+      // Conquistas: acesso diÃ¡rio do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      // Escrita, fora do caminho do render â€” ver a nota no layout do dependente.
+      after(() => registerLoginDay(dependentHouse.id, user.id))
 
       const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
         await Promise.all([

@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { timeServer } from '@/utils/perf'
+import { after } from 'next/server'
 import {
   isPunishmentActive,
   type ActivePunishment,
@@ -38,24 +39,28 @@ export const getActivePunishment = cache(
 
     const now = new Date()
 
-    // Limpeza lazy: castigo vencido some do banco na próxima leitura. Best-effort
-    // (a expiração já é tratada na leitura abaixo — se o delete falhar, o usuário
-    // continua sem ver o ícone).
-    // Medido por instrumentation TEMPORÁRIA (ver `src/utils/perf.ts`): este é
-    // outro DELETE dentro do caminho de leitura, igual às notificações.
-    try {
-      await timeServer('castigo/limpeza', () =>
-        admin
-          .from('dependent_punishments')
-          .delete()
-          .eq('house_id', houseId)
-          .eq('profile_id', profileId)
-          .not('expires_at', 'is', null)
-          .lte('expires_at', now.toISOString())
-      )
-    } catch (err) {
-      console.error('[CASTIGO] Falha na limpeza de castigos vencidos:', err)
-    }
+    // Faxina lazy: o castigo vencido some do banco, mas DEPOIS da resposta. É
+    // escrita pura — o triângulo depende só da leitura abaixo, e a expiração já
+    // é tratada nela (`isPunishmentActive`), então segurar o render para apagar
+    // uma linha que ninguém ia ver só custava latência. Com `after()` (garantido
+    // pela Vercel via `waitUntil`) a limpeza continua acontecendo e sai do caminho
+    // crítico. Se o `after` falhar, o pior caso é a linha ficar lá — expirada e
+    // filtrada na leitura.
+    after(async () => {
+      try {
+        await timeServer('castigo/limpeza', () =>
+          admin
+            .from('dependent_punishments')
+            .delete()
+            .eq('house_id', houseId)
+            .eq('profile_id', profileId)
+            .not('expires_at', 'is', null)
+            .lte('expires_at', now.toISOString())
+        )
+      } catch (err) {
+        console.error('[CASTIGO] Falha na limpeza de castigos vencidos:', err)
+      }
+    })
 
     try {
       const { data } = await timeServer('castigo/leitura', () =>

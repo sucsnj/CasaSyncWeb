@@ -7,6 +7,7 @@ import {
 } from '@/utils/house-settings'
 import { isNotificationMuted } from '@/utils/notification-mute'
 import { timeServer } from '@/utils/perf'
+import { after } from 'next/server'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -227,37 +228,41 @@ export async function cleanupReadNotifications(
 
   const houseIds = [...new Set((houseRows ?? []).map((row) => row.house_id))]
 
-  for (const houseId of houseIds) {
-    const settings = await getHouseNotificationRetentionSettings(houseId)
-    const cutoff = new Date(
-      Date.now() - settings.readRetentionDays * 24 * 60 * 60 * 1000
-    ).toISOString()
+  // Por casa em PARALELO: cada `DELETE` é independente (o prazo é o da casa), e
+  // um ADMIN de 3 casas fazia 6 round-trips em sequência. Não muda o resultado —
+  // as casas não se afetam — só encurta a faxina.
+  await Promise.all(
+    houseIds.map(async (houseId) => {
+      const settings = await getHouseNotificationRetentionSettings(houseId)
+      const cutoff = new Date(
+        Date.now() - settings.readRetentionDays * 24 * 60 * 60 * 1000
+      ).toISOString()
 
-    await admin
-      .from('notifications')
-      .delete()
-      .eq('recipient_id', recipientId)
-      .eq('house_id', houseId)
-      .neq('type', 'QUICK_MESSAGE')
-      .not('read_at', 'is', null)
-      .lt('read_at', cutoff)
-  }
+      await admin
+        .from('notifications')
+        .delete()
+        .eq('recipient_id', recipientId)
+        .eq('house_id', houseId)
+        .neq('type', 'QUICK_MESSAGE')
+        .not('read_at', 'is', null)
+        .lt('read_at', cutoff)
+    })
+  )
 }
 
 /**
- * Notificações do usuário (mais recentes primeiro) + limpeza lazy das lidas
- * antigas. Lida com service-role porque o sino é renderizado no servidor e o
- * escopo é sempre o próprio usuário da sessão.
+ * Faxina das notificações do usuário: lidas fora da retenção da casa e
+ * mensagens rápidas vencidas.
+ *
+ * É **escrita**, e o render do sino não usa nada disso — por isso roda em
+ * `after()`, DEPOIS da resposta (ver `getMyNotifications`). Isolada numa função
+ * própria para que o `after` receba um callback só, e para que a lógica de limpeza
+ * não fique misturada com a leitura.
  */
-export async function getMyNotifications(
-  userId: string,
-  limit = 50
-): Promise<NotificationRow[]> {
-  const admin = createAdminClient()
-
-  // As 3 fases são medidas separadas (instrumentação TEMPORÁRIA — ver
-  // `src/utils/perf.ts`): as duas limpezas são ESCRITAS no caminho da leitura, e
-  // é exatamente aqui que mora a maior parte da latência do sino.
+async function cleanupNotificationsOf(
+  admin: AdminClient,
+  userId: string
+): Promise<void> {
   try {
     await timeServer('notificações/limpeza-lidas', () =>
       cleanupReadNotifications(admin, userId)
@@ -287,20 +292,51 @@ export async function getMyNotifications(
         actorId: row.actor_id,
       })
     }
-    for (const pair of pairs.values()) {
-      const settings = await getHouseQuickMessageSettings(pair.houseId)
-      await timeServer('notificações/limpeza-rápidas', () =>
-        cleanupQuickMessages(
-          admin,
-          pair.houseId,
-          pair.actorId,
-          settings.readRetentionDays
+    // Por par (casa + remetente) em PARALELO — cada limpeza é independente.
+    await Promise.all(
+      [...pairs.values()].map(async (pair) => {
+        const settings = await getHouseQuickMessageSettings(pair.houseId)
+        await timeServer('notificações/limpeza-rápidas', () =>
+          cleanupQuickMessages(
+            admin,
+            pair.houseId,
+            pair.actorId,
+            settings.readRetentionDays
+          )
         )
-      )
-    }
+      })
+    )
   } catch {
     // Best-effort: falha na limpeza não impede a listagem.
   }
+}
+
+/**
+ * Notificações do usuário (mais recentes primeiro). Lida com service-role porque
+ * o sino é renderizado no servidor e o escopo é sempre o próprio usuário da
+ * sessão.
+ *
+ * **A faxina sai do caminho da leitura:** antes ela rodava (e era esperada) antes
+ * do `SELECT`, e a instrumentação mediu **195-365ms em produção só nela** — 5
+ * round-trips em série (1 `SELECT` de casas + settings + `DELETE` por casa, mais
+ * o `SELECT` das mensagens rápidas) para algo que o render não usa. Agora o sino
+ * espera **1 query** e a limpeza roda em `after()`, que a Vercel garante via
+ * `waitUntil` depois de enviar a resposta: a limpeza continua acontecendo, só sai
+ * da latência.
+ *
+ * Efeito colateral aceito: o sino pode listar, por um instante, notificações **já
+ * lidas** e fora da retenção. As não lidas — que é o que o badge conta — não são
+ * afetadas.
+ */
+export async function getMyNotifications(
+  userId: string,
+  limit = 50
+): Promise<NotificationRow[]> {
+  const admin = createAdminClient()
+
+  after(async () => {
+    await cleanupNotificationsOf(admin, userId)
+  })
 
   const { data } = await timeServer('notificações/listagem', () =>
     admin

@@ -15,6 +15,19 @@
   produto**; as regras atuais permanecem como estão. Registrado no **ADR-0023**
   para que não voltem como "pendência técnica" no futuro.
 - **Ainda não há deploy** dessas entregas.
+- **Latência da navegação — Tier 1 entregue e Tier 2 parcial entregue.** O
+  diagnóstico mediu que **cada round-trip ao banco custa ~86ms** (mediana de
+  `settings/leitura`, uma query trivial de 4 colunas) — o custo é **latência de
+  rede em série**, não trabalho de banco. As regiões não podem ser ajustadas
+  (plano Hobby sem escolha de região), então o lever é reduzir a **quantidade**
+  de round-trips: Tier 1 (proxy só lê a role quando decide redirect,
+  `getDependentHouse` com `React.cache`, `house_settings` com uma leitura por
+  casa) e agora as **3 escritas** do caminho de leitura movidas para `after()`
+  (sino, castigo, login-dia) — o sino caiu de 5 round-trips em série para 1.
+  **Fica de fora:** `getUser()` → `getClaims()` no proxy e o route group com
+  layout compartilhado (Tier 3). A instrumentação `[PERF]` (`src/utils/perf.ts`)
+  segue **ligada** para medir o ganho e deve ser removida depois. Ver as seções no
+  topo.
 - **Masonry nas listas de cards:** aplicado nas **3 seções de
   `tasks-dependent.tsx`**, nas **4 seções de `tasks-admin.tsx`**, na **Loja
   de recompensas** do dependente (`rewards-dependent.tsx`) e nos **8 cards de
@@ -81,6 +94,70 @@
   **nem com o app aberto** e com a permissão liberada (a distro bloqueia o
   registro de push do Edge); no Chrome do mesmo aparelho funciona. Nada a fazer
   no código — o caminho do navegador não existe nesse par SO/navegador.
+
+---
+
+## Escritas fora do caminho de leitura — P1 + P3 + P4 do Tier 2 (implementado — verificar `after()` em produção)
+
+### O que mudou
+Três **escritas** que rodavam dentro do caminho de render saíram da resposta,
+via `after()` do Next 16 (a Vercel garante com `waitUntil`):
+
+| # | Onde era | O que é |
+|---|---|---|
+| **P1** | `getMyNotifications` (`utils/notifications.ts`) | as 2 faxinas (lidas fora da retenção + mensagens rápidas vencidas) — **195-365ms medidos** |
+| **P3** | `getActivePunishment` (`utils/active-punishment.ts`) | o `DELETE` do castigo vencido (só DEPENDENT) |
+| **P4** | `registerLoginDay` (`actions/stats.ts`), nos **4 call sites** (layout do dependente + `/tasks`, `/rewards`, `/achievements`) | a contagem do acesso diário |
+
+O sino passou a esperar **1 query** (`notificações/listagem`) em vez de 5 em
+série. O `registerLoginDay` deixou de ser `await` no render (no primeiro acesso do
+dia ele virava UPDATE + 2 avaliações de conquistas + notificações + push).
+
+### A descoberta que exige verificação: `after()` não roda em `next dev`
+Uma sonda temporária (rota com um `console.log` antes e outro dentro do `after`,
+que foi **removida** depois) provou que em `next dev` o callback é registrado mas
+**nunca executa** — o log de antes apareceu, o de dentro não. Os docs do Next dizem
+que Node/Vercel é suportado (via `waitUntil`), mas **isso não foi verificado em
+produção** e é o que precisa ser conferido no primeiro deploy.
+
+**Como verificar:** no log da Vercel, filtrar `[PERF]` depois do deploy — se
+`notificações/limpeza-lidas` e `castigo/limpeza` aparecerem, o `after()` está
+funcionando. Se não aparecerem, o `after()` não roda em produção.
+
+### Rede de segurança (por que o risco é baixo)
+As faxinas **autoritativas já existem nas actions do sino**
+(`src/actions/notifications.ts`): `markNotificationRead` e
+`markAllNotificationsRead` chamam `cleanupQuickMessages`, e
+`purgeReadNotifications` chama `cleanupReadNotifications`. A do render era só uma
+rede de segurança para quem nunca interage com o sino. Se o `after()` não rodar,
+o efeito é **a faxina acontecer na próxima interação com o sino** em vez de a
+cada render — nada se perde, nada corrompe. O castigo vencido continua filtrado
+na leitura por `isPunishmentActive`, ou seja, o triângulo some igual.
+
+### Faxina paralelizada por dentro
+`cleanupReadNotifications` fazia as casas em `for..of` **serial** (ADMIN de 3
+casas = 6 round-trips em sequência) e a faxina de mensagens rápidas o mesmo por
+par (casa+remetente). Ambos viraram `Promise.all`: o resultado é o mesmo (cada
+`DELETE` é independente, o prazo é o da casa), só encurta a faxina — o que
+também aumenta a chance dela caber no tempo de vida da função.
+
+### Efeito colateral aceito
+O sino pode listar, por um instante, notificações **já lidas** e fora da
+retenção (a faxina passa a rodar depois da resposta). As **não lidas** — que é o
+que o badge conta — não são afetadas.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+Log do `next dev` depois da mudança: o padrão do sino mudou de
+`limpeza-lidas + busca-rápidas + listagem` para **só `listagem`** (5-16ms), que é
+exatamente o esperado com P1 aplicado.
+
+### Pontos de atenção
+- **Nunca mais devolver uma escrita para o caminho da leitura.** As três existiam porque "limpar enquanto lista" parecia barato; a medição mostrou que era o item mais caro do render. Regra: leitura devolve o que o render precisa, escrita vai para `after()` ou para uma action.
+- **`next dev` não executa `after()`** — então **não dá para testar esse caminho no dev**. O smoke test local só prova que a página renderiza; o comportamento da faxina só aparece no deploy.
+- **O `[PERF]` está ligado e medindo de novo** (ver a seção da instrumentação) — é o que vai dizer se o ganho é o previsto. Remover a instrumentação depois de confirmar.
+- **Números de dev não valem medição:** o `listagem` leva 5-16ms no dev (a máquina está perto do banco), contra 86ms de mediana em produção (a função roda longe). Nada de tirar conclusão de latência no `next dev`.
+- **Não editar arquivo do projeto com `Set-Content`/`Out-File` do PowerShell:** durante esta mudança ele gravou `middleware.ts` com BOM e acentos em mojibake (`usuÃ¡rio`). O arquivo foi restaurado com `git checkout` (o `needsRole` do Tier 1 já estava commitado). Use a ferramenta de edição, que escreve UTF-8 sem BOM.
 
 ---
 

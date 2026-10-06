@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import { after } from 'next/server'
 import Link from 'next/link'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
@@ -40,7 +41,7 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'Visão geral' },
+  { href: '/dashboard/admin', label: 'VisÃ£o geral' },
   { href: '/dashboard/admin/houses', label: 'Casas' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
@@ -48,7 +49,7 @@ const adminItems: NavItem[] = [
 ]
 
 const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'Visão geral' },
+  { href: '/dashboard/dependent', label: 'VisÃ£o geral' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
   { href: '/achievements', label: 'Conquistas' },
@@ -62,7 +63,7 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
         <CardDescription>
           {role === 'ADMIN'
             ? 'Crie ou selecione uma casa antes de gerenciar tarefas.'
-            : 'Você ainda não foi vinculado a uma casa.'}
+            : 'VocÃª ainda nÃ£o foi vinculado a uma casa.'}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -71,7 +72,7 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
             href="/dashboard/admin/houses"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
-            Gerenciar casas →
+            Gerenciar casas â†’
           </Link>
         ) : null}
       </CardContent>
@@ -86,24 +87,24 @@ export default async function TasksPage() {
     redirect('/login')
   }
 
-  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
-  // (sessão), não por policies RLS — o co-gerente precisa ver as tarefas da
-  // casa mesmo não sendo o `owner_id`.
+  // Service-role: a visibilidade Ã© decidida pela posse/co-controle da casa
+  // (sessÃ£o), nÃ£o por policies RLS â€” o co-gerente precisa ver as tarefas da
+  // casa mesmo nÃ£o sendo o `owner_id`.
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
-  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
+  // NotificaÃ§Ãµes e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
+  // sessÃ£o Ã© reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
   const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
     await Promise.all([
       getMyNotifications(user.id),
       isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
       isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-      // Item "Conquistas" da nav dourado quando há resgate disponível.
+      // Item "Conquistas" da nav dourado quando hÃ¡ resgate disponÃ­vel.
       isAdmin ? Promise.resolve(false) : hasClaimableAchievement(user.id),
-      // Nomes das casas do ADMIN: o sino marca de qual casa é cada notificação
-      // e troca a casa antes de navegar. De graça — `getActiveAdminHouse` já
-      // chama `getAdminHouses` por dentro e ambos são `React.cache`.
+      // Nomes das casas do ADMIN: o sino marca de qual casa Ã© cada notificaÃ§Ã£o
+      // e troca a casa antes de navegar. De graÃ§a â€” `getActiveAdminHouse` jÃ¡
+      // chama `getAdminHouses` por dentro e ambos sÃ£o `React.cache`.
       isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
     ])
 
@@ -115,15 +116,15 @@ export default async function TasksPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
-  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
-  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
+  // Castigo ativo do tutor (ADR-0020): Ã­cone de triÃ¢ngulo ao lado do sino, sÃ³ do
+  // DEPENDENT. Sem Realtime â€” lido no render desta tela (como os comunicados).
   const punishment =
     !isAdmin && dependentHouse
       ? await getActivePunishment(user.id, dependentHouse.id)
       : null
 
   // Settings de prazos/SLA e de adiamento da casa, aplicadas nos cards de
-  // tarefas (prazo padrão, chip "Prazo próximo" e botões de adiamento).
+  // tarefas (prazo padrÃ£o, chip "Prazo prÃ³ximo" e botÃµes de adiamento).
   const houseIdForSettings = isAdmin ? activeHouse?.id : dependentHouse?.id
   const taskSlaSettings = houseIdForSettings
     ? await getHouseTaskSlaSettings(houseIdForSettings)
@@ -168,15 +169,16 @@ export default async function TasksPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
-      await registerLoginDay(dependentHouse.id, user.id)
+      // Conquistas: acesso diÃ¡rio do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      // Escrita, fora do caminho do render â€” ver a nota no layout do dependente.
+      after(() => registerLoginDay(dependentHouse.id, user.id))
 
       const { data: tasks } = await admin
         .from('tasks')
         .select('*')
         .eq('house_id', dependentHouse.id)
         .eq('assigned_to', user.id)
-        // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
+        // Tarefa em espera (ON_HOLD) fica INVISÃVEL para o dependente â€” o mesmo
         // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
         .neq('status', 'ON_HOLD')
         .order('created_at', { ascending: false })

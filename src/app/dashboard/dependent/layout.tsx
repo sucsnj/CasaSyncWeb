@@ -11,6 +11,7 @@ import { PushPermissionPrompt } from '@/components/notifications/push-permission
 import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
 import { getActivePunishment } from '@/utils/active-punishment'
+import { after } from 'next/server'
 
 const dependentItems: NavItem[] = [
   { href: '/dashboard/dependent', label: 'Visão geral' },
@@ -50,8 +51,13 @@ export default async function DependentDashboardLayout({
 
   // Conquistas: conta o acesso diário do dependente (métricas APP_LOGIN_DAYS e
   // STREAK_LOGIN_DAYS), dia em America/Recife. BEST-EFFORT e idempotente.
+  //
+  // Em `after()`: é uma ESCRITA, e o render não precisa dela. Aguardava dentro do
+  // caminho crítico (~86ms por round-trip medido) e, no primeiro acesso do dia,
+  // virava UPDATE + 2 avaliações de conquistas + notificações + push. A
+  // achievements do dependente atualiza pelo Realtime de `dependent_achievements`.
   if (house) {
-    await registerLoginDay(house.id, user.id)
+    after(() => registerLoginDay(house.id, user.id))
   }
 
   return (
