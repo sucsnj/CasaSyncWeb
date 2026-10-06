@@ -26,6 +26,32 @@
   a barra de progresso e a pill de pontos desceram juntos para a base do card
   (`mt-auto`) — sem isso o botão ficava grudado no texto, com um vão vazio
   embaixo. Testado em tela. Ver a seção no topo do documento.
+- **Delay do feedback "Alterações salvas" virou constante ajustável:** o tempo em
+  que o botão de ação do card fica escondido durante a edição de campo agora é a
+  constante `SAVED_FEEDBACK_MS` no topo do `debounced-field.tsx` — pode ser
+  mudado **para cima ou para baixo** conforme o tempo de leitura desejado. E o
+  timer passou a usar uma ref própria, para que o ciclo anterior seja cancelado.
+  Testado em tela. Ver a seção no topo do documento.
+
+---
+
+## Delay do feedback de edição agora é uma constante ajustável (concluído — testado em tela, sem mudança de schema)
+
+### O que foi feito
+- **Ponto de partida:** o botão de ação do card ("Aprovar Tarefa e Creditar") é escondido durante a edição de campo e no lugar aparece "⏳ Salvando alterações..." → "✓ Alterações salvas" (ver a seção histórica abaixo). A janela entre o "✓ Alterações salvas" e o botão voltar era um **literal solto** no `setTimeout`, com um comentário justificando a escolha.
+- **O que mudou:**
+  - O literal virou a constante **`SAVED_FEEDBACK_MS`**, declarada no topo do `debounced-field.tsx`, com o porquê no JSDoc. É o **único** ponto a mexer para mudar a janela, em qualquer direção — para menos ou para mais.
+  - A janela encolheu porque o salvamento ficou rápido com as correções recentes de transição (feedback imediato e guard de transição no servidor): o valor anterior só fazia sentido com o salvamento lento de antes.
+- **Bug preexistente que a janela curta revelou:** o `setTimeout` do "voltar para idle" ficava **fora de qualquer ref** (ao contrário do `timerRef`, que segura o debounce e é limpo no unmount). Com janela longa ele raramente aparecia; encurtando, virou frequente: retocar o campo logo após salvar deixava o **timer velho derrubar o feedback do salvamento novo** — o botão voltava segundos antes do previsto. Agora o timer vive numa **ref própria** (`savedTimerRef`) e o anterior é **cancelado** antes de agendar o próximo, além de ser limpo no unmount.
+- **O que não mudou:** o ciclo `saving → saved → idle` é o mesmo, o caminho de **erro** continua zerando o estado imediatamente (sem esperar a janela), e `tasks-admin.tsx` não foi tocado — nem o `savingStatuses`, nem o ternário que remove o botão do DOM, nem os `onSavingStatusChange` dos 4 campos.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Nenhuma classe CSS nova, então dispensa a conferência no bundle do `AGENTS.md` §2. **Testado em tela** pelo usuário, incluindo o caso de retocar o campo dentro da janela (o feedback acompanha cada ciclo corretamente).
+
+### Pontos de atenção
+- **Para mudar a janela, mexer só em `SAVED_FEEDBACK_MS`** (topo do `debounced-field.tsx`) — nunca no `setTimeout` inline, que fica logo abaixo e depende da ref.
+- **Não remover o `clearTimeout` da `savedTimerRef`**: ele só é invisível com janela longa. Encurtar a janela sem ele traz de volta o bug do timer antigo derrubando o feedback novo.
+- O efeito colateral pretendido de encurtar: o botão de ação volta mais cedo, o que é o desejado (o ADMIN não fica impedido de aprovar por causa de um texto na tela). Se voltar cedo demais em uso real, é só aumentar a constante.
 
 ---
 
@@ -939,6 +965,10 @@ alter publication supabase_realtime add table public.dependent_achievements;
 - **Mudanças:**
   - `tasks-admin.tsx`: adicionado `onSavingStatusChange` nos `DebouncedField` de título e descrição, atualizando `savingStatuses[task.id]`.
   - O JSX condicional (já existente) oculta o botão "Aprovar Tarefa e Creditar" e "Marcar como não entregue" enquanto o status for `'saving'` ou `'saved'`, exibindo "⏳ Salvando alterações..." / "✓ Alterações salvas" no lugar.
+
+### Pontos de atenção
+- **A janela do "✓ Alterações salvas" é hoje a constante `SAVED_FEEDBACK_MS`** (topo do `debounced-field.tsx`), ajustável para cima ou para baixo — ver a seção no topo do documento. Antes era um literal solto no `setTimeout`.
+- **O botão "Colocar em espera" também some** durante a edição, pela mesma condição (`savingStatuses[task.id] === 'idle'`), embora não tenha sido esse o problema relatado aqui.
 
 ### Verificação
 `npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).
