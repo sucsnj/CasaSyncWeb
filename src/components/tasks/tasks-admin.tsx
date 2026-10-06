@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   adminCompleteTask,
@@ -154,29 +154,32 @@ export function TasksAdmin({
   }
 
   /**
-   * Desfaz o update otimista **só se o card ainda estiver no estado que o
-   * otimista gravou** — ou seja, se o Realtime não tiver trazido nada novo.
-   *
-   * O caso que isso resolve: o dependente conclui a tarefa no mesmo instante em
-   * que o ADMIN clica em aprovar/concluir. Durante o `await` (~2-4s) o Realtime
-   * entrega o `COMPLETED` real, que é **mais novo** que o `task` capturado no
-   * render. Um rollback cego sobrescreveria esse dado e o card voltaria a uma
-   * seção que não existe mais no banco — e ele só sairia da tela com um F5,
-   * porque o evento do Realtime já foi consumido.
-   *
-   * `stillOptimistic` é o predicado que identifica "o card ainda está com o
-   * valor que o otimista gravou" — muda por transição (o status, no caso normal;
-   * as flags de adiamento, quando a transição não muda o status).
+   * Ids cujo card está num valor que **só o otimista produziu** (ainda sem
+   * resposta do servidor). Vive numa ref porque dois pontos precisam ler sem se
+   * reinscrever: o rollback e a sincronização da prop.
    */
-  function rollbackOptimistic(
-    task: Task,
-    stillOptimistic: (item: Task) => boolean
-  ) {
-    setTasks((prev) =>
-      prev.map((item) =>
-        item.id === task.id && stillOptimistic(item) ? task : item
-      )
-    )
+  const optimisticIdsRef = useRef<Set<string>>(new Set())
+
+  function setOptimistic(id: string, on: boolean) {
+    if (on) optimisticIdsRef.current.add(id)
+    else optimisticIdsRef.current.delete(id)
+  }
+
+  /**
+   * Desfaz o update otimista **só se o card ainda estiver num valor produzido
+   * pelo otimista** — isto é, se nenhuma linha real chegou no meio do `await`.
+   *
+   * Por que um registro e não um predicado (`item.status === 'APPROVED'`): o
+   * predicado é indistinguível da linha que um **escritor concorrente** produziu.
+   * Numa colisão — que é exatamente o caso para onde os guards de transição
+   * existem — o outro escritor grava o MESMO valor, o Realtime entrega, o
+   * predicado casa e o rollback aplica o `task` capturado no render (stale) por
+   * cima, pondo o card numa seção que não existe mais no banco. Com o registro, o
+   * id já saiu do Set quando a linha real chegou e o dado novo é preservado.
+   */
+  function rollbackOptimistic(task: Task) {
+    if (!optimisticIdsRef.current.has(task.id)) return
+    setTasks((prev) => upsertTask(prev, task))
   }
 
 type TransitionResult =
@@ -199,8 +202,7 @@ type TransitionResult =
  */
 async function runTaskTransition(
     task: Task,
-    optimistic: Task,
-    stillOptimistic: (item: Task) => boolean,
+    buildOptimistic: () => Task,
     run: () => Promise<TransitionResult>,
     options?: {
       successToast?: 'success' | 'warning' | 'info'
@@ -210,12 +212,17 @@ async function runTaskTransition(
     if (pendingIds.has(task.id)) return
     setFormError(null)
     setPendingId(task.id, true)
+    setOptimistic(task.id, true)
+    // A factory é avaliada AQUI (no clique), nunca durante o render: o
+    // otimista de pausa/restauração calcula um prazo novo com `Date.now()`, o
+    // que a regra de pureza do React proíbe em tempo de render.
+    const optimistic = buildOptimistic()
     setTasks((prev) => upsertTask(prev, optimistic))
 
     try {
       const result = await run()
       if (!result.ok) {
-        rollbackOptimistic(task, stillOptimistic)
+        rollbackOptimistic(task)
         setFormError(result.error)
         toast.error(result.error)
         return
@@ -227,12 +234,17 @@ async function runTaskTransition(
       router.refresh()
     } catch {
       // Erro de rede é ambíguo: pode ser que o servidor tenha gravado e só a
-      // resposta não chegou. O `refresh` re-sincroniza com o estado real.
-      rollbackOptimistic(task, stillOptimistic)
+      // resposta não chegou. O `refresh` traz a linha real de volta (ver o
+      // efeito de sincronização da prop) e o Realtime confirma.
+      rollbackOptimistic(task)
       router.refresh()
       toast.error('Falha de conexão. Tente novamente.')
     } finally {
       setPendingId(task.id, false)
+      // A transição terminou (sucesso ou erro): o card passa a exibir o estado do
+      // servidor, então sai do registro de otimistas. Fazer aqui garante que o
+      // rollback já rodou ANTES desta limpeza (branches mutuamente exclusivos).
+      setOptimistic(task.id, false)
     }
   }
 
@@ -242,10 +254,34 @@ async function runTaskTransition(
   usePostgresChanges<Task>({
     table: 'tasks',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (task) => setTasks((prev) => upsertTask(prev, task)),
+    onUpsert: (task) => {
+      // Chegou linha REAL do servidor: o card não está mais num valor que só o
+      // otimista produziu, então sai do registro (ver `rollbackOptimistic`).
+      setOptimistic(task.id, false)
+      setTasks((prev) => upsertTask(prev, task))
+    },
     onDelete: (taskId) =>
       setTasks((prev) => prev.filter((task) => task.id !== taskId)),
   })
+
+  /**
+   * Sincroniza a lista com a prop do servidor.
+   *
+   * Sem isso o `router.refresh()` **não** fazia nada: o componente é montado com
+   * `key={casa.id}`, que só muda quando o ADMIN troca de casa — na mesma casa o
+   * refresh re-renderiza o Server Component, mas o `useState(initialTasks)` de um
+   * client component já montado **ignora** a prop nova. Era por isso que o
+   * `refresh` do caminho de erro de rede não reconcilia nada.
+   *
+   * Pulado enquanto há valor otimista na tela: nesse instante o refresh traz o
+   * estado ANTERIOR do servidor e sobrescreveria o card que acabou de mudar. Como
+   * o `finally` de `runTaskTransition` limpa o registro antes, o refresh
+   * pós-erro já entra aqui.
+   */
+  useEffect(() => {
+    if (optimisticIdsRef.current.size > 0) return
+    setTasks(initialTasks)
+  }, [initialTasks])
 
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
@@ -407,21 +443,22 @@ async function runTaskTransition(
     // concluiu no mesmo instante), o dado novo é preservado.
     void runTaskTransition(
       task,
-      { ...task, status: 'APPROVED' },
-      (item) => item.status === 'APPROVED',
+      () => ({ ...task, status: 'APPROVED' }),
       () => approveTask(task.id),
       { fallbackMessage: 'Tarefa aprovada' }
     )
   }
 
   function handleRejectComplete(task: Task) {
-    // COMPLETED → PENDING. O otimista limpa a conclusão; o rollback só desfaz se
-    // o card ainda estiver `PENDING` (se o dependente reconcluiu nesse meio
-    // tempo, o Realtime traz `COMPLETED` e o dado novo é preservado).
+    // COMPLETED → PENDING. O otimista limpa a conclusão.
     void runTaskTransition(
       task,
-      { ...task, status: 'PENDING', completed_by: null, completed_at: null },
-      (item) => item.status === 'PENDING' && item.completed_at === null,
+      () => ({
+        ...task,
+        status: 'PENDING',
+        completed_by: null,
+        completed_at: null,
+      }),
       () => rejectCompletedTask(task.id),
       { fallbackMessage: 'Tarefa devolvida' }
     )
@@ -433,8 +470,7 @@ async function runTaskTransition(
     // `router.refresh()` completam o resto.
     void runTaskTransition(
       task,
-      { ...task, status: 'APPROVED' },
-      (item) => item.status === 'APPROVED',
+      () => ({ ...task, status: 'APPROVED' }),
       () => adminCompleteTask(task.id),
       { fallbackMessage: 'Tarefa concluída e creditada' }
     )
@@ -446,8 +482,7 @@ async function runTaskTransition(
     // dependente é outro componente, sincronizado pelo Realtime de `profiles`.
     void runTaskTransition(
       task,
-      { ...task, status: 'NOT_DELIVERED' },
-      (item) => item.status === 'NOT_DELIVERED',
+      () => ({ ...task, status: 'NOT_DELIVERED' }),
       () => markTaskNotDelivered(task.id),
       {
         successToast: 'warning',
@@ -461,28 +496,26 @@ async function runTaskTransition(
     // reativação devolve para PENDING com prazo novo.
     // Prefere a linha autoritativa devolvida pela action (status, prazo e
     // `decay_started_at` reais) — o `run` reconcilia assim que ela responder.
-    const optimistic: Task = onHold
-      ? {
-          ...task,
-          status: 'ON_HOLD',
-          extension_requested: false,
-          extension_reason: null,
-          points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
-        }
-      : {
-          ...task,
-          status: 'PENDING',
-          due_date: new Date(
-            Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          extension_requested: false,
-          extension_reason: null,
-        }
-
     void runTaskTransition(
       task,
-      optimistic,
-      (item) => item.status === optimistic.status,
+      () =>
+        onHold
+          ? {
+              ...task,
+              status: 'ON_HOLD',
+              extension_requested: false,
+              extension_reason: null,
+              points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
+            }
+          : {
+              ...task,
+              status: 'PENDING',
+              due_date: new Date(
+                Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+              ).toISOString(),
+              extension_requested: false,
+              extension_reason: null,
+            },
       async () => {
         const result = await setTaskOnHold(task.id, onHold)
         if (result.ok && result.data?.task) {
@@ -501,22 +534,19 @@ async function runTaskTransition(
   function handleRestore(task: Task) {
     // APPROVED → PENDING com prazo reiniciado (prazo padrão da casa). Os pontos
     // já creditados são mantidos e a tarefa reaparece para o dependente.
-    const optimistic: Task = {
-      ...task,
-      status: 'PENDING',
-      due_date: new Date(
-        Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
-      ).toISOString(),
-      completed_by: null,
-      completed_at: null,
-      extension_requested: false,
-      extension_reason: null,
-    }
-
     void runTaskTransition(
       task,
-      optimistic,
-      (item) => item.status === 'PENDING',
+      () => ({
+        ...task,
+        status: 'PENDING',
+        due_date: new Date(
+          Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        completed_by: null,
+        completed_at: null,
+        extension_requested: false,
+        extension_reason: null,
+      }),
       async () => {
         const result = await restoreTask(task.id)
         // Linha autoritativa (com o `due_date`/`decay_started_at` reais).
@@ -530,30 +560,23 @@ async function runTaskTransition(
   }
 
   function handleResolveExtension(task: Task, approve: boolean, days = 3) {
-    // Esta transição NÃO muda o status na maioria dos casos (só limpa o pedido),
-    // então o rollback se identifica pelas flags — e não pelo status.
+    // Esta transição NÃO muda o status na maioria dos casos (só limpa o pedido).
     // Numa tarefa "não entregue", aprovar reabre valendo 0 pontos conforme o novo
     // prazo (a penalidade é definitiva) — o servidor recalcula o prazo, então o
     // otimista só faz a troca de seção; a linha autoritativa vem na resposta.
-    const optimistic: Task = {
-      ...task,
-      extension_requested: false,
-      extension_reason: null,
-      extension_count: approve
-        ? task.extension_count + 1
-        : task.extension_count,
-      ...(approve && task.status === 'NOT_DELIVERED'
-        ? { points: 0, status: 'PENDING' as Task['status'] }
-        : {}),
-    }
-
     void runTaskTransition(
       task,
-      optimistic,
-      (item) =>
-        item.extension_requested === false &&
-        item.extension_reason === null &&
-        item.extension_count === optimistic.extension_count,
+      () => ({
+        ...task,
+        extension_requested: false,
+        extension_reason: null,
+        extension_count: approve
+          ? task.extension_count + 1
+          : task.extension_count,
+        ...(approve && task.status === 'NOT_DELIVERED'
+          ? { points: 0, status: 'PENDING' as Task['status'] }
+          : {}),
+      }),
       async () => {
         const result = await resolveTaskExtension(task.id, approve, days)
         if (result.ok && result.data?.task) {

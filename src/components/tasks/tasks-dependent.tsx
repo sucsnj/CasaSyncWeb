@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
@@ -79,21 +79,43 @@ export function TasksDependent({
   }
 
   /**
-   * Desfaz o update otimista **só se o card ainda estiver no valor que o
-   * otimista gravou** — se o Realtime já trouxe o estado real do servidor
-   * durante o `await`, esse dado novo (mais recente que o `task` capturado no
-   * render) é preservado em vez de ser sobrescrito.
+   * Ids cujo card está num valor que **só o otimista produziu**. Ref (e não
+   * state) porque o efeito de sincronização da prop precisa ler sem se
+   * reinscrever — ver `rollbackOptimistic`.
    */
-  function rollbackOptimistic(
-    task: Task,
-    stillOptimistic: (item: Task) => boolean
-  ) {
-    setTasks((prev) =>
-      prev.map((item) =>
-        item.id === task.id && stillOptimistic(item) ? task : item
-      )
-    )
+  const optimisticIdsRef = useRef<Set<string>>(new Set())
+
+  function setOptimistic(id: string, on: boolean) {
+    if (on) optimisticIdsRef.current.add(id)
+    else optimisticIdsRef.current.delete(id)
   }
+
+  /**
+   * Desfaz o update otimista **só se o card ainda estiver num valor produzido
+   * pelo otimista** — se uma linha real chegou no meio do `await`, o id já saiu
+   * do registro e o dado novo (mais recente que o `task` capturado no render) é
+   * preservado em vez de sobrescrito.
+   *
+   * Registro e não predicado (`item.status === 'COMPLETED'`): o predicado seria
+   * indistinguível da linha que um escritor concorrente produziu (ver
+   * `rollbackOptimistic` em `tasks-admin.tsx`).
+   */
+  function rollbackOptimistic(task: Task) {
+    if (!optimisticIdsRef.current.has(task.id)) return
+    setTasks((prev) => upsertTask(prev, task))
+  }
+
+  /**
+   * Sincroniza a lista com a prop do servidor. Sem isso o `router.refresh()`
+   * não fazia nada: o componente é montado com `key={casa.id}`, que só muda na
+   * troca de casa, então o `useState(initialTasks)` de um client component já
+   * montado ignora a prop nova. Pulado enquanto há valor otimista na tela (o
+   * refresh traria o estado anterior do servidor e sobrescreveria o card).
+   */
+  useEffect(() => {
+    if (optimisticIdsRef.current.size > 0) return
+    setTasks(initialTasks)
+  }, [initialTasks])
 
   function toggleExpanded(taskId: string) {
     setExpandedIds((prev) => {
@@ -115,7 +137,11 @@ export function TasksDependent({
   usePostgresChanges<Task>({
     table: 'tasks',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (task) => setTasks((prev) => upsertTask(prev, task)),
+    onUpsert: (task) => {
+      // Chegou linha REAL do servidor → sai do registro de otimistas.
+      setOptimistic(task.id, false)
+      setTasks((prev) => upsertTask(prev, task))
+    },
     onDelete: (taskId) =>
       setTasks((prev) => prev.filter((task) => task.id !== taskId)),
   })
@@ -124,6 +150,7 @@ export function TasksDependent({
     if (pendingIds.has(task.id)) return
     setError(null)
     setPendingId(task.id, true)
+    setOptimistic(task.id, true)
     // Otimista ANTES do `await`: o card muda de seção na hora. O `completed_at`
     // é aproximado (o valor exato é o do servidor) e o Realtime/refresh corrige.
     const optimistic: Task = {
@@ -137,7 +164,7 @@ export function TasksDependent({
       try {
         const result = await completeTask(task.id)
         if (!result.ok) {
-          rollbackOptimistic(task, (item) => item.status === 'COMPLETED')
+          rollbackOptimistic(task)
           setError(result.error)
           toast.error(result.error)
           return
@@ -147,14 +174,16 @@ export function TasksDependent({
         router.refresh()
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
-        rollbackOptimistic(task, (item) => item.status === 'COMPLETED')
+        rollbackOptimistic(task)
         // Erro de rede é ambíguo: o servidor pode ter gravado e só a resposta
-        // não ter chegado. O `refresh` re-sincroniza com o estado real.
+        // não ter chegado. O `refresh` traz a linha real de volta (ver o efeito
+        // de sincronização da prop) e o Realtime confirma.
         router.refresh()
         setError(msg)
         toast.error(msg)
       } finally {
         setPendingId(task.id, false)
+        setOptimistic(task.id, false)
       }
     })()
   }
@@ -166,6 +195,7 @@ export function TasksDependent({
     const reason = String(data.get('extensionReason') ?? '')
     form.reset()
     setSendingExtension(true)
+    setOptimistic(task.id, true)
     // Otimista: o banner "Pedido de adiamento" e a somatória aparecem na hora,
     // e o botão "Pedir mais tempo" some (o card já não tem `due_date` livre).
     setTasks((prev) =>
@@ -180,12 +210,7 @@ export function TasksDependent({
       try {
         const result = await requestTaskExtension(task.id, reason)
         if (!result.ok) {
-          rollbackOptimistic(
-            task,
-            (item) =>
-              item.extension_requested === true &&
-              item.extension_reason === reason
-          )
+          rollbackOptimistic(task)
           setExtensionError(result.error)
           toast.error(result.error)
           return
@@ -195,17 +220,13 @@ export function TasksDependent({
         router.refresh()
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
-        rollbackOptimistic(
-          task,
-          (item) =>
-            item.extension_requested === true &&
-            item.extension_reason === reason
-        )
+        rollbackOptimistic(task)
         router.refresh()
         setExtensionError(msg)
         toast.error(msg)
       } finally {
         setSendingExtension(false)
+        setOptimistic(task.id, false)
       }
     })()
   }

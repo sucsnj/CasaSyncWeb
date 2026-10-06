@@ -45,6 +45,47 @@
 
 ---
 
+## Revisão do padrão de transição de tarefa — 3 problemas encontrados e corrigidos (concluído — testado em tela)
+
+### Por que essa revisão aconteceu
+Uma varredura dos últimos commits achou que o padrão de "rollback condicional" e o `router.refresh()` do caminho de erro **não faziam o que o texto dizia**. Nenhum `lint`/`typecheck`/`build` pega nada disso — é comportamento, não erro de tipo. E o sintoma é exatamente o que motivou a entrega original: **a tarefa voltava para a seção errada e só saía com F5**.
+
+### 1. O predicado de rollback era indistinguível do dado novo (o mais grave)
+O rollback só desfazia a tarefa se um **predicado** casasse (ex.: `item.status === 'APPROVED'`). O problema: numa colisão — que é exatamente o caso para onde os guards de transição existem — o **outro escritor grava o mesmo valor**, o Realtime entrega essa linha, o predicado casa, e o rollback aplica o `task` capturado no render (stale) por cima. O card voltava para uma seção que não existe mais, e o evento do Realtime **já tinha sido consumido**.
+
+| Handler | A action falha porque… | O banco já tem | O rollback fazia |
+|---|---|---|---|
+| `handleApprove` | outro ADMIN aprovou | `APPROVED` | voltava para "Concluídas" |
+| `handleAdminComplete` | outro concluiu | `APPROVED` **+ crédito feito** | voltava para "Pendentes" |
+| `handleMarkNotDelivered` | outro marcou | `NOT_DELIVERED` **+ débito** | sumia o aviso de penalidade |
+| `handleSetOnHold` | outro pausou | `ON_HOLD` | voltava para "Pendentes" |
+| `handleRestore` | outro restaurou | `PENDING` | voltava para "Aprovadas" |
+
+No `handleResolveExtension` era pior: com `approve === false` o predicado **degenerava** (as flags ficam iguais ao otimista), então o falso positivo virava a norma.
+
+**Correção:** o "ainda é o valor do otimista" virou um **registro** — `optimisticIdsRef: Set<string>` com os ids cujo card está num valor que **só o otimista produziu**. O id sai do registro quando uma **linha real** chega (`onUpsert` do Realtime), quando a **prop** chega (efeito de sincronização) e no **`finally`** da transição. Isso resolve os 7 casos de uma vez e **elimina o 4º argumento** dos handlers (um a menos para acertar errado).
+
+### 2. `router.refresh()` não fazia nada
+`TasksAdmin`/`TasksDependent` são montados com `key={casa.id}` e **não havia nenhum `useEffect` sincronizando `initialTasks` → `tasks`**. Na mesma casa a key não muda, então o refresh re-renderiza o Server Component mas o `useState` do client component já montado **ignora** a prop nova. Ou seja: o `router.refresh()` do caminho de erro de rede **não reconcilia nada** — só o Realtime corrigia, e quando ele não entrega (o cenário do bug) a tela ficava errada até o F5.
+
+**Correção:** efeito que faz `setTasks(initialTasks)` quando a prop chega, **pulado enquanto há valor otimista na tela** (nesse instante o refresh traria o estado anterior e sobrescreveria o card que acabou de mudar). Como o `finally` limpa o registro antes, o refresh pós-erro já entra.
+
+### 3. Duplicação deixada pela resolução de um conflito
+`comunicados-admin.tsx` ficou com o `upsertComunicado(res.data.comunicado)` **duas vezes** seguidas (com o comentário repetido) — o merge resolveu o conflito introduzi**ndo** código que não estava em nenhum dos dois pais. Inofensivo em comportamento, removido.
+
+### Efeito colateral do ajuste 1
+Otimista passou a ser uma **factory** (`() => Task`) em vez de um objeto pronto: pausar/restaurar calculam um prazo novo com `Date.now()`, e essa chamada na verdade rodava **durante o render** — o `react-hooks/purity` acusou como impure. Com a factory, ela é avaliada no clique, que é onde deve ser.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas). Nenhuma classe CSS nova.
+
+### Pontos de atenção
+- **Ao adicionar uma transição nova:** passe o otimista como **factory**, deixe o `runTaskTransition` marcar o id em `optimisticIdsRef` e **não** escreva um predicado de rollback.
+- **A limpeza do registro no `finally` é o que garante a ordem** — o rollback roda ANTES dela (branches mutuamente exclusivos). Inverter quebra o rollback.
+- **Ainda não corrigidos** (achados da mesma revisão, fora do escopo): o Web Push não tem listener de `NOTIFICATION_CLICK` (`public/sw.js` — app fechado abre a casa errada); 7 actions de casa não revalidam `/achievements`; `toLocaleString` em JSX sempre renderizado (`tasks-admin.tsx`, hydration mismatch); `houses-manager.tsx` usa `startTransition(async …)`; os labels de carregamento são por card e não por ação.
+
+---
+
 ## Notificações de outra casa: chip no card e troca automática ao clicar (concluído — testado em tela, sem mudança de schema)
 
 ### O problema (não previsto nas regras do app)
@@ -84,9 +125,9 @@ O botão ficava sem feedback até o fim, e a causa **não era uma só**:
 3. **Consequência prática:** o update otimista existia, mas rodava **depois** do `await`, então a tela não mudava até o servidor responder.
 
 ### O que foi feito — padrão único de transição
-- **`runTaskTransition(task, optimistic, stillOptimistic, run, options)`** (`tasks-admin.tsx`) encapsula os 5 passos: trava o botão da tarefa (id em `pendingIds: Set<string>`) → **aplica o otimista ANTES do `await`** → aguarda a action → em erro, **rollback condicional** → destrava no `finally`. Os **7 handlers** de transição (aprovar, concluir e creditar, desaprovar, marcar não entregue, pausa/reativação, restaurar, resolver adiamento) viraram uma chamada de 4-6 linhas cada.
-- **Rollback condicional, e não snapshot.** O padrão de `achievements-admin.tsx` usa `const snapshot = progress`, mas ele só é seguro porque ali a ação é travada e é uma por vez. Como aqui o ADMIN pode agir em vários cards ao mesmo tempo, um snapshot desfaria também a atualização otimista de outra tarefa — então o rollback é **por id** e só desfaz o que **ainda é o valor do otimista** (`stillOptimistic`). Isso resolveu um bug concreto: se o dependente conclui a tarefa no mesmo instante em que o ADMIN aprova, o `COMPLETED` real chega pelo Realtime **durante** o `await` e um rollback cego o sobrescrevia, pondo o card numa seção que não existia mais no banco (só saía com F5).
-- **Erro de rede reconcilia:** o `catch` faz rollback **e** `router.refresh()`, porque é ambíguo se o servidor gravou e só a resposta não chegou.
+- **`runTaskTransition(task, buildOptimistic, run, options)`** (`tasks-admin.tsx`) encapsula os 5 passos: trava o botão da tarefa (id em `pendingIds: Set<string>`) → **aplica o otimista ANTES do `await`** → aguarda a action → em erro, **rollback condicional** → destrava no `finally`. Os **7 handlers** de transição (aprovar, concluir e creditar, desaprovar, marcar não entregue, pausa/reativação, restaurar, resolver adiamento) viraram uma chamada de 4-6 linhas cada. O otimista entra como **factory** (`() => Task`) e não como objeto pronto: pausa/restauração calculam um prazo novo com `Date.now()`, o que a regra de pureza do React proíbe em tempo de render.
+- **Rollback condicional por um REGISTRO, e não snapshot.** O padrão de `achievements-admin.tsx` usa `const snapshot = progress`, mas ele só é seguro porque ali a ação é travada e é uma por vez. Como aqui o ADMIN pode agir em vários cards ao mesmo tempo, um snapshot desfaria também a atualização otimista de outra tarefa — então o rollback é **por id**, e só desfaz o card que ainda está num valor produzido pelo otimista. O "ainda é o valor do otimista" é um **registro** (`optimisticIdsRef: Set<string>`), não um predicado — ver a seção de revisão no topo, que explica por que o predicado por status não servia. O id sai do registro quando uma **linha real** chega (`onUpsert` do Realtime), quando a **prop** chega (efeito de sincronização) e no **`finally`** da transição.
+- **Erro de rede reconcilia:** o `catch` faz rollback **e** `router.refresh()`, porque é ambíguo se o servidor gravou e só a resposta não chegou. Isso só funciona por causa do efeito de sincronização da prop (ver a seção de revisão).
 - **Dependente no mesmo padrão:** `handleComplete` e `handleRequestExtension` migrados; o `useTransition` foi **removido** do arquivo. O submit do pedido usa um flag `sendingExtension` (o Modal é de instância única e o `setExtendingTask(null)` do sucesso desmonta o botão).
 - **`pending`/`startTransition` sobreviveram** apenas nos **3 botões do formulário de criação** do admin (linhas 867, 876, 896), onde a ação é de escopo único — lá o `startTransition` faz sentido. **Todos os 9 botões de transição de card foram migrados** para `pendingIds.has(task.id)` (Aprovar, Concluir e creditar, Desaprovar, Marcar como não entregue, Colocar em espera, Voltar para pendente, Aprovar/Rejeitar adiamento, Restaurar), cada um com seu label de carregamento.
 
