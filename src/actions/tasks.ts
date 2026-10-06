@@ -141,29 +141,68 @@ async function assertAdminCanManage(
 }
 
 /**
+ * Resultado de um crédito/débito em `profiles.points`. `'not_found'` é separado
+ * de `'failed'` porque as duas falhas viram mensagens diferentes na UI.
+ */
+type PointsAdjustResult = 'credited' | 'not_found' | 'failed'
+
+/**
  * Ajusta o saldo do dependente somando `delta` (pode ser negativo — o saldo
- * pode ficar negativo por penalidade de "não entregue"). Retorna `false` se o
- * perfil não existir ou a escrita falhar.
+ * pode ficar negativo por penalidade de "não entregue").
+ *
+ * **Update guardado** (`.eq('points', valor lido)`) + 1 retry relendo: sem o
+ * guard, o read-modify-write perde um crédito quando duas ações mexem no mesmo
+ * saldo ao mesmo tempo (apostar duas aprovações, ou aprovar tarefa e resgatar
+ * recompensa). Mesmo padrão de `incrementDependentStat` em `actions/stats.ts` —
+ * se o guard falha, o valor foi mudado por outra requisição entre a leitura e a
+ * escrita e a tentativa é refeita sobre o valor novo.
  */
 async function adjustPoints(
   admin: ReturnType<typeof createAdminClient>,
   profileId: string,
   delta: number
-): Promise<boolean> {
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', profileId)
-    .maybeSingle()
+): Promise<PointsAdjustResult> {
+  let current: number | null = null
 
-  if (!profile) return false
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (current === null) {
+      const { data: profile, error } = await admin
+        .from('profiles')
+        .select('points')
+        .eq('id', profileId)
+        .maybeSingle()
 
-  const { error } = await admin
-    .from('profiles')
-    .update({ points: profile.points + delta })
-    .eq('id', profileId)
+      if (error) {
+        console.error('[TASKS] Falha ao ler o saldo do dependente:', error)
+        return 'failed'
+      }
+      if (!profile) return 'not_found'
+      // `points` é `int not null` (default 0); o `?? 0` é só uma rede de
+      // segurança para um dado legado/null — sem ele, `null + delta` seria NaN e
+      // o guard `.eq('points', …)` compararia contra NaN, nunca casando.
+      current = profile.points ?? 0
+    }
 
-  return !error
+    const { data: updated, error } = await admin
+      .from('profiles')
+      .update({ points: current + delta })
+      .eq('id', profileId)
+      .eq('points', current) // guard: não sobrescreve um saldo mudado na hora
+      .select('id')
+
+    if (error) {
+      console.error('[TASKS] Falha ao ajustar o saldo do dependente:', error)
+      return 'failed'
+    }
+    if (updated && updated.length > 0) return 'credited'
+
+    // Guard falhou: outra requisição mexeu no saldo. Relê e tenta de novo.
+    current = null
+  }
+
+  // Contenção extrema (2 colisões seguidas): a tarefa volta ao estado
+  // anterior pelo rollback do chamador — nunca fica aprovada sem crédito.
+  return 'failed'
 }
 
 /** Detecta fuso embutido no fim da string (Z ou ±HH:MM). */
@@ -476,8 +515,29 @@ export async function updateTask(
 
   if (Object.keys(updates).length === 0) return { ok: true }
 
-  const { error } = await admin.from('tasks').update(updates).eq('id', taskId)
+  // Guarda de transição: `.in('status', …)` aceita só os 4 status editáveis (ver
+  // `isEditableStatus`) e `.eq('extension_requested', …)` é a própria checagem de
+  // "não há pedido pendente". Sem o guard, a validação acima (que é uma LEITURA
+  // separada) fica racing com o write: o dependente concluindo a tarefa, ou o
+  // ADMIN pausando/aprovando, no meio da edição faria o `update` gravar por
+  // cima de uma tarefa já concluída/aprovada — que é o que a regra proíbe. Ele
+  // também protege a reaberação de `NOT_DELIVERED` (`updates.status`) de cair
+  // sobre um `APPROVED`.
+  const { data: updated, error } = await admin
+    .from('tasks')
+    .update(updates)
+    .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED', 'ON_HOLD'])
+    .select('id')
+
   if (error) return { ok: false, error: 'Falha ao salvar a tarefa.' }
+  if (!updated || updated.length === 0) {
+    return {
+      ok: false,
+      error:
+        'A tarefa mudou de estado agora há pouco (o dependente pode tê-la concluído).',
+    }
+  }
 
   revalidatePath('/tasks')
   return { ok: true }
@@ -540,7 +600,15 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'Tarefa já finalizada.' }
   }
 
-  const { error } = await admin
+  // Guarda de transição: `.in('status', ['PENDING','IN_PROGRESS'])`. Sem ela,
+  // a checagem acima (que é uma LEITURA separada) fica racing com o write: se o
+  // ADMIN aprovar entre as duas, esta chamada gravaria `COMPLETED` por cima do
+  // `APPROVED` e a tarefa voltaria a "aguardando aprovação" depois de já ter
+  // sido creditada. Com o guard, **o primeiro clique vence** e o segundo é
+  // recusado — o mesmo padrão das demais transições (`approveTask`,
+  // `rejectCompletedTask`, `markTaskNotDelivered`, `setTaskOnHold`,
+  // `restoreTask`).
+  const { data: completed, error } = await admin
     .from('tasks')
     .update({
       status: 'COMPLETED',
@@ -548,8 +616,17 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
       completed_at: new Date().toISOString(),
     })
     .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS'])
+    .select('id')
 
   if (error) return { ok: false, error: 'Falha ao concluir a tarefa.' }
+  if (!completed || completed.length === 0) {
+    return {
+      ok: false,
+      error:
+        'Esta tarefa mudou de estado agora há pouco (o administrador pode tê-la aprovado).',
+    }
+  }
 
   const notifInput: NotifyHouseInput = {
     houseId: house.id,
@@ -632,26 +709,27 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'A tarefa já foi aprovada por outra pessoa.' }
   }
 
-  const { data: dependent } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', task.assigned_to)
-    .maybeSingle()
-
-  if (!dependent) {
-    await admin.from('tasks').update({ status: 'COMPLETED' }).eq('id', taskId)
-    return { ok: false, error: 'Dependente não encontrado. Crédito revertido.' }
-  }
-
-  const { error: pointsError } = await admin
-    .from('profiles')
-    .update({ points: dependent.points + currentPoints })
-    .eq('id', task.assigned_to)
-
-  if (pointsError) {
+  // Crédito com update guardado (`adjustPoints`) — o read-modify-write inline
+  // perdia um crédito quando duas aprovações (ou uma aprovação e um resgate)
+  // mexessem no mesmo saldo ao mesmo tempo.
+  const credit = await adjustPoints(admin, task.assigned_to, currentPoints)
+  if (credit !== 'credited') {
     // Rollback: devolve a tarefa ao estado anterior para não perder o histórico.
-    await admin.from('tasks').update({ status: 'COMPLETED' }).eq('id', taskId)
-    return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
+    // `.eq('status','APPROVED')` para o rollback não sobrescrever o que outro
+    // ADMIN mexeu na janela entre a transição e esta tentativa de crédito (ex.:
+    // um `restoreTask` parallelo já devolveu a tarefa para `PENDING`).
+    await admin
+      .from('tasks')
+      .update({ status: 'COMPLETED' })
+      .eq('id', taskId)
+      .eq('status', 'APPROVED')
+    return {
+      ok: false,
+      error:
+        credit === 'not_found'
+          ? 'Dependente não encontrado. Crédito revertido.'
+          : 'Falha ao creditar pontos. Tarefa revertida.',
+    }
   }
 
   await notifyUser(admin, {
@@ -815,8 +893,15 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
   }
 
   const debited = await adjustPoints(admin, task.assigned_to, -currentPoints)
-  if (!debited) {
-    await admin.from('tasks').update({ status: previousStatus }).eq('id', taskId)
+  if (debited !== 'credited') {
+    // Rollback só se a tarefa ainda for a `NOT_DELIVERED` que esta chamada
+    // gravou — se outro ADMIN já a mudou na janela do débito, o rollback não
+    // sobrescreve o estado dele.
+    await admin
+      .from('tasks')
+      .update({ status: previousStatus })
+      .eq('id', taskId)
+      .eq('status', 'NOT_DELIVERED')
     return { ok: false, error: 'Falha ao debitar os pontos. Ação revertida.' }
   }
 
@@ -1158,30 +1243,11 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
     return { ok: false, error: 'A tarefa já foi finalizada.' }
   }
 
-  const { data: dependent } = await admin
-    .from('profiles')
-    .select('points')
-    .eq('id', task.assigned_to)
-    .maybeSingle()
-
-  if (!dependent) {
-    await admin
-      .from('tasks')
-      .update({
-        status: task.status,
-        completed_by: null,
-        completed_at: null,
-      })
-      .eq('id', taskId)
-    return { ok: false, error: 'Dependente não encontrado. Crédito revertido.' }
-  }
-
-  const { error: pointsError } = await admin
-    .from('profiles')
-    .update({ points: dependent.points + currentPoints })
-    .eq('id', task.assigned_to)
-
-  if (pointsError) {
+  // Crédito com update guardado (`adjustPoints`) — mesmo caminho do
+  // `approveTask`, então as duas aprovações compartilham a defesa contra
+  // saldo mudado na hora.
+  const credit = await adjustPoints(admin, task.assigned_to, currentPoints)
+  if (credit !== 'credited') {
     // Rollback: devolve a tarefa ao estado anterior.
     await admin
       .from('tasks')
@@ -1191,7 +1257,14 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
         completed_at: null,
       })
       .eq('id', taskId)
-    return { ok: false, error: 'Falha ao creditar pontos. Tarefa revertida.' }
+      .eq('status', 'APPROVED') // rollback não sobrescreve estado de outro ADMIN
+    return {
+      ok: false,
+      error:
+        credit === 'not_found'
+          ? 'Dependente não encontrado. Crédito revertido.'
+          : 'Falha ao creditar pontos. Tarefa revertida.',
+    }
   }
 
   await notifyUser(admin, {
@@ -1279,12 +1352,27 @@ export async function requestTaskExtension(
     }
   }
 
-  const { error } = await admin
+  // Guarda de transição: `.in('status', …)` são os 3 status em que o pedido é
+  // válido e `.eq('extension_requested', false)` é a checagem de "não há pedido
+  // pendente". Sem o guard, a validação acima (LEITURA separada) fica racing com
+  // o write: se o ADMIN pausar, aprovar ou concluir a tarefa no mesmo instante, o
+  // pedido era gravado numa tarefa que não deveria mais ter um — a pausa descarta
+  // o pedido pendente de propósito (ADR-0018). Também impede pedido duplicado.
+  const { data: requested, error } = await admin
     .from('tasks')
     .update({ extension_requested: true, extension_reason: justification })
     .eq('id', taskId)
+    .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+    .eq('extension_requested', false)
+    .select('id')
 
   if (error) return { ok: false, error: 'Falha ao registrar o pedido.' }
+  if (!requested || requested.length === 0) {
+    return {
+      ok: false,
+      error: 'A tarefa mudou de estado agora há pouco. Atualize a tela e tente de novo.',
+    }
+  }
 
   await notifyHouse(admin, {
     houseId: house.id,
@@ -1384,7 +1472,7 @@ export async function resolveTaskExtension(
   // "Aprovar (+N dias)" lêm o pedido pendente e aplicam o adiamento DUAS vezes
   // (o que também somaria o contador duas vezes).
   // `.select('*')` (e não só `'id'`) devolve a linha já gravada: o `due_date`
-  // novo é calculado aqui, no servidor, e é isso que o card mostra. Sem a
+  // novo é calculado AQUI, no servidor, e é isso que o card mostra. Sem a
   // releitura, o client teria de refazer o cálculo (base = prazo futuro, senão
   // agora) e o prazo só apareceria novo depois do F5.
   const { data: resolved, error } = await admin

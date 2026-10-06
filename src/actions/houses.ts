@@ -160,6 +160,7 @@ export async function selectHouse(houseId: string): Promise<ActionResult> {
   revalidatePath('/dashboard/admin/houses')
   revalidatePath('/tasks')
   revalidatePath('/rewards')
+  revalidatePath('/achievements')
 
   return { ok: true }
 }

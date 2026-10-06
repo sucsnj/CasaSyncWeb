@@ -26,6 +26,107 @@
   a barra de progresso e a pill de pontos desceram juntos para a base do card
   (`mt-auto`) — sem isso o botão ficava grudado no texto, com um vão vazio
   embaixo. Testado em tela. Ver a seção no topo do documento.
+- **Delay do feedback "Alterações salvas" virou constante ajustável:** o tempo em
+  que o botão de ação do card fica escondido durante a edição de campo agora é a
+  constante `SAVED_FEEDBACK_MS` no topo do `debounced-field.tsx` — pode ser
+  mudado **para cima ou para baixo** conforme o tempo de leitura desejado. E o
+  timer passou a usar uma ref própria, para que o ciclo anterior seja cancelado.
+  Testado em tela. Ver a seção no topo do documento.
+- **Notificações multi-casa:** o sino é global e as notificações de todas as
+  casas do ADMIN se misturam. Agora cada notificação de **outra** casa mostra um
+  **chip com o nome dela**, e ao clicar o app **troca a casa ativa antes de
+  navegar** (com aviso em toast). Testado em tela. Ver a seção no topo.
+- **Feedback imediato + guards em todas as transições de tarefa:** o botão reage
+  no mesmo quadro (otimista antes do `await`, com rollback condicional) e
+  **toda** escrita em `tasks` ganhou guard de transição — `completeTask`,
+  `requestTaskExtension`, `updateTask` e os 3 rollbacks estavam sem ele, e o
+  `completeTask` permitia sobrescrever um `APPROVED` já creditado. Ver a seção no
+  topo do documento.
+
+---
+
+## Notificações de outra casa: chip no card e troca automática ao clicar (concluído — testado em tela, sem mudança de schema)
+
+### O problema (não previsto nas regras do app)
+- O **sino é global** (fica no header de todas as telas) e cada linha de `notifications` carrega a casa de origem (`house_id`). Com o ADMIN multi-casa, as notificações de **todas** as casas se misturam num painel só.
+- Ao clicar, o sino fazia `router.push(item.link)`. O `link` é **relativo** (`/tasks`, `/rewards`, `/achievements`) e a página resolve pela **casa ativa** — então clicar na notificação da casa B enquanto a ativa é a A levava para a tela **da casa A**, onde a tarefa não estava. O `AGENTS.md` §3 previa "destinatário = o outro lado", mas nunca a ambiguidade de casa.
+
+### O que foi feito
+- **Chip de contexto antes do clique (a causa, não só o efeito):** cada notificação de **outra** casa ganha um chip com o nome dela (`House` + nome) ao lado do título. Sem isso o admin não tinha como saber onde estava clicando — a informação tem de chegar *antes* da decisão. Notificações da casa ativa ficam sem chip (o sino do dia a dia não é poluído).
+- **Troca de casa antes de navegar:** `openItem` virou `async` e, quando `item.house_id !== activeHouseId`, chama **`selectHouse(item.house_id)`** e só então navega. Três detalhes obrigatórios:
+  - **esperar o `selectHouse`** — o cookie é `httpOnly`; se o `push` rodar antes da gravação, o fetch do RSC ainda lê o cookie velho;
+  - **`router.push(link)` + `router.refresh()`** — `push` para a **mesma** rota é no-op e não traz props novas; o `refresh` é o que faz a página renderizar a casa nova (é o caso `/tasks` → `/tasks`);
+  - **falha do `selectHouse` → não navega** (o ADMIN pode ter saído daquela casa), apenas mostra o erro.
+- **Aviso em toast**, não modal: o clique numa notificação já é um gesto informado pelo chip, e a troca é reversível — um modal só adicionaria atrito.
+- **Guard por papel:** `isOtherHouse` só é verdade para o ADMIN. O dependente pertence a uma casa só, então nunca vê notificação de outra (e o layout dele passa só o `activeHouseId`, sem mapa de nomes).
+- **Propagação das props** `activeHouseId` + `houseNames` (`house_id → nome`): `DashboardNav` só encaminha ao sino; os **5 call sites** passam os valores. `getAdminHouses(user.id)` entra no `Promise.all` das 3 páginas admin-aware e do layout admin — **custo zero de query**, porque `getActiveAdminHouse()` já chama `getAdminHouses()` por dentro e ambos são `React.cache`. O layout admin também passou a `Promise.all` (estava sequencial).
+- **`selectHouse` agora revalida `/achievements`:** revalidava 4 rotas e `/achievements` não estava entre elas, apesar de ser uma das telas da nav — e é justamente para lá que a correção pode navegar.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Classes do chip conferidas **no CSS gerado**, como manda o `AGENTS.md` §2: `.bg-slate-200`, `.text-slate-600`, `.size-3` e as reutilizadas (`.inline-flex`, `.rounded-full`, `.px-2`, `.py-0.5`, `.text-xs`, `.font-medium`, `.gap-1`, `.shrink-0`) — todas presentes. **Testado em tela** pelo usuário com 2 casas.
+
+### Pontos de atenção
+- **Limitação aceita (verificada em tela):** há um **delay perceptível** quando o admin já está no mesmo endpoint do `link` (ex.: está em `/tasks` e clica numa notificação cujo link é `/tasks`) — o `router.push` é no-op e quem traz a tela nova é o `router.refresh()`, logo dá uma sensação de espera curta antes de o dado trocar. Irrelevante para o usuário agora; se incomodar depois, a saída é trocar a navegação por `router.replace` + refresh em um único passo.
+- **O nome da casa vem de uma prop do servidor.** Se uma notificação chegar de uma casa que o ADMIN **não** controla mais (ex.: foi expulso), o chip **não** aparece (não há nome) e o clique mostra o erro do `selectHouse` sem navegar.
+- **`houseNames` só é enviado ao ADMIN.** É por isso que o chip some sozinho quando o nome não existe, em vez de aparecer um id cru.
+- **Não há filtro por casa no sino** (decisão consciente): as notificações continuam misturadas, o que preserva a visibilidade de todas as casas de uma vez — filtrar criaria o buraco de o ADMIN só ver alertas da casa ativa.
+- **`selectHouse` sem `data`:** retorna só `{ ok: true }`. O nome da casa nova vem do `houseNames` já em mãos no client, então não foi preciso mudar a assinatura da action.
+- Requer deploy para valer online.
+
+---
+
+## Feedback imediato em todas as transições de tarefa + guard obrigatório (implementado — testado em tela, sem mudança de schema)
+
+### Diagnóstico: por que "Aprovar" demorava
+O botão ficava sem feedback até o fim, e a causa **não era uma só**:
+1. **O feedback já estava escrito no JSX, mas era código morto.** Os botões usavam `pending` do `useTransition` (`{pending ? 'Aprovando...' : ...}`, `disabled={pending}`) — e `startTransition(async …)` **nunca marca `isPending`** (o React não rastreia a Promise devolvida pelo callback). `isPending` não era usado em **nenhum** lugar do projeto: todo `disabled={pending}` era inerte, e os labels nunca apareciam.
+2. **A action fazia ~20-28 round-trips sequenciais**, sem nenhum `Promise.all`: `auth.getUser()` (HTTP GoTrue), sessão, casa, `house_settings` do decaimento, status, saldo, `notifyUser`, **HTTP de Web Push**, e as 2 chamadas de `registerAchievementProgress` (que repetem um ciclo de ~6 queries cada). Nada disso tinha a ver com o que o usuário via.
+3. **Consequência prática:** o update otimista existia, mas rodava **depois** do `await`, então a tela não mudava até o servidor responder.
+
+### O que foi feito — padrão único de transição
+- **`runTaskTransition(task, optimistic, stillOptimistic, run, options)`** (`tasks-admin.tsx`) encapsula os 5 passos: trava o botão da tarefa (id em `pendingIds: Set<string>`) → **aplica o otimista ANTES do `await`** → aguarda a action → em erro, **rollback condicional** → destrava no `finally`. Os **7 handlers** de transição (aprovar, concluir e creditar, desaprovar, marcar não entregue, pausa/reativação, restaurar, resolver adiamento) viraram uma chamada de 4-6 linhas cada.
+- **Rollback condicional, e não snapshot.** O padrão de `achievements-admin.tsx` usa `const snapshot = progress`, mas ele só é seguro porque ali a ação é travada e é uma por vez. Como aqui o ADMIN pode agir em vários cards ao mesmo tempo, um snapshot desfaria também a atualização otimista de outra tarefa — então o rollback é **por id** e só desfaz o que **ainda é o valor do otimista** (`stillOptimistic`). Isso resolveu um bug concreto: se o dependente conclui a tarefa no mesmo instante em que o ADMIN aprova, o `COMPLETED` real chega pelo Realtime **durante** o `await` e um rollback cego o sobrescrevia, pondo o card numa seção que não existia mais no banco (só saía com F5).
+- **Erro de rede reconcilia:** o `catch` faz rollback **e** `router.refresh()`, porque é ambíguo se o servidor gravou e só a resposta não chegou.
+- **Dependente no mesmo padrão:** `handleComplete` e `handleRequestExtension` migrados; o `useTransition` foi **removido** do arquivo. O submit do pedido usa um flag `sendingExtension` (o Modal é de instância única e o `setExtendingTask(null)` do sucesso desmonta o botão).
+- **`pending`/`startTransition` sobreviveram** apenas nos **3 botões do formulário de criação** do admin (linhas 867, 876, 896), onde a ação é de escopo único — lá o `startTransition` faz sentido. **Todos os 9 botões de transição de card foram migrados** para `pendingIds.has(task.id)` (Aprovar, Concluir e creditar, Desaprovar, Marcar como não entregue, Colocar em espera, Voltar para pendente, Aprovar/Rejeitar adiamento, Restaurar), cada um com seu label de carregamento.
+
+### Guard obrigatório em toda escrita em `tasks` (a parte que corrigiu bug real)
+Varredura de todas as escritas em `tasks` — **as 15 agora têm guard**:
+- **`completeTask` era a única transição sem guard.** Validava o status numa **leitura separada** e gravava `status: 'COMPLETED'` com `.eq('id')` puro: se o ADMIN aprovasse entre as duas, o `COMPLETED` caía **por cima** de um `APPROVED` já creditado e a tarefa voltava a "aguardando aprovação". Ganhou `.in('status', ['PENDING','IN_PROGRESS'])`.
+- **`requestTaskExtension` também não tinha** — o pedido era gravado sem conferir nada, então se o ADMIN pausasse/aprovasse no mesmo instante, o pedido era recriado numa tarefa que a pausa **descarta de propósito** (ADR-0018). Ganhou `.in('status', …)` + `.eq('extension_requested', false)` (que também elimina pedido duplicado entre dispositivos).
+- **`updateTask` não tinha** e pode **mudar status** (reabertura de `NOT_DELIVERED`). Sem guard, o `DebouncedField` gravava título por cima de uma tarefa recém-concluída — o que a regra proíbe. Ganhou `.in('status', [4 status editáveis])`.
+- **3 rollbacks sem guard** (`approveTask`, `markTaskNotDelivered`, `adminCompleteTask`): revertiam o status com `.eq('id')` puro e podiam sobrescrever o que outro ADMIN mexeu na janela do crédito. Ganharam `.eq('status', <o que a chamada gravou>)`.
+- **`profiles.points` (crédito/débito) tinha read-modify-write sem guard** — duas aprovações no mesmo intervalo podiam **perder um crédito**. O `adjustPoints` ganhou update com `.eq('points', valor lido)` + 1 retry relendo (mesmo padrão de `incrementDependentStat`); `approveTask`/`adminCompleteTask` passaram a usá-lo, o que **removeu ~46 linhas duplicadas**. O retorno virou `'credited' | 'not_found' | 'failed'` para preservar as duas mensagens de erro distintas.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas). **Testado em tela** pelo usuário, inclusive no cenário de colisão dependente⇄admin.
+
+### Pontos de atenção
+- **A latência real (~2-4s) continua.** O que mudou foi a **percepção** (resposta no mesmo quadro). O caminho crítico ainda tem ~5-6 round-trips; a correção de verdade seria **`after()` do Next 16** (tirar notificação, push e conquistas para fora da resposta), estável e com `waitUntil` na Vercel — **decidido por ora não fazer**.
+- **O guard do push HTTP segue no caminho crítico**, apesar do comentário "não bloqueia" em `notifications.ts`: o `await sendPushToUser(...)` bloqueia a action (é a chamada mais lenta: 200ms-3s).
+- **`isPending` nunca foi tratado no projeto inteiro** — se surgir `startTransition(async …)` novo, ele **não** dá feedback. Usar `runTaskTransition` (ou o `void (async …)` dos handlers do dependente).
+- **Não reintroduzir `disabled={pending}`** nos cards de tarefa: além de inerte, o `pending` é **global de tela** e bloquearia os outros cards. O que se quer é por id.
+- Requer deploy para valer online.
+
+---
+
+## Delay do feedback de edição agora é uma constante ajustável (concluído — testado em tela, sem mudança de schema)
+
+### O que foi feito
+- **Ponto de partida:** o botão de ação do card ("Aprovar Tarefa e Creditar") é escondido durante a edição de campo e no lugar aparece "⏳ Salvando alterações..." → "✓ Alterações salvas" (ver a seção histórica abaixo). A janela entre o "✓ Alterações salvas" e o botão voltar era um **literal solto** no `setTimeout`, com um comentário justificando a escolha.
+- **O que mudou:**
+  - O literal virou a constante **`SAVED_FEEDBACK_MS`**, declarada no topo do `debounced-field.tsx`, com o porquê no JSDoc. É o **único** ponto a mexer para mudar a janela, em qualquer direção — para menos ou para mais.
+  - A janela encolheu porque o salvamento ficou rápido com as correções recentes de transição (feedback imediato e guard de transição no servidor): o valor anterior só fazia sentido com o salvamento lento de antes.
+- **Bug preexistente que a janela curta revelou:** o `setTimeout` do "voltar para idle" ficava **fora de qualquer ref** (ao contrário do `timerRef`, que segura o debounce e é limpo no unmount). Com janela longa ele raramente aparecia; encurtando, virou frequente: retocar o campo logo após salvar deixava o **timer velho derrubar o feedback do salvamento novo** — o botão voltava segundos antes do previsto. Agora o timer vive numa **ref própria** (`savedTimerRef`) e o anterior é **cancelado** antes de agendar o próximo, além de ser limpo no unmount.
+- **O que não mudou:** o ciclo `saving → saved → idle` é o mesmo, o caminho de **erro** continua zerando o estado imediatamente (sem esperar a janela), e `tasks-admin.tsx` não foi tocado — nem o `savingStatuses`, nem o ternário que remove o botão do DOM, nem os `onSavingStatusChange` dos 4 campos.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ (14 rotas, `ƒ Proxy` ativo). Nenhuma classe CSS nova, então dispensa a conferência no bundle do `AGENTS.md` §2. **Testado em tela** pelo usuário, incluindo o caso de retocar o campo dentro da janela (o feedback acompanha cada ciclo corretamente).
+
+### Pontos de atenção
+- **Para mudar a janela, mexer só em `SAVED_FEEDBACK_MS`** (topo do `debounced-field.tsx`) — nunca no `setTimeout` inline, que fica logo abaixo e depende da ref.
+- **Não remover o `clearTimeout` da `savedTimerRef`**: ele só é invisível com janela longa. Encurtar a janela sem ele traz de volta o bug do timer antigo derrubando o feedback novo.
+- O efeito colateral pretendido de encurtar: o botão de ação volta mais cedo, o que é o desejado (o ADMIN não fica impedido de aprovar por causa de um texto na tela). Se voltar cedo demais em uso real, é só aumentar a constante.
 
 ---
 
@@ -939,6 +1040,10 @@ alter publication supabase_realtime add table public.dependent_achievements;
 - **Mudanças:**
   - `tasks-admin.tsx`: adicionado `onSavingStatusChange` nos `DebouncedField` de título e descrição, atualizando `savingStatuses[task.id]`.
   - O JSX condicional (já existente) oculta o botão "Aprovar Tarefa e Creditar" e "Marcar como não entregue" enquanto o status for `'saving'` ou `'saved'`, exibindo "⏳ Salvando alterações..." / "✓ Alterações salvas" no lugar.
+
+### Pontos de atenção
+- **A janela do "✓ Alterações salvas" é hoje a constante `SAVED_FEEDBACK_MS`** (topo do `debounced-field.tsx`), ajustável para cima ou para baixo — ver a seção no topo do documento. Antes era um literal solto no `setTimeout`.
+- **O botão "Colocar em espera" também some** durante a edição, pela mesma condição (`savingStatuses[task.id] === 'idle'`), embora não tenha sido esse o problema relatado aqui.
 
 ### Verificação
 `npm run lint` ✓ (só warnings esperados) · `npm run typecheck` ✓ · `npm run build` ✓ (13 rotas, `ƒ Proxy` ativo).

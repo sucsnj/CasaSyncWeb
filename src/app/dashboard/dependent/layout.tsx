@@ -66,6 +66,9 @@ export default async function DependentDashboardLayout({
         quickMessageSettings={quickMessageSettings}
         hasClaimableAchievement={hasClaimable}
         punishment={punishment}
+        // O dependente pertence a UMA casa só, então nunca há notificação de
+        // outra — o id basta e nenhum mapa de nomes é necessário.
+        activeHouseId={house?.id ?? null}
       />
       {user && <RealtimeToastListener userId={user.id} />}
       {user && <PushNotificationsSetup userId={user.id} />}

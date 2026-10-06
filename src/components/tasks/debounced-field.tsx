@@ -4,6 +4,16 @@ import { useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/actions/types'
 
 /**
+ * Quanto tempo "✓ Alterações salvas" fica visível antes do botão de ação do
+ * card voltar (é o que esconde o botão enquanto a edição está em curso).
+ *
+ * Curto de propósito: o salvamento é rápido e o ADMIN não deve ficar impedido
+ * de aprovar a tarefa por causa de um texto na tela. Era 30s, o que só fazia
+ * sentido com o salvamento lento do passado.
+ */
+const SAVED_FEEDBACK_MS = 5000
+
+/**
  * Ele deve expor o callback de estado de salvamento
  * onSavingStatusChange('saving' | 'saved' | 'idle')
  * para notificar o componente pai quando o usuário estiver digitando ou focando no campo.
@@ -43,6 +53,11 @@ export function DebouncedField({
   const [error, setError] = useState<string | null>(null)
   const focusedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Timer do "voltar para idle" após o feedback de salvo. Precisa da ref porque
+  // o anterior tem de ser CANCELADO: com a janela curta de
+  // `SAVED_FEEDBACK_MS`, uma edição logo após outra deixaria o timer velho
+  // derrubar o feedback do salvamento novo (o debounce já tem o `timerRef`).
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
 
   function handleSavingStatusChange(status: 'saving' | 'saved' | 'idle') {
@@ -63,6 +78,7 @@ export function DebouncedField({
     return () => {
       mountedRef.current = false
       if (timerRef.current) clearTimeout(timerRef.current)
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
     }
   }, [])
 
@@ -79,10 +95,13 @@ export function DebouncedField({
     }
     handleSavingStatusChange('saved')
 
-    // Intencionalmente longo para dar tempo do usuário ler a mensagem "Alterações salvas"
-    setTimeout(() => {
+    // Janela curta (5s) para o ADMIN ler "Alterações salvas" antes do botão de
+    // ação voltar. O timer anterior é cancelado: sem isso, retocar o campo logo
+    // em seguida deixaria o timer velho derrubar o feedback do salvamento novo.
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+    savedTimerRef.current = setTimeout(() => {
       handleSavingStatusChange('idle')
-    }, 30000)
+    }, SAVED_FEEDBACK_MS)
   }
 
   function schedule(next: string) {
