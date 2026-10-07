@@ -25,7 +25,6 @@ import {
   hasTypedAlertConfirmation,
 } from '@/utils/alert-queue'
 import { getHouseTimezoneSettings } from '@/utils/house-settings'
-import { timeServer } from '@/utils/perf'
 import type { ActionResult } from './types'
 
 /**
@@ -343,9 +342,7 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
   const { user, profile } = await getSessionProfile()
   if (!user || profile?.user_role !== 'DEPENDENT') return []
 
-  // Medições TEMPORÁRIAS (ver `src/utils/perf.ts`): esta função roda em todas as 4
-  // telas do dependente e é a de mais round-trips do caminho de render.
-  const house = await timeServer('comunicados/casa', () => getDependentHouse(user.id))
+    const house = await getDependentHouse(user.id)
   if (!house) return []
 
   let admin: ReturnType<typeof createAdminClient>
@@ -355,25 +352,21 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
     return []
   }
 
-  const { data: comunicados } = await timeServer('comunicados/consulta', () =>
-    admin
-      .from('comunicados')
-      .select('*')
-      .eq('house_id', house.id)
-      .eq('published', true)
-      .order('created_at', { ascending: true })
-  )
+  const { data: comunicados } = await admin
+    .from('comunicados')
+    .select('*')
+    .eq('house_id', house.id)
+    .eq('published', true)
+    .order('created_at', { ascending: true })
 
   if (!comunicados || comunicados.length === 0) return []
 
   const ids = comunicados.map((comunicado) => comunicado.id)
-  const { data: deliveries } = await timeServer('comunicados/entregas', () =>
-    admin
-      .from('comunicado_deliveries')
-      .select('comunicado_id, delivered_count, last_confirmed_at')
-      .eq('profile_id', user.id)
-      .in('comunicado_id', ids)
-  )
+  const { data: deliveries } = await admin
+    .from('comunicado_deliveries')
+    .select('comunicado_id, delivered_count, last_confirmed_at')
+    .eq('profile_id', user.id)
+    .in('comunicado_id', ids)
 
   const deliveriesByComunicado = new Map(
     (deliveries ?? []).map((delivery) => [delivery.comunicado_id, delivery])
@@ -382,9 +375,7 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
   const now = new Date()
   const due: DueComunicado[] = []
   // Fuso da casa (chave `house_timezone`): `repeat_time` é hora de parede dela.
-  const { timezone } = await timeServer('comunicados/fuso', () =>
-    getHouseTimezoneSettings(house.id)
-  )
+  const { timezone } = await getHouseTimezoneSettings(house.id)
 
   for (const comunicado of comunicados) {
     const delivery = deliveriesByComunicado.get(comunicado.id)

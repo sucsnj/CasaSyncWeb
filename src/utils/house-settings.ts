@@ -23,7 +23,6 @@ import {
   type TaskSlaSettings,
 } from '@/utils/settings'
 import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
-import { timeServer } from '@/utils/perf'
 
 type SettingsRow = { key: HouseSettingsKey; value: Record<string, unknown> | null }
 
@@ -44,12 +43,12 @@ const getHouseSettingsMap = cache(
   async (houseId: string): Promise<Map<HouseSettingsKey, Record<string, unknown> | null>> => {
     const admin = createAdminClient()
 
-    // Medido por instrumentação TEMPORÁRIA (ver `src/utils/perf.ts`): deve sair
-    // **1 linha por casa por request** (era 1 por chave), mesmo com as 9 chaves em
-    // uso. Se aparecer repetido no mesmo request, o `React.cache` perdeu o efeito.
-    const { data } = await timeServer('settings/leitura', () =>
-      admin.from('house_settings').select('key, value').eq('house_id', houseId)
-    )
+    // Uma linha por casa por request (era uma por chave): confirmado em produção
+    // pela instrumentação de latência (`n=21, mediana 82ms, uma por request`).
+    const { data } = await admin
+      .from('house_settings')
+      .select('key, value')
+      .eq('house_id', houseId)
 
     const map = new Map<HouseSettingsKey, Record<string, unknown> | null>()
     for (const row of (data ?? []) as SettingsRow[]) {

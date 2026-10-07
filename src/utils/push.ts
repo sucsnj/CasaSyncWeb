@@ -18,6 +18,34 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+/**
+ * A subscription fica **ligada** à `applicationServerKey` com que foi criada. Se
+ * a chave VAPID for rotacionada depois, o servidor passa a assinar com a privada
+ * nova e o FCM responde **403 para sempre** para aquele aparelho.
+ *
+ * Sem esta comparação, o `return existing` devolvia a subscription velha sem
+ * nunca olhar a chave — então a rotação prendia o dispositivo num 403
+ * permanente (e a linha continuava no banco, errando a cada envio).
+ *
+ * Quando o navegador não expõe `options.applicationServerKey`, devolvemos `true`
+ * (mantém o comportamento antigo): sem informação para comparar, trocar de
+ * assinatura a cada abertura seria pior.
+ */
+function subscriptionMatchesCurrentKey(
+  subscription: PushSubscription,
+  currentKey: Uint8Array
+): boolean {
+  const existing = subscription.options?.applicationServerKey
+  if (!existing) return true
+
+  const view = new Uint8Array(existing)
+  if (view.length !== currentKey.length) return false
+  for (let i = 0; i < view.length; i += 1) {
+    if (view[i] !== currentKey[i]) return false
+  }
+  return true
+}
+
 export async function subscribeToPush(registration: ServiceWorkerRegistration): Promise<PushSubscription | null> {
   if (!('pushManager' in registration)) {
     console.warn('PushManager not supported');
@@ -26,16 +54,33 @@ export async function subscribeToPush(registration: ServiceWorkerRegistration): 
 
   try {
     const existing = await registration.pushManager.getSubscription();
-    if (existing) {
-      return existing;
+
+    // Chave lida aqui (e não no topo) para que uma subscription já existente
+    // continue funcionando mesmo com a env var ausente — é o comportamento de
+    // antes, e só o caminho de recriar precisa da chave.
+    let currentKey: Uint8Array | null = null;
+    try {
+      currentKey = urlBase64ToUint8Array(getVapidPublicKey());
+    } catch {
+      currentKey = null;
     }
 
-    const vapidPublicKey = getVapidPublicKey();
-    const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+    if (existing) {
+      if (!currentKey || subscriptionMatchesCurrentKey(existing, currentKey)) {
+        return existing;
+      }
+      // Chave rotacionada: a subscription antiga é inválida para o servidor
+      // (403 eterno). Remove e refaz com a chave atual — aí o aparelho se
+      // conserta sozinho na próxima abertura do app.
+      console.log('[push] Chave VAPID mudou: refazendo a subscription');
+      await existing.unsubscribe();
+    }
+
+    if (!currentKey) return null;
 
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: applicationServerKey as BufferSource,
+      applicationServerKey: currentKey as BufferSource,
     });
 
     return subscription;

@@ -142,9 +142,15 @@ export async function sendPushNotification(
       } catch (err) {
         const statusCode =
           err instanceof webPush.WebPushError ? err.statusCode : undefined
+        // O corpo da resposta é o que diz o MOTIVO (o `message` do web-push é
+        // genérico: 'Received unexpected response code' para qualquer status não
+        // 2xx). Sem ele, um 403 do FCM é indistinguível de uma assinatura VAPID
+        // inválida, de uma payload rejeitada ou de uma subscription obsoleta.
+        const body = err instanceof webPush.WebPushError ? err.body : undefined
         console.error(
           `[PUSH ERROR] User ${targetUserId} | Endpoint: ${endpointPreview(sub.endpoint)} | ` +
-            `Status: ${statusCode ?? 'N/A'} | Message: ${err instanceof Error ? err.message : String(err)}`
+            `Status: ${statusCode ?? 'N/A'} | Message: ${err instanceof Error ? err.message : String(err)}` +
+            (body ? ` | Body: ${body.slice(0, 300)}` : '')
         )
 
         // 404/410 = subscription inválida/expirada: remove do banco

@@ -69,13 +69,27 @@
   leitura por casa** em vez de uma por chave (`/tasks` caiu de 3 round-trips em
   série para 1). **O caminho autenticado do proxy precisa de teste manual** — o
   checklist está na seção no topo.
-- **Medindo antes de decidir o Tier 2:** existe uma instrumentação **temporária**
-  (`src/utils/perf.ts`) que loga `[PERF] <label>: <ms>ms` nos 5 gargalos do
-  render — notadamente as **duas limpezas (DELETE) que rodam dentro do caminho de
-  leitura** e o `registerLoginDay`. Feita **sem nenhuma dependência nova**: o
-  `@vercel/speed-insights` foi descartado porque mede Web Vitals no cliente, e a
-  latência daqui é server-side (round-trips em série). Desligar com `PERF_LOG=0`;
-  **remover** assim que o Tier 2 estiver decidido. Ver a seção no topo.
+- **Push 403: a subscription se cura sozinha depois de rotacionar a VAPID.** O
+  FCM responde 403 quando a assinatura do servidor não bate com a chave com que
+  aquela subscription foi criada — e o `return existing` do `subscribeToPush`
+  devolvia a velha **sem nunca comparar a `applicationServerKey`**, então quem
+  tinha se inscrito antes da rotação ficava preso no 403 para sempre (e a linha
+  continuava no banco, errando a cada envio). Agora a chave é comparada e, se
+  divergir, a assinatura é refeita. O `[PUSH ERROR]` também passou a logar o
+  **corpo da resposta** (o `message` do `web-push` é genérico para qualquer status
+  não-2xx). Ver a seção no topo.
+- **Latência da navegação — encerrada, com o resultado medido:** o diagnóstico
+  mostrou que **cada round-trip ao banco custa ~85-89ms** (medianas de
+  `settings/leitura` e `notificações/listagem`, queries triviais) — o custo é
+  **latência de rede em série**, não trabalho de banco. As regiões não podem ser
+  ajustadas (Hobby sem escolha de região, função em SP-BR e banco no Canadá),
+  então o lever era reduzir a **quantidade** de round-trips: Tier 1 (proxy só lê a
+  role quando decide redirect, `getDependentHouse` com `React.cache`,
+  `house_settings` com uma leitura por casa) e as **3 escritas** do caminho de
+  leitura movidas para `after()` — o sino caiu de 5 round-trips em série para 1,
+  **~260-360ms fora do caminho crítico em toda tela**. A instrumentação que mediu
+  isso foi **removida**; o que sobrou na gaveta está numa seção própria com
+  **baixa** probabilidade. Ver as seções no topo.
 - **Adiamento aceito nunca devolve os pts originais:** quando um adiamento é
   aceito (botão "Aprovar" ou o auto-aceite ao editar o prazo com pedido
   pendente), o **valor corrente** da tarefa passa a ser a nova base e o relógio
@@ -97,7 +111,7 @@
 
 ---
 
-## Escritas fora do caminho de leitura — P1 + P3 + P4 do Tier 2 (implementado — verificar `after()` em produção)
+## Escritas fora do caminho de leitura — P1 + P3 + P4 do Tier 2 (implementado — `after()` confirmado em produção, medido)
 
 ### O que mudou
 Três **escritas** que rodavam dentro do caminho de render saíram da resposta,
@@ -113,26 +127,40 @@ O sino passou a esperar **1 query** (`notificações/listagem`) em vez de 5 em
 série. O `registerLoginDay` deixou de ser `await` no render (no primeiro acesso do
 dia ele virava UPDATE + 2 avaliações de conquistas + notificações + push).
 
-### A descoberta que exige verificação: `after()` não roda em `next dev`
-Uma sonda temporária (rota com um `console.log` antes e outro dentro do `after`,
-que foi **removida** depois) provou que em `next dev` o callback é registrado mas
-**nunca executa** — o log de antes apareceu, o de dentro não. Os docs do Next dizem
-que Node/Vercel é suportado (via `waitUntil`), mas **isso não foi verificado em
-produção** e é o que precisa ser conferido no primeiro deploy.
+### `after()` confirmado em PRODUÇÃO (a dúvida que estava aberta)
+Antes do deploy isso era uma incognita: uma sonda temporária (rota com um
+`console.log` antes e outro dentro do `after`, **removida** depois) provou que em
+`next dev` o callback é registrado mas **nunca executa** — o log de antes aparecia,
+o de dentro não. Os docs do Next dizem que Node/Vercel é suportado (via
+`waitUntil`).
 
-**Como verificar:** no log da Vercel, filtrar `[PERF]` depois do deploy — se
-`notificações/limpeza-lidas` e `castigo/limpeza` aparecerem, o `after()` está
-funcionando. Se não aparecerem, o `after()` não roda em produção.
+**O deploy confirmou: em produção o `after()` executa.** Os logs do Vercel
+(filter `[PERF]`, deployment `dpl_B7dtp3rhSgLcunqieRCEKqUdE9JU`) mostram
+`notificações/limpeza-lidas` (n=7, mediana **150ms**, até 276ms) e
+`notificações/busca-rápidas` — labels que **só existem dentro do callback**, já
+que a leitura não as chama mais. A faxina continua acontecendo; só saiu da
+latência.
 
-### Rede de segurança (por que o risco é baixo)
-As faxinas **autoritativas já existem nas actions do sino**
-(`src/actions/notifications.ts`): `markNotificationRead` e
-`markAllNotificationsRead` chamam `cleanupQuickMessages`, e
-`purgeReadNotifications` chama `cleanupReadNotifications`. A do render era só uma
-rede de segurança para quem nunca interage com o sino. Se o `after()` não rodar,
-o efeito é **a faxina acontecer na próxima interação com o sino** em vez de a
-cada render — nada se perde, nada corrompe. O castigo vencido continua filtrado
-na leitura por `isPunishmentActive`, ou seja, o triângulo some igual.
+O que **não** pôde ser confirmado neste lote: `login-dia/*` (P4) e
+`castigo/limpeza` (P3) não apareceram — o log copiado é **uma página** de
+resultados (`page=3`), então a ausência é do recorte, não necessariamente do
+comportamento. Fica uma busca dirigida por esses dois rótulos.
+
+### O ganho medido
+O sino passou a esperar **1 query**: `notificações/listagem` com **mediana 89ms**
+(n=58, min 58, max 337). Antes ele pagava as três em série —
+`limpeza-lidas` (195-365ms) + `busca-rápidas` (~60-95ms) + `listagem` (~85ms) ≈
+**350-450ms**. Ou seja, **~260-360ms fora do caminho crítico em toda tela**,
+em todos os papéis.
+
+O lote também confirma as correções do Tier 1 em produção:
+- **`comunicados/casa: 0ms`** → o `React.cache` do `getDependentHouse` está
+  funcionando (acerto de cache, zero round-trip — eram 3 queries iguais).
+- **`settings/leitura`: n=21, mediana 82ms, uma por request** → a leitura única
+  por casa está valendo (eram 3 em série só em `/tasks`).
+- **~85-89ms por round-trip** se confirma como a constante do ambiente (função na
+  VPS em SP-BR, Supabase no Canadá, sem como escolher região no plano Hobby) —
+  o que faz **contar round-trips** ser a única alavanca.
 
 ### Faxina paralelizada por dentro
 `cleanupReadNotifications` fazia as casas em `for..of` **serial** (ADMIN de 3
@@ -141,90 +169,163 @@ par (casa+remetente). Ambos viraram `Promise.all`: o resultado é o mesmo (cada
 `DELETE` é independente, o prazo é o da casa), só encurta a faxina — o que
 também aumenta a chance dela caber no tempo de vida da função.
 
+### Rede de segurança (por que o risco era baixo)
+As faxinas **autoritativas já existem nas actions do sino**
+(`src/actions/notifications.ts`): `markNotificationRead` e
+`markAllNotificationsRead` chamam `cleanupQuickMessages`, e
+`purgeReadNotifications` chama `cleanupReadNotifications`. A do render era só uma
+rede de segurança para quem nunca interage com o sino. Se o `after()` não rodasse,
+o efeito seria **a faxina acontecer na próxima interação com o sino** em vez de a
+cada render — nada se perde, nada corrompe. O castigo vencido continua filtrado
+na leitura por `isPunishmentActive`, ou seja, o triângulo some igual.
+
 ### Efeito colateral aceito
 O sino pode listar, por um instante, notificações **já lidas** e fora da
-retenção (a faxina passa a rodar depois da resposta). As **não lidas** — que é o
-que o badge conta — não são afetadas.
+retenção (a faxina passa a rodar depois da resposta). As **não lidas** — que é
+o que o badge conta — não são afetadas.
 
 ### Verificação
 `npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
 Log do `next dev` depois da mudança: o padrão do sino mudou de
 `limpeza-lidas + busca-rápidas + listagem` para **só `listagem`** (5-16ms), que é
-exatamente o esperado com P1 aplicado.
+exatamente o esperado com P1 aplicado — e a produção confirmou o resto
+(medianas e ganho medido na seção acima).
 
 ### Pontos de atenção
 - **Nunca mais devolver uma escrita para o caminho da leitura.** As três existiam porque "limpar enquanto lista" parecia barato; a medição mostrou que era o item mais caro do render. Regra: leitura devolve o que o render precisa, escrita vai para `after()` ou para uma action.
-- **`next dev` não executa `after()`** — então **não dá para testar esse caminho no dev**. O smoke test local só prova que a página renderiza; o comportamento da faxina só aparece no deploy.
-- **O `[PERF]` está ligado e medindo de novo** (ver a seção da instrumentação) — é o que vai dizer se o ganho é o previsto. Remover a instrumentação depois de confirmar.
-- **Números de dev não valem medição:** o `listagem` leva 5-16ms no dev (a máquina está perto do banco), contra 86ms de mediana em produção (a função roda longe). Nada de tirar conclusão de latência no `next dev`.
+- **`next dev` NÃO executa o `after()`** (provado com sonda), mas **em produção ele executa** (confirmado no deploy). Ou seja: o caminho da faxina **só é verificável no deploy** — o smoke local prova que a página renderiza, e nada mais.
+- **Falta confirmar `login-dia/*` e `castigo/limpeza`** (rótulos de P4 e P3) — não apareceram no recorte de log copiado, que era uma página só. Busca dirigida resolve; se não aparecerem, o pior caso é o mesmo da rede de segurança acima (o registro diário do acesso e a limpeza de castigos vencidos ficam para quando o usuário interagir com o sino).
+- **Números de dev não valem medição:** o `listagem` leva 5-16ms no dev (a máquina está perto do banco), contra **89ms de mediana em produção** (a função roda em SP-BR e o banco no Canadá). Nada de tirar conclusão de latência no `next dev`.
 - **Não editar arquivo do projeto com `Set-Content`/`Out-File` do PowerShell:** durante esta mudança ele gravou `middleware.ts` com BOM e acentos em mojibake (`usuÃ¡rio`). O arquivo foi restaurado com `git checkout` (o `needsRole` do Tier 1 já estava commitado). Use a ferramenta de edição, que escreve UTF-8 sem BOM.
 
 ---
 
-## Instrumentação de latência no render (TEMPORÁRIA — feita para medir, não para ficar)
+## Instrumentação de latência no render (TEMPORÁRIA — **REMOVIDA**, números aqui para histórico)
 
-### Por que existe
+### Por que existiu
 O Tier 1 foi entregue com base numa **contagem de round-trips**, não numa medição
 de tempo: "3 a 4 idas ao banco a menos" é contagem, não milissegundo. Antes de
 atacar o Tier 2 (que muda *quando* as coisas acontecem e é o que mais merece
-teste em tela), o caminho é medir. A alternativa descartada foi instalar o
+teste em tela), o caminho era medir. A alternativa descartada foi instalar o
 `@vercel/speed-insights`: ele mede **Web Vitals no cliente** (LCP/INP/CLS de
 usuários reais), e a latência daqui é **server-side** — número de round-trips em
 série no proxy e no render. Dado de campo também fica preso à Vercel. Então a
-medição é feita **no código**, com zero dependência nova, e o tempo total por
-invocação continua vindo dos Function Logs.
+medição foi feita **no código**, com zero dependência nova, e o tempo total por
+invocação continuou vindo dos Function Logs.
 
-### O que foi instrumentado
-`src/utils/perf.ts` (novo, descartável) expõe `timeServer(label, fn)`, que mede
-um bloco e loga **uma linha** `[PERF] <label>: <ms>ms`. Foi colocado nos **5
-gargalos** do caminho de render — em utilitários **compartilhados**, então uma
-edição cobre as 7 telas onde eles aparecem (em vez de espalhar pelas páginas):
+**Já cumpriu o papel e foi removida:** `src/utils/perf.ts` (apagado) e as **15
+chamadas** `timeServer(...)` nos 5 arquivos (`utils/notifications.ts`,
+`actions/stats.ts`, `actions/comunicados.ts`, `utils/active-punishment.ts`,
+`utils/house-settings.ts`). Nada de comportamento dependia disso — o helper só
+media e registrava. As medições ficaram registradas abaixo e nas seções do
+Tier 1/Tier 2, então **não há `[PERF]` no código nem nos logs hoje**. Se um dia
+for preciso medir de novo, o helper são ~20 linhas (ver abaixo o que ele fazia).
 
-| Label | Onde | Por que importa |
+### O que ela mediu (resultados que justificam a remoção)
+| Label | Onde | O que revelou |
 |---|---|---|
-| `notificações/limpeza-lidas` | `utils/notifications.ts` | **DELETE no caminho da leitura** — candidato nº1 do Tier 2 |
-| `notificações/limpeza-rápidas` | idem | DELETE por par (casa+remetente), em `for..of` |
-| `notificações/listagem` | idem | o SELECT que o sino realmente precisa |
-| `castigo/limpeza` / `castigo/leitura` | `utils/active-punishment.ts` | **outro DELETE na leitura** (só DEPENDENT) |
-| `login-dia/timezone` · `leitura` · `gravação` · `conquistas` | `actions/stats.ts` | candidato nº2: no 1º acesso do dia vira escrita + 2 avaliações |
-| `comunicados/casa` · `consulta` · `entregas` · `fuso` | `actions/comunicados.ts` | a função com mais round-trips das telas do dependente |
-| `settings/leitura` | `utils/house-settings.ts` | **confere o Tier 1**: deve sair 1 vez por casa por request (era 1 por chave) |
+| `settings/leitura` | `house-settings.ts` | **n=21, mediana 82ms, uma por request** → a leitura única por casa do Tier 1 está valendo |
+| `notificações/listagem` | `notifications.ts` | **mediana 89ms** (n=58) → o sino, depois do Tier 2, espera 1 query |
+| `notificações/limpeza-lidas` | idem | **195-365ms** antes / **mediana 150ms** depois, agora **fora do caminho crítico** |
+| `comunicados/casa` | `comunicados.ts` | **0ms** → o `React.cache` do `getDependentHouse` acertando cache (eram 3 queries iguais) |
+| `login-dia/*` · `castigo/*` | `stats.ts` · `active-punishment.ts` | o custo da escrita que hoje roda em `after()` |
 
-### Como ler
-1. Deploy com a instrumentação (o default é **ligado**).
-2. Navegar pelas telas e, no Vercel (**Logs → filtrar `[PERF]`**), olhar os
-   números. O que interessa é comparar `notificações/*` e `login-dia/*` com o
-   **Function Duration** da mesma invocação: o que sobra depois dos blocos
-   medidos é proxy + o resto do render.
-3. Em ADMIN multi-casa, `notificações/limpeza-lidas` deve **crescer** com o número
-   de casas (os loops são `for..of` por casa) — é o custo que mais cresce em uso.
+**A constante do ambiente: ~85-89ms por round-trip.** Uma query de 4 colunas numa
+tabela de 9 linhas (`house_settings`, filtrada por chave composta) custa 86ms —
+isso é latência de rede, não trabalho de banco. Função em SP-BR, Supabase no
+Canadá, **sem como escolher região no plano Hobby** → a geografia é fixa e a
+única alavanca é reduzir a **quantidade** de round-trips em série.
 
-### Como desligar / remover
-- **Desligar:** `PERF_LOG=0` no ambiente da Vercel. Sem deploy novo.
-- **Remover (obrigatório quando o Tier 2 estiver decidido):** apagar
-  `src/utils/perf.ts` e as **15 chamadas** `timeServer(...)` nos 5 arquivos
-  acima. Nada de comportamento depende disso — o helper só mede e registra, e
-  desligado ele nem mede.
+### Detalhes que valem registro (se um dia recriar o helper)
+- **A assinatura precisa aceitar `PromiseLike`, não `Promise`:** os builders do `supabase-js` são *thenables* (`PostgrestFilterBuilder`). Com `Promise<T>` o `T` saía como `unknown` e o typecheck quebrava em todas as 15 chamadas.
+- **O interruptor precisa ser lido por chamada**, e não no topo do módulo: avaliado no import, `PERF_LOG=0` só valeria se a env já existisse no boot (achado executando o módulo).
+- Log no `finally`, para o tempo aparecer mesmo quando o bloco lança.
+- **Números de dev não valem medição:** o `listagem` leva 5-16ms no dev (a máquina perto do banco) contra 89ms de mediana em produção.
 
-### Detalhes que valem registro
-- **A assinatura aceita `PromiseLike`, não `Promise`:** os builders do
-  `supabase-js` são *thenables* (`PostgrestFilterBuilder`). Com `Promise<T>` o `T`
-  saía como `unknown` e o typecheck quebrava em todas as 15 chamadas — o erro
-  apontava `Property 'data' does not exist on type 'unknown'`.
-- **`PERF_LOG` é lido por chamada, e não no topo do módulo:** avaliado no
-  import, o interruptor só valeria se a env já existisse no boot. Foi achado
-  executando o módulo real (o caso 4 do teste).
-- O log vai no `finally`: se o bloco lançar, a linha ainda aparece e passa a
-  apontar onde foi a exceção — sem ela, o bloco sumiria do gráfico.
+---
+
+## Push 403 eterno: a subscription ficava presa na chave VAPID antiga (corrigido)
+
+### O sintoma
+`[PUSH ERROR] User … | Status: 403 | Message: Received unexpected response code`
+num único usuário, sem parar. O app em si não quebrava (a notificação no banco, o
+sino e o Realtime seguem intactos) — só aquele aparelho não recebia push nativo.
+
+### Por que acontecia
+O FCM responde **403** quando a assinatura VAPID do servidor não bate com a chave
+com que aquela *subscription* foi criada. E este projeto **já tinha rotacionado as
+chaves VAPID** (elas estavam inconsistentes; ver a seção "Resolução (deploy com os
+logs ativos)"). Um subscription criada **antes** da rotação fica ligada à chave
+pública antiga — e o servidor passa a assinar com a privada nova: **403 para
+sempre**.
+
+O que prendia isso era `src/utils/push.ts`: o `return existing` devolvia a
+subscription velha **sem nunca comparar a `applicationServerKey`**. Pior, como o
+`after()`/auto-ciclo do hook só re-registra o que o navegador devolve, a
+subscription antiga continuava sendo gravada no banco a cada abertura — e o app só
+limpa automaticamente 404/410 (`push-service.ts`), então a linha 403 ficava lá,
+errando a cada envio.
+
+### Correção 1 — a subscription se cura sozinha
+`subscribeToPush` agora compara `existing.options.applicationServerKey` com a chave
+atual (comparação byte a byte) e, se forem diferentes, faz `unsubscribe()` e assina
+de novo. **Assim qualquer aparelho que sobreviveu a uma rotação se conserta na
+próxima abertura do app**, sem exigir ação do usuário.
+- A chave é lida **dentro** do `try` (e não no topo) para que uma subscription já
+  existente **continue funcionando mesmo com a env var ausente** — é o
+  comportamento de antes, e só o caminho de recriar precisa da chave.
+- Se o navegador **não expõe** `options.applicationServerKey`, a comparação
+  devolve `true` (mantém a subscription): sem informação para comparar, trocar de
+  assinatura a cada abertura seria pior que o problema.
+- Log `[push] Chave VAPID mudou: refazendo a subscription` no caminho da troca.
+
+### Correção 2 — o erro agora diz o motivo
+O `message` do `web-push` é **genérico**: `'Received unexpected response code'`
+para qualquer status não-2xx, e o corpo da resposta (que é onde o FCM escreve o
+motivo) era descartado. O `[PUSH ERROR]` passou a incluir `err.body` (truncado em
+300 chars) — assim um 403 futuro é distinguível entre assinatura inválida, payload
+rejeitada e subscription obsoleta, em vez de quatro linhas idênticas.
+
+### Decisão que **não** foi tomada
+Tratar 403 como "subscription obsoleta" e remover a linha depois de N falhas
+**não** foi feito, de propósito: 403 também pode ser erro de configuração das
+chaves, e apagar a linha esconderia o problema em vez de resolvê-lo. A correção 1
+ataca a causa; a limpeza automática continua só para 404/410.
 
 ### Verificação
 `npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
-O módulo `perf.ts` real foi executado com `node --experimental-strip-types`
-(script temporário fora do repo): mede e propaga o valor, **propaga erro e ainda
-loga**, aceita *thenable* (o caso dos builders), e `PERF_LOG=0` não emite nada.
-Encoding dos 6 arquivos conferido (0 caracteres de substituição).
+Encoding dos 2 arquivos conferido (0 caracteres de substituição).
+
+### Pontos de atenção
+- **Ao rotacionar a VAPID de novo, o mesmo 403 volta até o usuário abrir o app de novo** — e aí a correção 1 resolve. Se alguém relatar push que parou depois de mexer nas chaves, é este caminho.
+- **Um 403 que se repete para o mesmo usuário depois disso** significa que o `options.applicationServerKey` não estava disponível naquele navegador — aí o passo é o usuário desativar/reativar o push (o `disablePush`/`enablePush` do prompt), que refaz a assinatura.
+- O `NEXT_PUBLIC_VAPID_PUBLIC_KEY` é **inlinado no bundle no build** (prefixo `NEXT_PUBLIC_`): trocar a chave exige **rebuild**, senão o browser continua assinando com a antiga. Esse é o outro lado da mesma armadilha.
 
 ---
+
+## Trabalho futuro possível na latência (baixa probabilidade — medido, decida com calma)
+
+O trabalho de latência **se encerra aqui** por decisão do usuário: o ganho já
+entregue foi grande e o app ficou bom. Registrando o que sobrou na gaveta, com a
+probabilidade e o risco de cada um:
+
+| Item | O que é | Economia | Risco | Probabilidade de ser necessário |
+|---|---|---|---|---|
+| **P2** | `auth.getUser()` → `getClaims()` no proxy **e** no `getSessionProfile` | **~170ms em toda requisição** (2 round-trips, inclusive prefetch e cada Server Action) — o maior item restante | Médio: é o caminho de autenticação. Mitigado porque o `getClaims()` **cai sozinho para `getUser()`** se o token for simétrico (sem `kid`) — ou seja, migração sem risco de logout | **Baixa.** Só se a navegação voltar a incomodar |
+| **Tier 3** | route group `(app)` com layout compartilhado para `/tasks`/`/rewards`/`/achievements` (hoje cada uma monta seu próprio `DashboardNav` e não compartilha layout) | Elimina a remontagem do shell e dos canais de Realtime; parte das queries do shell | Estrutural: mexe na organização de rotas | **Baixa.** É o único que também melhoraria a *constância* entre telas |
+| **`unstable_cache` em `house_settings`** com `revalidateTag` no `updateHouseSettings` | Tira a última leitura de settings da latência (~82ms) | ~82ms | Baixo **se** revalidar tag na escrita | **Muito baixa** |
+
+**O que já foi resolvido e não precisa ser refeito:** o `needsRole` do proxy, o
+`React.cache` do `getDependentHouse`, a leitura única de `house_settings` e as
+**3 escritas fora do caminho de leitura** (sino, castigo, login-dia em
+`after()`). Cada um tem a medição na seção correspondente.
+
+**Regra para quem pegar isso no futuro:** contar round-trips em série, não
+estimar "onde parece lento". E lembrar que **1 round-trip ≈ 85ms** neste
+ambiente — é essa a unidade que decide se uma mudança vale a pena.
+
+---
+
 
 ## Navegação entre telas: 3 correções no caminho de render (Tier 1 — concluído)
 

@@ -6,7 +6,6 @@ import {
   getHouseQuickMessageSettings,
 } from '@/utils/house-settings'
 import { isNotificationMuted } from '@/utils/notification-mute'
-import { timeServer } from '@/utils/perf'
 import { after } from 'next/server'
 import {
   sendPushToUser,
@@ -264,25 +263,19 @@ async function cleanupNotificationsOf(
   userId: string
 ): Promise<void> {
   try {
-    await timeServer('notificações/limpeza-lidas', () =>
-      cleanupReadNotifications(admin, userId)
-    )
+    await cleanupReadNotifications(admin, userId)
   } catch {
     // Best-effort: falha na limpeza não impede a listagem.
   }
 
   // Limpeza lazy de mensagens rápidas expiradas (tempo).
   try {
-    const { data: quickRows } = await timeServer(
-      'notificações/busca-rápidas',
-      () =>
-        admin
-          .from('notifications')
-          .select('house_id, actor_id')
-          .eq('recipient_id', userId)
-          .eq('type', 'QUICK_MESSAGE')
-          .not('actor_id', 'is', null)
-    )
+    const { data: quickRows } = await admin
+      .from('notifications')
+      .select('house_id, actor_id')
+      .eq('recipient_id', userId)
+      .eq('type', 'QUICK_MESSAGE')
+      .not('actor_id', 'is', null)
 
     const pairs = new Map<string, { houseId: string; actorId: string }>()
     for (const row of (quickRows ?? [])) {
@@ -296,13 +289,11 @@ async function cleanupNotificationsOf(
     await Promise.all(
       [...pairs.values()].map(async (pair) => {
         const settings = await getHouseQuickMessageSettings(pair.houseId)
-        await timeServer('notificações/limpeza-rápidas', () =>
-          cleanupQuickMessages(
-            admin,
-            pair.houseId,
-            pair.actorId,
-            settings.readRetentionDays
-          )
+        await cleanupQuickMessages(
+          admin,
+          pair.houseId,
+          pair.actorId,
+          settings.readRetentionDays
         )
       })
     )
@@ -338,14 +329,12 @@ export async function getMyNotifications(
     await cleanupNotificationsOf(admin, userId)
   })
 
-  const { data } = await timeServer('notificações/listagem', () =>
-    admin
-      .from('notifications')
-      .select('*')
-      .eq('recipient_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(limit)
-  )
+  const { data } = await admin
+    .from('notifications')
+    .select('*')
+    .eq('recipient_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
 
   return data ?? []
 }
