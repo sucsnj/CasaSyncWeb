@@ -35,7 +35,7 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'VisÃ£o geral' },
+  { href: '/dashboard/admin', label: 'Visão geral' },
   { href: '/dashboard/admin/houses', label: 'Casas' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
@@ -43,7 +43,7 @@ const adminItems: NavItem[] = [
 ]
 
 const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'VisÃ£o geral' },
+  { href: '/dashboard/dependent', label: 'Visão geral' },
   { href: '/tasks', label: 'Tarefas' },
   { href: '/rewards', label: 'Recompensas' },
   { href: '/achievements', label: 'Conquistas' },
