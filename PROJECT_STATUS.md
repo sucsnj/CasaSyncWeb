@@ -1,6 +1,57 @@
 # CasaSync Web — PROJECT STATUS
 
+## Gravação de arquivos: nunca usar PowerShell
+
+**Regra dura:** nenhum arquivo deste projeto é escrito por PowerShell
+(`Set-Content`, `Out-File`, `Add-Content`, `>`), pelo meu shell de ferramentas ou
+por qualquer outro caminho que dependa da codificação padrão do Windows.
+
+**Por quê (já aconteceu 2×, e não foi teórico):**
+1. `src/utils/supabase/middleware.ts` — o `needsRole` do Tier 1 foi sobrescrito
+   com BOM + acentos corrompidos. Restaurado com `git checkout` porque o
+   `needsRole` já estava commitado.
+2. `src/app/tasks/page.tsx`, `src/app/rewards/page.tsx` e
+   `src/app/achievements/page.tsx` — 65 trechos de comentário/string corrompidos,
+   um caractere de controle solto (`U+008D`, resto de `INVISÍVEL`) e um BOM em
+   `settings-admin.tsx`. **O dano do `/rewards/page.tsx` chegou a ser commitado**
+   e só apareceu meses depois, quando alguém reclamou do texto na tela.
+
+**O que fazer:** usar a ferramenta de edição do agente (escreve UTF-8 sem BOM) ou
+`apply_patch`. Se precisar de script, que seja **Node** com
+`readFileSync`/`writeFileSync(..., 'utf8')` — nunca redirecionamento de shell.
+
+**Por que a detecção é difícil:** o arquivo fica *válido* em UTF-8 — não há
+`U+FFFD`, o compilador passa, o `lint` passa, o `build` passa. O estrago é só
+**visual**: cada acento vira dois ou três caracteres (`ã` sai como `Ã` + `¡`, o
+travessão sai como `â` + `€` + `—`). E o pior: **o `Ã` é português legítimo**
+(`NÃO`, `são`), então um replace global de `Ã` **quebra 23 arquivos de uma vez**.
+Só há corrupção quando o `Ã` vem **seguido de outro caractere não-ASCII** ou de
+byte cru de controle — é isso que o verificador distingue.
+
+**Varredura de encoding (rode antes de commitar, sempre — é instantânea):**
+
+```bash
+npm run check:encoding          # só reporta (exit 1 se achar)
+node scripts/check-encoding.mjs --fix   # repara o que for inequívoco
+```
+
+O verificador (`scripts/check-encoding.mjs`, sem dependência) accuse BOM, `U+FFFD`,
+bytes cp1252 crus na faixa de controle, caractere de outro alfabeto e **trechos de
+mojibake** — sendo que nos trechos ele é sensível ao contexto, então `NÃO` passa
+e a forma corrompida do mesmo acento não passa.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **Encoding corrigido em todo o repositório:** o mojibake que o PowerShell deixou
+  em `src/app/tasks/page.tsx`, `src/app/rewards/page.tsx`,
+  `src/app/achievements/page.tsx` (65 trechos), o `U+008D` solto em `INVISÍVEL` e
+  o BOM de `src/components/settings/settings-admin.tsx` foram reparados. O dano
+  do `/rewards/page.tsx` **estava commitado** desde meses antes — foi por isso que
+  apareceu em tela. `lint`/`typecheck`/`build` ✓. Ver **"Gravação de arquivos:
+  nunca usar PowerShell"** no topo: a regra agora tem seção própria, e a
+  explicação inclui a armadilha do `Ã` (que é português legítimo).
 
 - **Banco:** todos os scripts SQL já foram aplicados. Confirmado por probe:
   `tasks.extension_count` responde (com `0` nas tarefas existentes),
@@ -196,7 +247,7 @@ exatamente o esperado com P1 aplicado — e a produção confirmou o resto
 - **`next dev` NÃO executa o `after()`** (provado com sonda), mas **em produção ele executa** (confirmado no deploy). Ou seja: o caminho da faxina **só é verificável no deploy** — o smoke local prova que a página renderiza, e nada mais.
 - **Falta confirmar `login-dia/*` e `castigo/limpeza`** (rótulos de P4 e P3) — não apareceram no recorte de log copiado, que era uma página só. Busca dirigida resolve; se não aparecerem, o pior caso é o mesmo da rede de segurança acima (o registro diário do acesso e a limpeza de castigos vencidos ficam para quando o usuário interagir com o sino).
 - **Números de dev não valem medição:** o `listagem` leva 5-16ms no dev (a máquina está perto do banco), contra **89ms de mediana em produção** (a função roda em SP-BR e o banco no Canadá). Nada de tirar conclusão de latência no `next dev`.
-- **Não editar arquivo do projeto com `Set-Content`/`Out-File` do PowerShell:** durante esta mudança ele gravou `middleware.ts` com BOM e acentos em mojibake (`usuÃ¡rio`). O arquivo foi restaurado com `git checkout` (o `needsRole` do Tier 1 já estava commitado). Use a ferramenta de edição, que escreve UTF-8 sem BOM.
+- **Nunca escrever arquivo do projeto com PowerShell** (`Set-Content`, `Out-File`, `Add-Content`, `>`): ver a seção dedicada **"Gravação de arquivos: nunca usar PowerShell"** no topo. Foi exatamente assim que `middleware.ts` e as páginas `/tasks`, `/rewards` e `/achievements` foram corrompidas (BOM + mojibake), e o dano do `/rewards/page.tsx` chegou a ser **commitado**.
 
 ---
 

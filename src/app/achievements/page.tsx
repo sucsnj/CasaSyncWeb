@@ -57,7 +57,7 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
         <CardDescription>
           {role === 'ADMIN'
             ? 'Crie ou selecione uma casa antes de gerenciar conquistas.'
-            : 'VocÃª ainda nÃ£o foi vinculado a uma casa.'}
+            : 'Você ainda não foi vinculado a uma casa.'}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -66,7 +66,7 @@ function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
             href="/dashboard/admin/houses"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
-            Gerenciar casas â†’
+            Gerenciar casas →
           </Link>
         ) : null}
       </CardContent>
@@ -89,8 +89,8 @@ export default async function AchievementsPage() {
       getMyNotifications(user.id),
       isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
       isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graÃ§a:
-      // `getActiveAdminHouse` jÃ¡ chama `getAdminHouses` e ambos sÃ£o `React.cache`.
+      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graça:
+      // `getActiveAdminHouse` já chama `getAdminHouses` e ambos são `React.cache`.
       isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
     ])
 
@@ -102,15 +102,15 @@ export default async function AchievementsPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
-  // Castigo ativo do tutor (ADR-0020): Ã­cone de triÃ¢ngulo ao lado do sino, sÃ³ do
-  // DEPENDENT. Sem Realtime â€” lido no render desta tela (como os comunicados).
+  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
+  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
   const punishment =
     !isAdmin && dependentHouse
       ? await getActivePunishment(user.id, dependentHouse.id)
       : null
 
-  // Item "Conquistas" da nav dourado quando hÃ¡ resgate disponÃ­vel â€” derivado
-  // das views que o prÃ³prio render carrega (mesma regra dos cards).
+  // Item "Conquistas" da nav dourado quando há resgate disponível — derivado
+  // das views que o próprio render carrega (mesma regra dos cards).
   let hasClaimable = false
 
   let content: React.ReactNode
@@ -148,8 +148,8 @@ export default async function AchievementsPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      // Conquistas: acesso diÃ¡rio do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
-      // Escrita, fora do caminho do render â€” ver a nota no layout do dependente.
+      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
+      // Escrita, fora do caminho do render — ver a nota no layout do dependente.
       after(() => registerLoginDay(dependentHouse.id, user.id))
 
       const [achievements, progress] = await Promise.all([
