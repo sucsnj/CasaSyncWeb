@@ -15,8 +15,10 @@ import {
   ACHIEVEMENT_ICONS,
   METRIC_LABELS,
   type AchievementMetricType,
+  achievementRewardAtLevel,
   applyAchievementProgress,
   capAchievementProgress,
+  maxAchievementLevel,
 } from '@/utils/achievements'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
@@ -703,6 +705,24 @@ export function AchievementsAdmin({
         <div className="grid gap-4 xl:grid-cols-2">
           {achievements.map((achievement) => {
             const byProfile = progressMap.get(achievement.id)
+            // **Ganho atual** de cada dependente: pts base × nível × multiplicador
+            // (a mesma fórmula de `claimAchievementReward`), arredondado igual no
+            // crédito — então o número aqui é o número que entra no saldo.
+            //
+            // O nível entra **capado**, e isso não é cosmético: a ÚNICA vai para
+            // `level = 2` depois de resgatada mas só paga no nível 1 (sem o cap
+            // o card mostraria o dobro do que ela nunca mais recebe), e a
+            // repetível travada no `max_level` continua pagando o valor máximo.
+            const levelCap = maxAchievementLevel(
+              achievement.is_repeatable,
+              achievement.max_level
+            )
+            const rewardAtLevel = (level: number) =>
+              achievementRewardAtLevel(
+                achievement.reward_points,
+                Math.min(Math.max(level, 1), levelCap),
+                achievement.level_multiplier
+              )
             return (
               <Card key={achievement.id}>
                 <div className="flex flex-col gap-3 p-4">
@@ -766,7 +786,7 @@ export function AchievementsAdmin({
                       Objetivo: {achievement.target_count}
                     </span>
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">
-                      Recompensa: +{achievement.reward_points} pts
+                      Recompensa: +{achievement.reward_points} pts base
                     </span>
                     {achievement.level_multiplier !== 1 ? (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-700">
@@ -817,6 +837,14 @@ export function AchievementsAdmin({
                                   {achievement.is_repeatable
                                     ? `Nível ${entry.level}/${achievement.max_level}`
                                     : `Nível ${entry.level}`}
+                                </span>
+                                {/* Ganho atual: base × nível × multiplicador,
+                                    arredondado como o crédito. */}
+                                <span
+                                  className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700"
+                                  title={`Ganho atual no nível ${entry.level}: ${achievement.reward_points} × ${entry.level} × ${achievement.level_multiplier} = ${rewardAtLevel(entry.level)} pts`}
+                                >
+                                  +{rewardAtLevel(entry.level)} pts
                                 </span>
                                 <span className="text-xs text-slate-500">
                                   {capAchievementProgress(
