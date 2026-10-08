@@ -33,6 +33,7 @@ import { DebouncedField } from './debounced-field'
 // estado e bloco de formulário abaixo.
 // import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -881,7 +882,7 @@ async function runTaskTransition(
 
               <div className="grid gap-2 md:col-span-2">
                 <Label htmlFor="task-description">Descrição</Label>
-                <textarea
+                <AutoGrowTextarea
                   id="task-description"
                   name="description"
                   rows={2}

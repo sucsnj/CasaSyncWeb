@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/actions/types'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 
 /**
  * Quanto tempo "✓ Alterações salvas" fica visível antes do botão de ação do
@@ -128,7 +129,7 @@ export function DebouncedField({
   return (
     <div className="flex flex-col gap-1">
       {textarea ? (
-        <textarea
+        <AutoGrowTextarea
           value={local}
           placeholder={placeholder}
           onFocus={() => {
