@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { updateHouseSettings } from '@/actions/settings'
+import type { ActionResult } from '@/actions/types'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -367,7 +368,6 @@ export function SettingsAdmin({
   textLimits,
 }: SettingsAdminProps) {
   const router = useRouter()
-  const [pending, startTransition] = useTransition()
 
   const [pricing, setPricing] = useState<RewardPricingSettings>(rewardPricing)
   const [pricingError, setPricingError] = useState<string | null>(null)
@@ -408,193 +408,155 @@ export function SettingsAdmin({
   const [limits, setLimits] = useState<TextLimitsSettings>(textLimits)
   const [limitsError, setLimitsError] = useState<string | null>(null)
   const [limitsSuccess, setLimitsSuccess] = useState<string | null>(null)
-  // Flag própria (e não o `pending` do `useTransition`): `startTransition` nunca
-  // marca `isPending` quando o callback é async, então `pending` é código morto
-  // e o botão ficaria sem feedback — regra do AGENTS.md §3.
-  const [savingLimits, setSavingLimits] = useState(false)
-
-  function savePricing() {
-    setPricingError(null)
-    setPricingSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('reward_pricing', {
-        ...pricing,
-      })
-      if (!result.ok) {
-        setPricingError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setPricingSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveQuick() {
-    setQuickError(null)
-    setQuickSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('quick_message', { ...quick })
-      if (!result.ok) {
-        setQuickError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setQuickSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveSla() {
-    setSlaError(null)
-    setSlaSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('task_sla', { ...sla })
-      if (!result.ok) {
-        setSlaError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setSlaSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveExtensions() {
-    setExtensionsError(null)
-    setExtensionsSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('extension_rules', {
-        ...extensions,
-      })
-      if (!result.ok) {
-        setExtensionsError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setExtensionsSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveRetention() {
-    setRetentionError(null)
-    setRetentionSuccess(null)
-
-    startTransition(async () => {
-      // Retenção e silenciamento moram no mesmo card "Notificações": as duas
-      // chaves são gravadas juntas (uma mensagem de erro vem da 2ª se falhar).
-      const result = await updateHouseSettings('notification_retention', {
-        ...retention,
-      })
-      if (!result.ok) {
-        setRetentionError(result.error)
-        toast.error(result.error)
-        return
-      }
-
-      const muteResult = await updateHouseSettings('notification_mute', {
-        ...mute,
-      })
-      if (!muteResult.ok) {
-        setRetentionError(muteResult.error)
-        toast.error(muteResult.error)
-        return
-      }
-
-      setRetentionSuccess(muteResult.message ?? 'Configurações salvas.')
-      toast.success(muteResult.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveRules() {
-    setRulesError(null)
-    setRulesSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('task_rules', { ...rules })
-      if (!result.ok) {
-        setRulesError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setRulesSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
-
-  function saveTimezone() {
-    setTimezoneError(null)
-    setTimezoneSuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('house_timezone', { timezone })
-      if (!result.ok) {
-        setTimezoneError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setTimezoneSuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
-  }
 
   /**
-   * Limites de caracteres das descrições. Usa flag própria em vez do
-   * `startTransition` dos outros cards: `pending` nunca vira `true` com callback
-   * async (AGENTS.md §3), então o botão ficaria sem feedback. O `try/catch/
-   * finally` evita a trava sem volta em caso de erro de rede.
+   * Salvar é **por card**, com flag própria (AGENTS.md §3):
+   *
+   * - `startTransition(async …)` nunca marca `isPending` (o React não rastreia a
+   *   Promise do callback), então o `pending` era código morto e o botão ficava
+   *   sem feedback durante toda a gravação;
+   * - um flag global travaria os 8 botões ao salvar um deles, e o erro de um
+   *   card apareceria no feedback de outro;
+   * - sem `try/catch/finally`, uma falha de rede deixava o botão travado sem
+   *   volta — o `finally` destrava sempre.
    */
-  async function saveLimits() {
-    setLimitsError(null)
-    setLimitsSuccess(null)
-    setSavingLimits(true)
+  type SaveKey =
+    | 'pricing'
+    | 'quick'
+    | 'sla'
+    | 'extensions'
+    | 'retention'
+    | 'decay'
+    | 'rules'
+    | 'timezone'
+    | 'limits'
+
+  const [saving, setSaving] = useState<SaveKey[]>([])
+  const isSaving = (key: SaveKey) => saving.includes(key)
+
+  /**
+   * Coração dos 9 botões: limpa o feedback do card, grava, e devolve o mesmo
+   * erro/sucesso que cada handler repetia (mais o caminho de rede, que não
+   * existia). `run` recebe a gravação para que o card "Notificações", que grava
+   * DUAS chaves, possa encadear as duas dentro do mesmo bloqueio.
+   */
+  async function runSave(
+    key: SaveKey,
+    run: () => Promise<ActionResult>,
+    setError: (value: string | null) => void,
+    setSuccess: (value: string | null) => void
+  ) {
+    setError(null)
+    setSuccess(null)
+    setSaving((prev) => [...prev, key])
     try {
-      const result = await updateHouseSettings('text_limits', { ...limits })
+      const result = await run()
       if (!result.ok) {
-        setLimitsError(result.error)
+        setError(result.error)
         toast.error(result.error)
         return
       }
-      setLimitsSuccess(result.message ?? 'Limites salvos.')
-      toast.success(result.message ?? 'Limites salvos.')
+      const message = result.message ?? 'Configurações salvas.'
+      setSuccess(message)
+      toast.success(message)
       router.refresh()
     } catch {
-      setLimitsError('Falha de rede ao salvar os limites.')
-      toast.error('Falha de rede ao salvar os limites.')
+      const message = 'Falha de rede ao salvar. Tente de novo.'
+      setError(message)
+      toast.error(message)
     } finally {
-      setSavingLimits(false)
+      setSaving((prev) => prev.filter((item) => item !== key))
     }
   }
 
-  function saveDecay() {
-    setDecayError(null)
-    setDecaySuccess(null)
-
-    startTransition(async () => {
-      const result = await updateHouseSettings('task_decay', { ...decay })
-      if (!result.ok) {
-        setDecayError(result.error)
-        toast.error(result.error)
-        return
-      }
-      setDecaySuccess(result.message ?? 'Configurações salvas.')
-      toast.success(result.message ?? 'Configurações salvas.')
-      router.refresh()
-    })
+  function savePricing() {
+    void runSave(
+      'pricing',
+      () => updateHouseSettings('reward_pricing', { ...pricing }),
+      setPricingError,
+      setPricingSuccess
+    )
   }
 
+  function saveQuick() {
+    void runSave(
+      'quick',
+      () => updateHouseSettings('quick_message', { ...quick }),
+      setQuickError,
+      setQuickSuccess
+    )
+  }
+
+  function saveSla() {
+    void runSave(
+      'sla',
+      () => updateHouseSettings('task_sla', { ...sla }),
+      setSlaError,
+      setSlaSuccess
+    )
+  }
+
+  function saveExtensions() {
+    void runSave(
+      'extensions',
+      () => updateHouseSettings('extension_rules', { ...extensions }),
+      setExtensionsError,
+      setExtensionsSuccess
+    )
+  }
+
+  function saveRetention() {
+    void runSave(
+      'retention',
+      async () => {
+        // Retenção e silenciamento moram no mesmo card "Notificações": as duas
+        // chaves são gravadas juntas (uma mensagem de erro vem da 2ª se falhar).
+        const result = await updateHouseSettings('notification_retention', {
+          ...retention,
+        })
+        if (!result.ok) return result
+        return updateHouseSettings('notification_mute', { ...mute })
+      },
+      setRetentionError,
+      setRetentionSuccess
+    )
+  }
+
+  function saveDecay() {
+    void runSave(
+      'decay',
+      () => updateHouseSettings('task_decay', { ...decay }),
+      setDecayError,
+      setDecaySuccess
+    )
+  }
+
+  function saveRules() {
+    void runSave(
+      'rules',
+      () => updateHouseSettings('task_rules', { ...rules }),
+      setRulesError,
+      setRulesSuccess
+    )
+  }
+
+  function saveTimezone() {
+    void runSave(
+      'timezone',
+      () => updateHouseSettings('house_timezone', { timezone }),
+      setTimezoneError,
+      setTimezoneSuccess
+    )
+  }
+
+  function saveLimits() {
+    void runSave(
+      'limits',
+      () => updateHouseSettings('text_limits', { ...limits }),
+      setLimitsError,
+      setLimitsSuccess
+    )
+  }
   return (
     <div className="flex flex-col gap-6">
       <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
@@ -711,10 +673,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void savePricing()}
-                disabled={pending}
+                disabled={isSaving('pricing')}
               >
                 <Save className="size-4" />
-                Salvar economia de pontos
+                {isSaving('pricing') ? 'Salvando…' : 'Salvar economia de pontos'}
               </Button>
             </div>
           </CardContent>
@@ -793,10 +755,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveQuick()}
-                disabled={pending}
+                disabled={isSaving('quick')}
               >
                 <Save className="size-4" />
-                Salvar mensagem rápida
+                {isSaving('quick') ? 'Salvando…' : 'Salvar mensagem rápida'}
               </Button>
             </div>
           </CardContent>
@@ -861,10 +823,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveSla()}
-                disabled={pending}
+                disabled={isSaving('sla')}
               >
                 <Save className="size-4" />
-                Salvar prazos
+                {isSaving('sla') ? 'Salvando…' : 'Salvar prazos'}
               </Button>
             </div>
           </CardContent>
@@ -988,10 +950,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveExtensions()}
-                disabled={pending}
+                disabled={isSaving('extensions')}
               >
                 <Save className="size-4" />
-                Salvar adiamento
+                {isSaving('extensions') ? 'Salvando…' : 'Salvar adiamento'}
               </Button>
             </div>
           </CardContent>
@@ -1079,10 +1041,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveRetention()}
-                disabled={pending}
+                disabled={isSaving('retention')}
               >
                 <Save className="size-4" />
-                Salvar notificações
+                {isSaving('retention') ? 'Salvando…' : 'Salvar notificações'}
               </Button>
             </div>
           </CardContent>
@@ -1167,10 +1129,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveDecay()}
-                disabled={pending}
+                disabled={isSaving('decay')}
               >
                 <Save className="size-4" />
-                Salvar decaimento
+                {isSaving('decay') ? 'Salvando…' : 'Salvar decaimento'}
               </Button>
             </div>
           </CardContent>
@@ -1233,10 +1195,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveRules()}
-                disabled={pending}
+                disabled={isSaving('rules')}
               >
                 <Save className="size-4" />
-                Salvar limites
+                {isSaving('rules') ? 'Salvando…' : 'Salvar limites'}
               </Button>
             </div>
           </CardContent>
@@ -1294,10 +1256,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveTimezone()}
-                disabled={pending}
+                disabled={isSaving('timezone')}
               >
                 <Save className="size-4" />
-                Salvar fuso
+                {isSaving('timezone') ? 'Salvando…' : 'Salvar fuso'}
               </Button>
             </div>
           </CardContent>
@@ -1373,10 +1335,10 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveLimits()}
-                disabled={savingLimits}
+                disabled={isSaving('limits')}
               >
                 <Save className="size-4" />
-                {savingLimits ? 'Salvando…' : 'Salvar limites de texto'}
+                {isSaving('limits') ? 'Salvando…' : 'Salvar limites de texto'}
               </Button>
             </div>
           </CardContent>
