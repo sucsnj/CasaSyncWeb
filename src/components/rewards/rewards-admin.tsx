@@ -17,6 +17,7 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
+import { LimitedTextarea } from '@/components/ui/limited-textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
@@ -24,6 +25,10 @@ import { Gift, ClipboardList, Layers, Lightbulb, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
+import {
+  DEFAULT_TEXT_LIMITS,
+  type TextLimitsSettings,
+} from '@/utils/settings'
 import {
   Card,
   CardAction,
@@ -63,6 +68,7 @@ export function RewardsAdmin({
   initialRedemptions,
   initialSuggestions,
   dependents,
+  textLimits,
 }: {
   houseId: string
   userId: string
@@ -70,7 +76,10 @@ export function RewardsAdmin({
   initialRedemptions: RedemptionView[]
   initialSuggestions: SuggestionView[]
   dependents: { id: string; full_name: string }[]
+  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
+  textLimits?: TextLimitsSettings
 }) {
+  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const router = useRouter()
   const [rewards, setRewards] = useState<Reward[]>(initialRewards)
   const [redemptions, setRedemptions] = useState<RedemptionView[]>(
@@ -353,13 +362,13 @@ export function RewardsAdmin({
                 <form onSubmit={handleCreate} className="grid gap-3">
                   <div className="grid gap-2">
                     <Label htmlFor="reward-title">Título</Label>
-                  <ClearableInput
-                    id="reward-title"
-                    name="title"
-                    required
-                    placeholder="Ex.: 1h de videogame"
-                    defaultValue=""
-                  />
+                    <ClearableInput
+                      id="reward-title"
+                      name="title"
+                      required
+                      placeholder="Ex.: 1h de videogame"
+                      defaultValue=""
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -389,12 +398,13 @@ export function RewardsAdmin({
 
                   <div className="grid gap-2">
                     <Label htmlFor="reward-description">Descrição</Label>
-                    <textarea
+                    <LimitedTextarea
                       id="reward-description"
                       name="description"
                       rows={2}
+                      limit={limits.rewardDescription}
                       placeholder="Opcional"
-                      className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                      className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                     />
                   </div>
 
@@ -767,12 +777,13 @@ export function RewardsAdmin({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-reward-description">Descrição</Label>
-              <textarea
+              <LimitedTextarea
                 id="edit-reward-description"
                 name="description"
                 rows={2}
+                limit={limits.rewardDescription}
                 defaultValue={editingReward.description ?? ''}
-                className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               />
             </div>
             <div className="flex flex-col gap-2">

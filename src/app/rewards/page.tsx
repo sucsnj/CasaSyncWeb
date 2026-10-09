@@ -11,7 +11,10 @@ import {
 import { getMyNotifications } from '@/utils/notifications'
 import { hasClaimableAchievement } from '@/utils/achievement-progress'
 import { getActivePunishment } from '@/utils/active-punishment'
-import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import {
+  getHouseQuickMessageSettings,
+  getHouseTextLimitsSettings,
+} from '@/utils/house-settings'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
@@ -78,6 +81,13 @@ export default async function RewardsPage() {
     ? await getHouseQuickMessageSettings(dependentHouse.id)
     : undefined
 
+  // Teto de caracteres da descrição (chave `text_limits). Admin no formulário da
+  // recompensa, dependente no da sugestão — que vira recompensa na aprovação.
+  const houseIdForSettings = isAdmin ? activeHouse?.id : dependentHouse?.id
+  const textLimitsSettings = houseIdForSettings
+    ? await getHouseTextLimitsSettings(houseIdForSettings)
+    : undefined
+
   // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
   // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
   const punishment =
@@ -130,9 +140,9 @@ export default async function RewardsPage() {
           .from('profiles')
           .select('id, full_name')
           .in('id', profileIds)
-        ;(profiles ?? []).forEach((p) =>
-          nameById.set(p.id, p.full_name ?? 'Sem nome')
-        )
+          ; (profiles ?? []).forEach((p) =>
+            nameById.set(p.id, p.full_name ?? 'Sem nome')
+          )
       }
 
       const rewardTitleById = new Map(
@@ -175,6 +185,7 @@ export default async function RewardsPage() {
             id,
             full_name,
           }))}
+          textLimits={textLimitsSettings}
         />
       )
     }
@@ -244,6 +255,7 @@ export default async function RewardsPage() {
               status: suggestion.status,
               created_at: suggestion.created_at,
             }))}
+            textLimits={textLimitsSettings}
           />
           <AlertQueueOverlay
             userId={user.id}

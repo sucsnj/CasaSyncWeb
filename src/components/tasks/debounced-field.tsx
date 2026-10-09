@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/actions/types'
 import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
+import { CharCounter } from '@/components/ui/limited-textarea'
 
 /**
  * Quanto tempo "✓ Alterações salvas" fica visível antes do botão de ação do
@@ -25,6 +26,12 @@ type DebouncedFieldProps = {
   onSave: (value: string) => Promise<ActionResult>
   debounceMs?: number
   textarea?: boolean
+  /**
+   * Teto de caracteres do textarea (chave `text_limits` da casa). `0`/ausente =
+   * sem limite — e aí o contador nem aparece, para não poluir os campos que não
+   * têm teto.
+   */
+  maxLength?: number
   type?: string
   placeholder?: string
   className?: string
@@ -44,6 +51,7 @@ export function DebouncedField({
   onSave,
   debounceMs = 900,
   textarea = false,
+  maxLength,
   type = 'text',
   placeholder,
   className,
@@ -141,6 +149,7 @@ export function DebouncedField({
           }}
           onBlur={handleBlur}
           rows={2}
+          maxLength={maxLength && maxLength > 0 ? maxLength : undefined}
           className={`${controlClass} h-auto resize-y py-1.5`}
         />
       ) : (
@@ -159,6 +168,10 @@ export function DebouncedField({
           className={controlClass}
         />
       )}
+
+      {maxLength && maxLength > 0 ? (
+        <CharCounter value={local} limit={maxLength} />
+      ) : null}
 
       {saving ? (
         <span className="text-xs text-muted-foreground">salvando…</span>

@@ -22,8 +22,13 @@ import {
 } from '@/utils/achievements'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
+import {
+  DEFAULT_TEXT_LIMITS,
+  type TextLimitsSettings,
+} from '@/utils/settings'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ClearableInput } from '@/components/ui/clearable-input'
+import { CharCounter } from '@/components/ui/limited-textarea'
 import { Input } from '@/components/ui/input'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
@@ -87,12 +92,16 @@ export function AchievementsAdmin({
   initialAchievements,
   dependents,
   initialProgress,
+  textLimits,
 }: {
   houseId: string
   initialAchievements: Achievement[]
   dependents: { id: string; full_name: string }[]
   initialProgress: AchievementProgressEntry[]
+  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
+  textLimits?: TextLimitsSettings
 }) {
+  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const [achievements, setAchievements] = useState<Achievement[]>(
     initialAchievements
   )
@@ -240,19 +249,19 @@ export function AchievementsAdmin({
           prev.map((item) =>
             item.id === editingId
               ? {
-                  ...item,
-                  title: entry.title.trim(),
-                  description: entry.description,
-                  icon: entry.icon,
-                  image_url: entry.imageUrl,
-                  reward_points: entry.rewardPoints,
-                  target_count: entry.targetCount,
-                  metric_type: entry.metricType,
-                  is_repeatable: entry.isRepeatable,
-                  max_level: entry.maxLevel,
-                  level_multiplier: entry.levelMultiplier,
-                  is_secret: entry.isSecret,
-                }
+                ...item,
+                title: entry.title.trim(),
+                description: entry.description,
+                icon: entry.icon,
+                image_url: entry.imageUrl,
+                reward_points: entry.rewardPoints,
+                target_count: entry.targetCount,
+                metric_type: entry.metricType,
+                is_repeatable: entry.isRepeatable,
+                max_level: entry.maxLevel,
+                level_multiplier: entry.levelMultiplier,
+                is_secret: entry.isSecret,
+              }
               : item
           )
         )
@@ -505,11 +514,15 @@ export function AchievementsAdmin({
                 <ClearableInput
                   id="ach-description"
                   value={form.description}
-                  maxLength={300}
+                  maxLength={limits.achievementDescription > 0 ? limits.achievementDescription : undefined}
                   onChange={(event) =>
                     setForm({ ...form, description: event.target.value })
                   }
                   placeholder="Ex.: Aprove 10 tarefas para desbloquear"
+                />
+                <CharCounter
+                  value={form.description}
+                  limit={limits.achievementDescription}
                 />
               </div>
             </div>
@@ -631,7 +644,7 @@ export function AchievementsAdmin({
               </div>
             </div>
 
-<div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+            <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
               <div className="flex flex-col gap-2">
                 <Label>Imagem como ícone (opcional)</Label>
                 <ImageUpload
@@ -856,7 +869,7 @@ export function AchievementsAdmin({
                                 {entry.unlocked_at ? (
                                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                                     {achievement.is_repeatable ||
-                                    entry.level === 1
+                                      entry.level === 1
                                       ? 'Desbloqueada'
                                       : 'Concluída'}
                                   </span>

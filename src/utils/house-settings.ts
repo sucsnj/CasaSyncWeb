@@ -10,6 +10,7 @@ import {
   DEFAULT_TASK_DECAY,
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
+  DEFAULT_TEXT_LIMITS,
   mergeSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
@@ -21,6 +22,7 @@ import {
   type TaskDecaySettings,
   type TaskRulesSettings,
   type TaskSlaSettings,
+  type TextLimitsSettings,
 } from '@/utils/settings'
 import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
 
@@ -154,5 +156,17 @@ export const getHouseTaskDecaySettings = cache(
   async (houseId: string): Promise<TaskDecaySettings> => {
     const value = await getHouseSettingsValue(houseId, 'task_decay')
     return mergeSettings(value, DEFAULT_TASK_DECAY)
+  }
+)
+
+/**
+ * Limite de caracteres das descrições (tarefa, recompensa, conquista). Lido pelas
+ * actions no caminho de escrita (validação fail-closed) e repassado às telas
+ * para o `maxLength`/contador do formulário.
+ */
+export const getHouseTextLimitsSettings = cache(
+  async (houseId: string): Promise<TextLimitsSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'text_limits')
+    return mergeSettings(value, DEFAULT_TEXT_LIMITS)
   }
 )

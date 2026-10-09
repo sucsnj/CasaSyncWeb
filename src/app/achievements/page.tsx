@@ -12,7 +12,10 @@ import {
 } from '@/utils/house'
 import { getMyNotifications } from '@/utils/notifications'
 import { isAchievementClaimable } from '@/utils/achievements'
-import { getHouseQuickMessageSettings } from '@/utils/house-settings'
+import {
+  getHouseQuickMessageSettings,
+  getHouseTextLimitsSettings,
+} from '@/utils/house-settings'
 import { getActivePunishment } from '@/utils/active-punishment'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -109,6 +112,12 @@ export default async function AchievementsPage() {
       ? await getActivePunishment(user.id, dependentHouse.id)
       : null
 
+  // Teto de caracteres da descrição da conquista (chave `text_limits) — só o
+  // ADMIN escreve descrição, então a leitura é da casa ativa dele.
+  const textLimitsSettings = isAdmin && activeHouse
+    ? await getHouseTextLimitsSettings(activeHouse.id)
+    : undefined
+
   // Item "Conquistas" da nav dourado quando há resgate disponível — derivado
   // das views que o próprio render carrega (mesma regra dos cards).
   let hasClaimable = false
@@ -141,6 +150,7 @@ export default async function AchievementsPage() {
           initialAchievements={achievements?.data ?? []}
           dependents={dependents}
           initialProgress={progress?.data ?? []}
+          textLimits={textLimitsSettings}
         />
       )
     }

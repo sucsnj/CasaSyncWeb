@@ -19,6 +19,7 @@ import {
   getHouseQuickMessageSettings,
   getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
+  getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
 import { registerLoginDay } from '@/actions/stats'
 import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
@@ -135,6 +136,11 @@ export default async function TasksPage() {
   const taskDecaySettings = houseIdForSettings
     ? await getHouseTaskDecaySettings(houseIdForSettings)
     : undefined
+  // Teto de caracteres da descrição (chave `text_limits`). Sai no mesmo
+  // `getHouseSettingsMap` das três leituras acima — zero round-trip extra.
+  const textLimitsSettings = isAdmin && houseIdForSettings
+    ? await getHouseTextLimitsSettings(houseIdForSettings)
+    : undefined
 
   let content: React.ReactNode
 
@@ -162,6 +168,7 @@ export default async function TasksPage() {
           extensionDayOptions={extensionRulesSettings?.dayOptions}
           maxExtensions={extensionRulesSettings?.maxExtensions}
           taskDecay={taskDecaySettings}
+          textLimits={textLimitsSettings}
         />
       )
     }

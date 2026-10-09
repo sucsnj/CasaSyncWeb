@@ -16,7 +16,12 @@ import {
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
-import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
+import {
+  DEFAULT_TASK_DECAY,
+  DEFAULT_TEXT_LIMITS,
+  type TaskDecaySettings,
+  type TextLimitsSettings,
+} from '@/utils/settings'
 import { normalizeTaskTitle, searchTasksByWords } from '@/utils/task-normalize'
 import {
   datetimeLocalToIso,
@@ -33,7 +38,7 @@ import { DebouncedField } from './debounced-field'
 // estado e bloco de formulário abaixo.
 // import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
-import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
+import { LimitedTextarea } from '@/components/ui/limited-textarea'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -89,22 +94,26 @@ export function TasksAdmin({
   extensionDayOptions = [1, 3],
   maxExtensions = 0,
   taskDecay,
+  textLimits,
 }: {
   houseId: string
   initialTasks: Task[]
   assignees: Assignee[]
-  /** Prazo padrão de criação/restauro (dias a partir de agora) — settings.casa. */
+  /** Prazo padrão de criação/restauro (dias a partir de agora) - settings.casa. */
   defaultDueDays?: number
-  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
+  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" - settings.casa. */
   dueSoonHours?: number
-  /** Dias disponíveis nos botões de aprovação de adiamento — settings.casa. */
+  /** Dias disponíveis nos botões de aprovação de adiamento - settings.casa. */
   extensionDayOptions?: number[]
-  /** Máximo de adiamentos por tarefa (0 = ilimitado) — settings.casa. */
+  /** Máximo de adiamentos por tarefa (0 = ilimitado) - settings.casa. */
   maxExtensions?: number
-  /** Decaimento de pontos de tarefas — settings.casa. */
+  /** Decaimento de pontos de tarefas - settings.casa. */
   taskDecay?: TaskDecaySettings
+  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
+  textLimits?: TextLimitsSettings
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
+  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const router = useRouter()
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
@@ -184,25 +193,25 @@ export function TasksAdmin({
     setTasks((prev) => upsertTask(prev, task))
   }
 
-type TransitionResult =
+  type TransitionResult =
     | { ok: true; message?: string }
     | { ok: false; error: string }
 
-/**
- * Executa uma transição de status com **feedback imediato**:
- * 1. trava o botão da tarefa (id no Set) → label "…" + `disabled`;
- * 2. aplica o OTIMISTA **antes** do `await` → o card muda de seção no mesmo
- *    quadro, sem esperar o servidor;
- * 3. aguarda a action;
- * 4. em erro, reverte — mas só o que ainda for o valor do otimista (ver
- *    `rollbackOptimistic`), preservando dado novo do Realtime;
- * 5. destrava no `finally`.
- *
- * Unifica os 7 handlers de transição (aprovar, concluir e creditar, desaprovar,
- * não entregue, pausa/reativação, restaurar, resolver adiamento) — o ponto de
- * elas é idêntico; o que muda é o otimista, o predicado de rollback e a action.
- */
-async function runTaskTransition(
+  /**
+   * Executa uma transição de status com **feedback imediato**:
+   * 1. trava o botão da tarefa (id no Set) → label "…" + `disabled`;
+   * 2. aplica o OTIMISTA **antes** do `await` → o card muda de seção no mesmo
+   *    quadro, sem esperar o servidor;
+   * 3. aguarda a action;
+   * 4. em erro, reverte — mas só o que ainda for o valor do otimista (ver
+   *    `rollbackOptimistic`), preservando dado novo do Realtime;
+   * 5. destrava no `finally`.
+   *
+   * Unifica os 7 handlers de transição (aprovar, concluir e creditar, desaprovar,
+   * não entregue, pausa/reativação, restaurar, resolver adiamento) — o ponto de
+   * elas é idêntico; o que muda é o otimista, o predicado de rollback e a action.
+   */
+  async function runTaskTransition(
     task: Task,
     buildOptimistic: () => Task,
     run: () => Promise<TransitionResult>,
@@ -510,21 +519,21 @@ async function runTaskTransition(
       () =>
         onHold
           ? {
-              ...task,
-              status: 'ON_HOLD',
-              extension_requested: false,
-              extension_reason: null,
-              points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
-            }
+            ...task,
+            status: 'ON_HOLD',
+            extension_requested: false,
+            extension_reason: null,
+            points: task.status === 'NOT_DELIVERED' ? 0 : task.points,
+          }
           : {
-              ...task,
-              status: 'PENDING',
-              due_date: new Date(
-                Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
-              ).toISOString(),
-              extension_requested: false,
-              extension_reason: null,
-            },
+            ...task,
+            status: 'PENDING',
+            due_date: new Date(
+              Date.now() + defaultDueDays * 24 * 60 * 60 * 1000
+            ).toISOString(),
+            extension_requested: false,
+            extension_reason: null,
+          },
       async () => {
         const result = await setTaskOnHold(task.id, onHold)
         if (result.ok && result.data?.task) {
@@ -590,14 +599,14 @@ async function runTaskTransition(
           : {}),
         ...(approve && task.status !== 'NOT_DELIVERED'
           ? {
-              points: getTaskCurrentPoints(
-                task.points,
-                getTaskDecayStart(task.created_at, task.decay_started_at),
-                task.due_date,
-                decay
-              ),
-              decay_started_at: new Date().toISOString(),
-            }
+            points: getTaskCurrentPoints(
+              task.points,
+              getTaskDecayStart(task.created_at, task.decay_started_at),
+              task.due_date,
+              decay
+            ),
+            decay_started_at: new Date().toISOString(),
+          }
           : {}),
       }),
       async () => {
@@ -666,23 +675,23 @@ async function runTaskTransition(
         const reopened =
           item.status === 'NOT_DELIVERED' && changed
             ? {
-                points: 0,
-                status: (nextDue && new Date(nextDue).getTime() < Date.now()
-                  ? 'NOT_DELIVERED'
-                  : 'PENDING') as Task['status'],
-              }
+              points: 0,
+              status: (nextDue && new Date(nextDue).getTime() < Date.now()
+                ? 'NOT_DELIVERED'
+                : 'PENDING') as Task['status'],
+            }
             : {}
         const recycled =
           accepted && item.status !== 'NOT_DELIVERED'
             ? {
-                points: getTaskCurrentPoints(
-                  item.points,
-                  getTaskDecayStart(item.created_at, item.decay_started_at),
-                  item.due_date,
-                  decay
-                ),
-                decay_started_at: new Date().toISOString(),
-              }
+              points: getTaskCurrentPoints(
+                item.points,
+                getTaskDecayStart(item.created_at, item.decay_started_at),
+                item.due_date,
+                decay
+              ),
+              decay_started_at: new Date().toISOString(),
+            }
             : {}
         return {
           ...item,
@@ -882,14 +891,15 @@ async function runTaskTransition(
 
               <div className="grid gap-2 md:col-span-2">
                 <Label htmlFor="task-description">Descrição</Label>
-                <AutoGrowTextarea
+                <LimitedTextarea
                   id="task-description"
                   name="description"
                   rows={2}
+                  limit={limits.taskDescription}
                   placeholder="Opcional"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                  className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 />
               </div>
 
@@ -991,8 +1001,8 @@ async function runTaskTransition(
             message="Tudo limpo por aqui! Crie o próximo desafio. 🎉"
           />
         ) : (
-        <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
-          {pendingTasks.map((task) => {
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {pendingTasks.map((task) => {
               const sla = getTaskSlaStatus(
                 task.due_date,
                 new Date(),
@@ -1013,7 +1023,7 @@ async function runTaskTransition(
                 task.due_date,
                 decay
               )
-  
+
               return (
                 <Card key={task.id} className={cardClass}>
                   <CardContent className="flex flex-col gap-3 py-3">
@@ -1085,7 +1095,7 @@ async function runTaskTransition(
                         )}
                       />
                     </button>
-  
+
                     {isExpanded ? (
                       <>
                         {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
@@ -1096,7 +1106,7 @@ async function runTaskTransition(
                             className="h-32 w-full rounded-xl border border-slate-200 object-cover"
                           />
                         ) : null}
-  
+
                         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                           <DebouncedField
                             value={task.title}
@@ -1106,7 +1116,7 @@ async function runTaskTransition(
                               setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
                             }}
                           />
-  
+
                           <label className="flex items-center gap-2 text-sm">
                             <span className="text-slate-500">Atribuída a</span>
                             <select
@@ -1123,17 +1133,18 @@ async function runTaskTransition(
                             </select>
                           </label>
                         </div>
-  
+
                         <DebouncedField
                           value={task.description ?? ''}
                           onSave={saveDescription(task.id)}
                           textarea
+                          maxLength={limits.taskDescription}
                           placeholder="Descrição (opcional)"
                           onSavingStatusChange={(status) => {
                             setSavingStatuses(prev => ({ ...prev, [task.id]: status }));
                           }}
                         />
-  
+
                         {task.extension_requested ? (
                           <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                             <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
@@ -1186,7 +1197,7 @@ async function runTaskTransition(
                             </div>
                           </div>
                         ) : null}
-  
+
                         <div
                           className={cn(
                             'grid gap-3',
@@ -1220,7 +1231,7 @@ async function runTaskTransition(
                             />
                           </div>
                         </div>
-  
+
                         {isNotDelivered ? (
                           <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
                             Tarefa marcada como não entregue — {currentPoints} pt(s) já
@@ -1252,7 +1263,7 @@ async function runTaskTransition(
                                   : 'Aprovar Tarefa e Creditar'}
                               </Button>
                             )}
-  
+
                             {/* O botão 'Marcar como não entregue' também só aparece se não estiver editando */}
                             {sla === 'overdue' && (savingStatuses[task.id] ?? 'idle') === 'idle' ? (
                               <Button
@@ -1269,7 +1280,7 @@ async function runTaskTransition(
                             ) : null}
                           </div>
                         )}
-  
+
                         {/* Pausar: some da lista do dependente (vale também para a
                             "não entregue" — a penalidade continua definitiva). */}
                         {(savingStatuses[task.id] ?? 'idle') === 'idle' ? (
@@ -1292,7 +1303,7 @@ async function runTaskTransition(
                 </Card>
               )
             })}
-        </CardColumns>
+          </CardColumns>
         )}
       </section>
 
@@ -1307,7 +1318,7 @@ async function runTaskTransition(
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {heldTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)
-  
+
               return (
                 <Card
                   key={task.id}
@@ -1370,7 +1381,7 @@ async function runTaskTransition(
                             className="mt-1 h-32 w-full rounded-xl border border-slate-200 object-cover"
                           />
                         ) : null}
-  
+
                         {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
                             edição: os mesmos campos do card pendente, com salvamento
                             automático. O status continua sendo ON_HOLD — só o botão
@@ -1381,7 +1392,7 @@ async function runTaskTransition(
                             onSave={saveTitle(task.id)}
                             placeholder="Título da tarefa"
                           />
-  
+
                           <label className="flex items-center gap-2 text-sm">
                             <span className="text-slate-500">Atribuída a</span>
                             <select
@@ -1398,14 +1409,15 @@ async function runTaskTransition(
                             </select>
                           </label>
                         </div>
-  
+
                         <DebouncedField
                           value={task.description ?? ''}
                           onSave={saveDescription(task.id)}
                           textarea
+                          maxLength={limits.taskDescription}
                           placeholder="Descrição (opcional)"
                         />
-  
+
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="grid gap-1">
                             <span className="text-xs text-slate-500">Pontos</span>
@@ -1431,7 +1443,7 @@ async function runTaskTransition(
                             </p>
                           </div>
                         </div>
-  
+
                         <p className="mt-1 text-xs text-slate-400">
                           Em espera: invisível para o dependente (ele não vê, não
                           conclui e não pede mais tempo). Você pode editar o que
@@ -1464,8 +1476,8 @@ async function runTaskTransition(
             message="Quando um dependente concluir uma tarefa, ela aparece aqui. 🎉"
           />
         ) : (
-        <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
-          {completedTasks.map((task) => {
+          <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
+            {completedTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)
               // Valor corrente sob o decaimento (o que será creditado na aprovação).
               const currentPoints = getTaskCurrentPoints(
@@ -1474,7 +1486,7 @@ async function runTaskTransition(
                 task.due_date,
                 decay
               )
-  
+
               return (
                 <Card
                   key={task.id}
@@ -1530,7 +1542,7 @@ async function runTaskTransition(
                         </Button>
                       </div>
                     </div>
-  
+
                     {isExpanded ? (
                       <>
                         {task.description ? (
@@ -1572,7 +1584,7 @@ async function runTaskTransition(
                 </Card>
               )
             })}
-        </CardColumns>
+          </CardColumns>
         )}
       </section>
 
@@ -1585,7 +1597,7 @@ async function runTaskTransition(
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {approvedTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)
-  
+
               return (
                 <Card
                   key={task.id}

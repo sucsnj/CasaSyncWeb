@@ -14,7 +14,11 @@ import {
   type NotifyInput,
   type NotifyHouseInput,
 } from '@/utils/notifications'
-import { getHouseRewardPricingSettings } from '@/utils/house-settings'
+import {
+  getHouseRewardPricingSettings,
+  getHouseTextLimitsSettings,
+} from '@/utils/house-settings'
+import { checkTextLimit } from '@/utils/text-limits'
 import type { RewardPricingSettings } from '@/utils/settings'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
@@ -74,6 +78,15 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
   if (input.pointsCost <= 0) {
     return { ok: false, error: 'O custo deve ser maior que zero.' }
   }
+
+  // Limite de caracteres da descrição (chave `text_limits`, 0 = sem limite).
+  const limits = await getHouseTextLimitsSettings(activeHouse.id)
+  const descriptionError = checkTextLimit(
+    'da recompensa',
+    input.description,
+    limits.rewardDescription
+  )
+  if (descriptionError) return { ok: false, error: descriptionError }
 
   const { error } = await admin.from('rewards').insert({
     house_id: activeHouse.id,
@@ -412,6 +425,13 @@ export async function updateReward(
     updates.title = title
   }
   if ('description' in patch) {
+    const limits = await getHouseTextLimitsSettings(activeHouse.id)
+    const descriptionError = checkTextLimit(
+      'da recompensa',
+      patch.description,
+      limits.rewardDescription
+    )
+    if (descriptionError) return { ok: false, error: descriptionError }
     updates.description = patch.description?.trim() || null
   }
   if ('points_cost' in patch) {
@@ -518,6 +538,17 @@ export async function createRewardSuggestion(
   if (input.pointsCost !== null && input.pointsCost <= 0) {
     return { ok: false, error: 'O custo deve ser maior que zero.' }
   }
+
+  // A sugestão vira recompensa na aprovação (`description` é copiado), então o
+  // mesmo limite vale aqui — e o campo do DEPENDENTE precisa mostrar o contador
+  // junto, senão o recado chega só como erro do servidor.
+  const limits = await getHouseTextLimitsSettings(house.id)
+  const descriptionError = checkTextLimit(
+    'da recompensa',
+    input.description,
+    limits.rewardDescription
+  )
+  if (descriptionError) return { ok: false, error: descriptionError }
 
   const admin = createAdminClient()
   const { error } = await admin.from('reward_suggestions').insert({

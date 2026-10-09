@@ -10,7 +10,12 @@ import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
+import { LimitedTextarea } from '@/components/ui/limited-textarea'
 import { Input } from '@/components/ui/input'
+import {
+  DEFAULT_TEXT_LIMITS,
+  type TextLimitsSettings,
+} from '@/utils/settings'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -52,6 +57,7 @@ export function RewardsDependent({
   initialRewards,
   initialRedemptions,
   initialSuggestions,
+  textLimits,
 }: {
   houseId: string
   myId: string
@@ -59,7 +65,13 @@ export function RewardsDependent({
   initialRewards: Reward[]
   initialRedemptions: RedemptionView[]
   initialSuggestions: SuggestionView[]
+  /**
+   * Teto de caracteres da descrição da sugestão (0 = sem limite) - settings.casa.
+   * Mesmo teto da recompensa, porque a sugestão vira recompensa na aprovação.
+   */
+  textLimits?: TextLimitsSettings
 }) {
+  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const router = useRouter()
   const [points, setPoints] = useState(initialPoints)
   const [rewards, setRewards] = useState<Reward[]>(initialRewards)
@@ -297,12 +309,13 @@ export function RewardsDependent({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="suggestion-description">Detalhes</Label>
-                  <textarea
+                  <LimitedTextarea
                     id="suggestion-description"
                     name="description"
                     rows={2}
+                    limit={limits.rewardDescription}
                     placeholder="Opcional"
-                    className="h-auto w-full min-w-0 resize-y rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                    className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -436,7 +449,7 @@ export function RewardsDependent({
                     {suggestion.title}
                   </p>
                   {suggestion.points_cost !== null &&
-                  suggestion.points_cost !== undefined ? (
+                    suggestion.points_cost !== undefined ? (
                     <p className="text-xs text-slate-500">
                       {suggestion.points_cost} pts sugeridos
                     </p>

@@ -16,6 +16,7 @@ import {
   ListTodo,
   MessageSquare,
   Plus,
+  Ruler,
   Save,
   Trash2,
 } from 'lucide-react'
@@ -42,8 +43,10 @@ import type {
   TaskDecaySettings,
   TaskRulesSettings,
   TaskSlaSettings,
+  TextLimitsSettings,
 } from '@/utils/settings'
 import type { HouseTimezoneOption } from '@/utils/timezone'
+import { TEXT_LIMIT_MAX, TEXT_LIMIT_MIN } from '@/utils/text-limits'
 
 type SettingsAdminProps = {
   rewardPricing: RewardPricingSettings
@@ -55,6 +58,7 @@ type SettingsAdminProps = {
   taskDecay: TaskDecaySettings
   taskRules: TaskRulesSettings
   houseTimezone: HouseTimezoneSettings
+  textLimits: TextLimitsSettings
   /** Offset do fuso já formatado no servidor (ex.: `UTC-03:00`) — texto estável. */
   houseTimezoneOffset: string
   /** Lista de fusos com o offset de cada um, calculada no servidor. */
@@ -224,17 +228,17 @@ function TimezoneSelect({
       setPosition(
         openUp
           ? {
-              left: rect.left,
-              width: rect.width,
-              maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
-              bottom: window.innerHeight - rect.top + TZ_GAP,
-            }
+            left: rect.left,
+            width: rect.width,
+            maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
+            bottom: window.innerHeight - rect.top + TZ_GAP,
+          }
           : {
-              left: rect.left,
-              width: rect.width,
-              maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
-              top: rect.bottom + TZ_GAP,
-            }
+            left: rect.left,
+            width: rect.width,
+            maxHeight: Math.max(available, TZ_OPTION_HEIGHT),
+            top: rect.bottom + TZ_GAP,
+          }
       )
     }
 
@@ -298,51 +302,51 @@ function TimezoneSelect({
 
       {open && position
         ? createPortal(
-            <ul
-              ref={listRef}
-              id={listboxId}
-              role="listbox"
-              style={{
-                top: position.top,
-                bottom: position.bottom,
-                left: position.left,
-                width: position.width,
-                maxHeight: position.maxHeight,
-              }}
-              className="fixed z-50 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-            >
-              {allOptions.map((option) => (
-                <li key={option.value}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={option.value === value}
-                    onClick={() => {
-                      onChange(option.value)
-                      setOpen(false)
-                    }}
-                    className={cn(
-                      'flex min-h-14 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50',
-                      option.value === value && 'bg-slate-50 font-medium'
-                    )}
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{option.label}</span>
-                      {option.offset ? (
-                        <span className="text-xs text-slate-500">
-                          {option.offset}
-                        </span>
-                      ) : null}
-                    </span>
-                    {option.value === value ? (
-                      <Check className="size-4 shrink-0 text-blue-600" />
+          <ul
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            style={{
+              top: position.top,
+              bottom: position.bottom,
+              left: position.left,
+              width: position.width,
+              maxHeight: position.maxHeight,
+            }}
+            className="fixed z-50 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+          >
+            {allOptions.map((option) => (
+              <li key={option.value}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={option.value === value}
+                  onClick={() => {
+                    onChange(option.value)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex min-h-14 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50',
+                    option.value === value && 'bg-slate-50 font-medium'
+                  )}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{option.label}</span>
+                    {option.offset ? (
+                      <span className="text-xs text-slate-500">
+                        {option.offset}
+                      </span>
                     ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>,
-            document.body
-          )
+                  </span>
+                  {option.value === value ? (
+                    <Check className="size-4 shrink-0 text-blue-600" />
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )
         : null}
     </div>
   )
@@ -360,6 +364,7 @@ export function SettingsAdmin({
   houseTimezone,
   houseTimezoneOffset,
   timezoneOptions,
+  textLimits,
 }: SettingsAdminProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -399,6 +404,14 @@ export function SettingsAdmin({
   const [timezone, setTimezone] = useState<string>(houseTimezone.timezone)
   const [timezoneError, setTimezoneError] = useState<string | null>(null)
   const [timezoneSuccess, setTimezoneSuccess] = useState<string | null>(null)
+
+  const [limits, setLimits] = useState<TextLimitsSettings>(textLimits)
+  const [limitsError, setLimitsError] = useState<string | null>(null)
+  const [limitsSuccess, setLimitsSuccess] = useState<string | null>(null)
+  // Flag própria (e não o `pending` do `useTransition`): `startTransition` nunca
+  // marca `isPending` quando o callback é async, então `pending` é código morto
+  // e o botão ficaria sem feedback — regra do AGENTS.md §3.
+  const [savingLimits, setSavingLimits] = useState(false)
 
   function savePricing() {
     setPricingError(null)
@@ -537,6 +550,34 @@ export function SettingsAdmin({
     })
   }
 
+  /**
+   * Limites de caracteres das descrições. Usa flag própria em vez do
+   * `startTransition` dos outros cards: `pending` nunca vira `true` com callback
+   * async (AGENTS.md §3), então o botão ficaria sem feedback. O `try/catch/
+   * finally` evita a trava sem volta em caso de erro de rede.
+   */
+  async function saveLimits() {
+    setLimitsError(null)
+    setLimitsSuccess(null)
+    setSavingLimits(true)
+    try {
+      const result = await updateHouseSettings('text_limits', { ...limits })
+      if (!result.ok) {
+        setLimitsError(result.error)
+        toast.error(result.error)
+        return
+      }
+      setLimitsSuccess(result.message ?? 'Limites salvos.')
+      toast.success(result.message ?? 'Limites salvos.')
+      router.refresh()
+    } catch {
+      setLimitsError('Falha de rede ao salvar os limites.')
+      toast.error('Falha de rede ao salvar os limites.')
+    } finally {
+      setSavingLimits(false)
+    }
+  }
+
   function saveDecay() {
     setDecayError(null)
     setDecaySuccess(null)
@@ -565,702 +606,781 @@ export function SettingsAdmin({
       </header>
 
       <CardColumns className="gap-x-6 lg:columns-2 [&>*]:mb-6">
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-              <Coins className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Economia de pontos</CardTitle>
-          <CardDescription>
-            Encarecimento automático do custo das recompensas a cada resgate
-            aprovado.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex min-w-0 flex-col">
-              <span className="text-sm font-semibold text-slate-700">
-                Aumento automático de custo
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Coins className="size-5" />
               </span>
-              <span className="text-xs text-slate-500">
-                Aplicado sobre o custo atual da recompensa a cada aprovação de
-                resgate.
-              </span>
-            </div>
-            <Toggle
-              checked={pricing.enabled}
-              onChange={(enabled) =>
-                setPricing((prev) => ({ ...prev, enabled }))
-              }
-              label="Aumento automático de custo"
-            />
-          </div>
-
-          <div
-            className={cn(
-              'grid gap-4 sm:grid-cols-2',
-              !pricing.enabled && 'pointer-events-none opacity-40'
-            )}
-          >
-            <Field
-              label="Recompensas de até"
-              suffix="pontos não encarecem"
-              value={pricing.noIncreaseMax}
-              onChange={(noIncreaseMax) =>
-                setPricing((prev) => ({ ...prev, noIncreaseMax }))
-              }
-              min={0}
-            />
-            <Field
-              label="Faixa menor termina em"
-              suffix="pontos"
-              value={pricing.midMax}
-              onChange={(midMax) => setPricing((prev) => ({ ...prev, midMax }))}
-              min={0}
-            />
-            <Field
-              label="Taxa da faixa menor"
-              value={pricing.midRate * 100}
-              onChange={(rate) =>
-                setPricing((prev) => ({ ...prev, midRate: rate / 100 }))
-              }
-              min={0}
-              max={100}
-              step={0.5}
-              suffix="%"
-            />
-            <Field
-              label="Taxa da faixa maior"
-              value={pricing.highRate * 100}
-              onChange={(rate) =>
-                setPricing((prev) => ({ ...prev, highRate: rate / 100 }))
-              }
-              min={0}
-              max={100}
-              step={0.5}
-              suffix="%"
-            />
-            <Field
-              label="Aumento mínimo"
-              value={pricing.minBump}
-              onChange={(minBump) =>
-                setPricing((prev) => ({ ...prev, minBump }))
-              }
-              min={1}
-              suffix="pontos"
-              hint="Garante que uma recompensa na faixa encarecida nunca fique parada no mesmo preço."
-            />
-          </div>
-
-          {pricingError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {pricingError}
-            </p>
-          ) : null}
-          {pricingSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {pricingSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-              onClick={() => void savePricing()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar economia de pontos
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-              <MessageSquare className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Mensagem rápida</CardTitle>
-          <CardDescription>
-            Limites da mensagem rápida que o dependente envia aos tutores pelo
-            sino.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field
-              label="Máximo de caracteres"
-              value={quick.maxChars}
-              onChange={(maxChars) =>
-                setQuick((prev) => ({ ...prev, maxChars }))
-              }
-              min={1}
-              max={2000}
-            />
-            <Field
-              label="Tamanho máximo da imagem"
-              value={quick.maxImageMb}
-              onChange={(maxImageMb) =>
-                setQuick((prev) => ({ ...prev, maxImageMb }))
-              }
-              min={1}
-              max={50}
-              suffix="MB"
-            />
-            <Field
-              label="Mensagens acumuladas"
-              value={quick.capacity}
-              onChange={(capacity) =>
-                setQuick((prev) => ({ ...prev, capacity }))
-              }
-              min={1}
-              max={50}
-              hint="Depois desse número de mensagens próprias não lidas, o envio fica bloqueado até que algum tutor abra (e a mais antiga seja apagada)."
-            />
-            <Field
-              label="Expira após leitura"
-              value={quick.readRetentionDays}
-              onChange={(readRetentionDays) =>
-                setQuick((prev) => ({ ...prev, readRetentionDays }))
-              }
-              min={1}
-              max={365}
-              suffix="dias"
-              hint="Se ao menos um tutor abrir a mensagem, ela é apagada para todos (adm e dependente) após este prazo. Mensagens nunca lidas ficam armazenadas."
-            />
-          </div>
-
-          {quickError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {quickError}
-            </p>
-          ) : null}
-          {quickSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {quickSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-              onClick={() => void saveQuick()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar mensagem rápida
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-              <CalendarClock className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Prazos de tarefas</CardTitle>
-          <CardDescription>
-            Prazo padrão ao criar/restaurar tarefas e quanto tempo antes do
-            prazo acende o chip &quot;Prazo próximo&quot; (SLA).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Prazo padrão de criação/restauro"
-              value={sla.defaultDueDays}
-              onChange={(defaultDueDays) =>
-                setSla((prev) => ({ ...prev, defaultDueDays }))
-              }
-              min={0}
-              step={1}
-              suffix="dias"
-              hint="Dias a partir de agora preenchidos no campo de data ao criar uma tarefa e aplicados ao restaurar uma aprovada. 0 = sem prazo padrão."
-            />
-            <Field
-              label="'Prazo próximo' faltando"
-              value={sla.dueSoonHours}
-              onChange={(dueSoonHours) =>
-                setSla((prev) => ({
-                  ...prev,
-                  dueSoonHours: Math.round(dueSoonHours),
-                }))
-              }
-              min={0}
-              max={8760}
-              step={1}
-              suffix="h"
-              hint="Quando faltam menos que essa quantidade de horas para o prazo, o chip âmbar avisa (independe da duração total). 0 desliga o aviso."
-            />
-          </div>
-
-          {slaError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {slaError}
-            </p>
-          ) : null}
-          {slaSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {slaSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-              onClick={() => void saveSla()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar prazos
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-              <Clock3 className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Adiamento de tarefas</CardTitle>
-          <CardDescription>
-            Dias oferecidos nos botões de aprovação de pedidos de adiamento (o
-            dependente sempre pede; o ADMIN escolhe os dias) e quantas vezes o
-            prazo da mesma tarefa pode ser esticado.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:max-w-xs">
-            <Field
-              label="Máximo de adiamentos"
-              value={extensions.maxExtensions}
-              onChange={(maxExtensions) =>
-                setExtensions((prev) => ({ ...prev, maxExtensions }))
-              }
-              min={0}
-              max={99}
-              step={1}
-              suffix="por tarefa"
-              hint="0 = ilimitado. O contador soma quando você APROVA um adiamento; recusar não gasta, e editar o prazo direto no card também não."
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-slate-700">
-              Opções de dias
-              <span className="ml-1 text-xs font-normal text-slate-400">
-                (de 1 a 5)
-              </span>
-            </span>
-            {extensions.dayOptions.map((days, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  max={90}
-                  step={1}
-                  value={Number.isNaN(days) ? '' : days}
-                  onChange={(event) => {
-                    const value = event.target.valueAsNumber
-                    setExtensions((prev) => {
-                      const next = [...prev.dayOptions]
-                      next[index] = Number.isNaN(value) ? NaN : value
-                      return { ...prev, dayOptions: next }
-                    })
-                  }}
-                  className="min-h-10 w-24 text-sm"
-                />
-                <span className="text-sm text-slate-500">
-                  {days === 1 ? 'dia' : 'dias'}
+            </CardAction>
+            <CardTitle>Economia de pontos</CardTitle>
+            <CardDescription>
+              Encarecimento automático do custo das recompensas a cada resgate
+              aprovado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex min-w-0 flex-col">
+                <span className="text-sm font-semibold text-slate-700">
+                  Aumento automático de custo
                 </span>
+                <span className="text-xs text-slate-500">
+                  Aplicado sobre o custo atual da recompensa a cada aprovação de
+                  resgate.
+                </span>
+              </div>
+              <Toggle
+                checked={pricing.enabled}
+                onChange={(enabled) =>
+                  setPricing((prev) => ({ ...prev, enabled }))
+                }
+                label="Aumento automático de custo"
+              />
+            </div>
+
+            <div
+              className={cn(
+                'grid gap-4 sm:grid-cols-2',
+                !pricing.enabled && 'pointer-events-none opacity-40'
+              )}
+            >
+              <Field
+                label="Recompensas de até"
+                suffix="pontos não encarecem"
+                value={pricing.noIncreaseMax}
+                onChange={(noIncreaseMax) =>
+                  setPricing((prev) => ({ ...prev, noIncreaseMax }))
+                }
+                min={0}
+              />
+              <Field
+                label="Faixa menor termina em"
+                suffix="pontos"
+                value={pricing.midMax}
+                onChange={(midMax) => setPricing((prev) => ({ ...prev, midMax }))}
+                min={0}
+              />
+              <Field
+                label="Taxa da faixa menor"
+                value={pricing.midRate * 100}
+                onChange={(rate) =>
+                  setPricing((prev) => ({ ...prev, midRate: rate / 100 }))
+                }
+                min={0}
+                max={100}
+                step={0.5}
+                suffix="%"
+              />
+              <Field
+                label="Taxa da faixa maior"
+                value={pricing.highRate * 100}
+                onChange={(rate) =>
+                  setPricing((prev) => ({ ...prev, highRate: rate / 100 }))
+                }
+                min={0}
+                max={100}
+                step={0.5}
+                suffix="%"
+              />
+              <Field
+                label="Aumento mínimo"
+                value={pricing.minBump}
+                onChange={(minBump) =>
+                  setPricing((prev) => ({ ...prev, minBump }))
+                }
+                min={1}
+                suffix="pontos"
+                hint="Garante que uma recompensa na faixa encarecida nunca fique parada no mesmo preço."
+              />
+            </div>
+
+            {pricingError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {pricingError}
+              </p>
+            ) : null}
+            {pricingSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {pricingSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void savePricing()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar economia de pontos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                <MessageSquare className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Mensagem rápida</CardTitle>
+            <CardDescription>
+              Limites da mensagem rápida que o dependente envia aos tutores pelo
+              sino.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field
+                label="Máximo de caracteres"
+                value={quick.maxChars}
+                onChange={(maxChars) =>
+                  setQuick((prev) => ({ ...prev, maxChars }))
+                }
+                min={1}
+                max={2000}
+              />
+              <Field
+                label="Tamanho máximo da imagem"
+                value={quick.maxImageMb}
+                onChange={(maxImageMb) =>
+                  setQuick((prev) => ({ ...prev, maxImageMb }))
+                }
+                min={1}
+                max={50}
+                suffix="MB"
+              />
+              <Field
+                label="Mensagens acumuladas"
+                value={quick.capacity}
+                onChange={(capacity) =>
+                  setQuick((prev) => ({ ...prev, capacity }))
+                }
+                min={1}
+                max={50}
+                hint="Depois desse número de mensagens próprias não lidas, o envio fica bloqueado até que algum tutor abra (e a mais antiga seja apagada)."
+              />
+              <Field
+                label="Expira após leitura"
+                value={quick.readRetentionDays}
+                onChange={(readRetentionDays) =>
+                  setQuick((prev) => ({ ...prev, readRetentionDays }))
+                }
+                min={1}
+                max={365}
+                suffix="dias"
+                hint="Se ao menos um tutor abrir a mensagem, ela é apagada para todos (adm e dependente) após este prazo. Mensagens nunca lidas ficam armazenadas."
+              />
+            </div>
+
+            {quickError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {quickError}
+              </p>
+            ) : null}
+            {quickSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {quickSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveQuick()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar mensagem rápida
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                <CalendarClock className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Prazos de tarefas</CardTitle>
+            <CardDescription>
+              Prazo padrão ao criar/restaurar tarefas e quanto tempo antes do
+              prazo acende o chip &quot;Prazo próximo&quot; (SLA).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Prazo padrão de criação/restauro"
+                value={sla.defaultDueDays}
+                onChange={(defaultDueDays) =>
+                  setSla((prev) => ({ ...prev, defaultDueDays }))
+                }
+                min={0}
+                step={1}
+                suffix="dias"
+                hint="Dias a partir de agora preenchidos no campo de data ao criar uma tarefa e aplicados ao restaurar uma aprovada. 0 = sem prazo padrão."
+              />
+              <Field
+                label="'Prazo próximo' faltando"
+                value={sla.dueSoonHours}
+                onChange={(dueSoonHours) =>
+                  setSla((prev) => ({
+                    ...prev,
+                    dueSoonHours: Math.round(dueSoonHours),
+                  }))
+                }
+                min={0}
+                max={8760}
+                step={1}
+                suffix="h"
+                hint="Quando faltam menos que essa quantidade de horas para o prazo, o chip âmbar avisa (independe da duração total). 0 desliga o aviso."
+              />
+            </div>
+
+            {slaError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {slaError}
+              </p>
+            ) : null}
+            {slaSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {slaSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveSla()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar prazos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <Clock3 className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Adiamento de tarefas</CardTitle>
+            <CardDescription>
+              Dias oferecidos nos botões de aprovação de pedidos de adiamento (o
+              dependente sempre pede; o ADMIN escolhe os dias) e quantas vezes o
+              prazo da mesma tarefa pode ser esticado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:max-w-xs">
+              <Field
+                label="Máximo de adiamentos"
+                value={extensions.maxExtensions}
+                onChange={(maxExtensions) =>
+                  setExtensions((prev) => ({ ...prev, maxExtensions }))
+                }
+                min={0}
+                max={99}
+                step={1}
+                suffix="por tarefa"
+                hint="0 = ilimitado. O contador soma quando você APROVA um adiamento; recusar não gasta, e editar o prazo direto no card também não."
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-slate-700">
+                Opções de dias
+                <span className="ml-1 text-xs font-normal text-slate-400">
+                  (de 1 a 5)
+                </span>
+              </span>
+              {extensions.dayOptions.map((days, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={90}
+                    step={1}
+                    value={Number.isNaN(days) ? '' : days}
+                    onChange={(event) => {
+                      const value = event.target.valueAsNumber
+                      setExtensions((prev) => {
+                        const next = [...prev.dayOptions]
+                        next[index] = Number.isNaN(value) ? NaN : value
+                        return { ...prev, dayOptions: next }
+                      })
+                    }}
+                    className="min-h-10 w-24 text-sm"
+                  />
+                  <span className="text-sm text-slate-500">
+                    {days === 1 ? 'dia' : 'dias'}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-9 px-2 text-red-600"
+                    aria-label={`Remover opção ${index + 1}`}
+                    disabled={extensions.dayOptions.length <= 1}
+                    onClick={() =>
+                      setExtensions((prev) => ({
+                        ...prev,
+                        dayOptions: prev.dayOptions.filter(
+                          (_, i) => i !== index
+                        ),
+                      }))
+                    }
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+              <p className="text-xs text-slate-500">
+                Cada opção vira um botão &quot;Aprovar (+N dias)&quot; no card da tarefa.
+              </p>
+              <div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="min-h-9 px-2 text-red-600"
-                  aria-label={`Remover opção ${index + 1}`}
-                  disabled={extensions.dayOptions.length <= 1}
+                  className="min-h-9"
+                  disabled={extensions.dayOptions.length >= 5}
                   onClick={() =>
                     setExtensions((prev) => ({
                       ...prev,
-                      dayOptions: prev.dayOptions.filter(
-                        (_, i) => i !== index
-                      ),
+                      dayOptions: [...prev.dayOptions, 1],
                     }))
                   }
                 >
-                  <Trash2 className="size-4" />
+                  <Plus className="size-4" />
+                  Adicionar opção
                 </Button>
               </div>
-            ))}
-            <p className="text-xs text-slate-500">
-              Cada opção vira um botão &quot;Aprovar (+N dias)&quot; no card da tarefa.
-            </p>
-            <div>
+            </div>
+
+            {extensionsError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {extensionsError}
+              </p>
+            ) : null}
+            {extensionsSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {extensionsSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
-                className="min-h-9"
-                disabled={extensions.dayOptions.length >= 5}
-                onClick={() =>
-                  setExtensions((prev) => ({
-                    ...prev,
-                    dayOptions: [...prev.dayOptions, 1],
-                  }))
-                }
+                onClick={() => void saveExtensions()}
+                disabled={pending}
               >
-                <Plus className="size-4" />
-                Adicionar opção
+                <Save className="size-4" />
+                Salvar adiamento
               </Button>
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          {extensionsError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {extensionsError}
-            </p>
-          ) : null}
-          {extensionsSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {extensionsSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-              onClick={() => void saveExtensions()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar adiamento
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-              <BellRing className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Notificações</CardTitle>
-          <CardDescription>
-            Silencie o que não quer receber e defina quanto tempo uma notificação
-            já lida fica no sino antes de ser apagada.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-semibold text-slate-700">
-              Silenciar por categoria
-            </span>
-            {(
-              [
-                ['tasks', 'Tarefas', 'Criação, conclusão, aprovação, adiamentos, espera e restauração.'],
-                ['rewards', 'Recompensas', 'Recompensa nova, resgates e sugestões.'],
-                ['achievements', 'Conquistas', 'Aviso de conquista desbloqueada.'],
-              ] as const
-            ).map(([key, label, hint]) => (
-              <div
-                key={key}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
-              >
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-sm font-semibold text-slate-700">
-                    {label}
-                  </span>
-                  <span className="text-xs text-slate-500">{hint}</span>
-                </div>
-                <Toggle
-                  checked={mute[key]}
-                  onChange={(checked) =>
-                    setMute((prev) => ({ ...prev, [key]: checked }))
-                  }
-                  label={`Silenciar notificações de ${label}`}
-                />
-              </div>
-            ))}
-            <p className="text-xs text-slate-500">
-              Silenciar não apaga o que já foi notificado — só impede novos avisos
-              (e o push) dessa categoria. As mensagens rápidas do dependente e os
-              avisos de penalização de pontos não podem ser silenciados.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:max-w-xs">
-            <Field
-              label="Retenção de lidas"
-              value={retention.readRetentionDays}
-              onChange={(readRetentionDays) =>
-                setRetention((prev) => ({ ...prev, readRetentionDays }))
-              }
-              min={1}
-              max={365}
-              step={1}
-              suffix="dias"
-              hint="As mensagens rápidas não seguem esse prazo — elas são apagadas pela regra própria de capacidade (2 lidas → apaga a mais antiga)."
-            />
-          </div>
-
-          {retentionError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {retentionError}
-            </p>
-          ) : null}
-          {retentionSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {retentionSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-              onClick={() => void saveRetention()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar notificações
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-              <Hourglass className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Decaimento de pontos</CardTitle>
-          <CardDescription>
-            Tarefas perdem pontos com o tempo: a cada período completo desde a
-            criação, o valor cai até o prazo (depois de vencida não perde mais).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex min-w-0 flex-col">
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <BellRing className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Notificações</CardTitle>
+            <CardDescription>
+              Silencie o que não quer receber e defina quanto tempo uma notificação
+              já lida fica no sino antes de ser apagada.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
               <span className="text-sm font-semibold text-slate-700">
-                Decaimento ativo
+                Silenciar por categoria
               </span>
-              <span className="text-xs text-slate-500">
-                O valor exibido e creditado na aprovação já considera a perda; a
-                base salva na tarefa não muda.
-              </span>
+              {(
+                [
+                  ['tasks', 'Tarefas', 'Criação, conclusão, aprovação, adiamentos, espera e restauração.'],
+                  ['rewards', 'Recompensas', 'Recompensa nova, resgates e sugestões.'],
+                  ['achievements', 'Conquistas', 'Aviso de conquista desbloqueada.'],
+                ] as const
+              ).map(([key, label, hint]) => (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                >
+                  <div className="flex min-w-0 flex-col">
+                    <span className="text-sm font-semibold text-slate-700">
+                      {label}
+                    </span>
+                    <span className="text-xs text-slate-500">{hint}</span>
+                  </div>
+                  <Toggle
+                    checked={mute[key]}
+                    onChange={(checked) =>
+                      setMute((prev) => ({ ...prev, [key]: checked }))
+                    }
+                    label={`Silenciar notificações de ${label}`}
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-slate-500">
+                Silenciar não apaga o que já foi notificado — só impede novos avisos
+                (e o push) dessa categoria. As mensagens rápidas do dependente e os
+                avisos de penalização de pontos não podem ser silenciados.
+              </p>
             </div>
-            <Toggle
-              checked={decay.enabled}
-              onChange={(enabled) => setDecay((prev) => ({ ...prev, enabled }))}
-              label="Decaimento de pontos"
-            />
-          </div>
 
-          <div
-            className={cn(
-              'grid gap-4 sm:grid-cols-2',
-              !decay.enabled && 'pointer-events-none opacity-40'
-            )}
-          >
-            <Field
-              label="Período"
-              value={decay.periodHours}
-              onChange={(periodHours) =>
-                setDecay((prev) => ({ ...prev, periodHours }))
-              }
-              min={1}
-              max={8760}
-              step={1}
-              suffix="horas"
-              hint="A cada período completo desde a criação a tarefa perde pontos. Janela limitada ao prazo: uma tarefa com menos de um período até o vencimento não perde nada."
-            />
-            <Field
-              label="Pontos perdidos"
-              value={decay.pointsPerPeriod}
-              onChange={(pointsPerPeriod) =>
-                setDecay((prev) => ({ ...prev, pointsPerPeriod }))
-              }
-              min={1}
-              max={1000}
-              step={1}
-              suffix="por período"
-              hint="Descontados por período; o valor nunca fica negativo (piso em 0)."
-            />
-          </div>
+            <div className="grid gap-4 sm:max-w-xs">
+              <Field
+                label="Retenção de lidas"
+                value={retention.readRetentionDays}
+                onChange={(readRetentionDays) =>
+                  setRetention((prev) => ({ ...prev, readRetentionDays }))
+                }
+                min={1}
+                max={365}
+                step={1}
+                suffix="dias"
+                hint="As mensagens rápidas não seguem esse prazo — elas são apagadas pela regra própria de capacidade (2 lidas → apaga a mais antiga)."
+              />
+            </div>
 
-          {decayError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {decayError}
-            </p>
-          ) : null}
-          {decaySuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {decaySuccess}
-            </p>
-          ) : null}
+            {retentionError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {retentionError}
+              </p>
+            ) : null}
+            {retentionSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {retentionSuccess}
+              </p>
+            ) : null}
 
-<div className="flex justify-end">
+            <div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
-              onClick={() => void saveDecay()}
-              disabled={pending}
+                onClick={() => void saveRetention()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar notificações
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Hourglass className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Decaimento de pontos</CardTitle>
+            <CardDescription>
+              Tarefas perdem pontos com o tempo: a cada período completo desde a
+              criação, o valor cai até o prazo (depois de vencida não perde mais).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex min-w-0 flex-col">
+                <span className="text-sm font-semibold text-slate-700">
+                  Decaimento ativo
+                </span>
+                <span className="text-xs text-slate-500">
+                  O valor exibido e creditado na aprovação já considera a perda; a
+                  base salva na tarefa não muda.
+                </span>
+              </div>
+              <Toggle
+                checked={decay.enabled}
+                onChange={(enabled) => setDecay((prev) => ({ ...prev, enabled }))}
+                label="Decaimento de pontos"
+              />
+            </div>
+
+            <div
+              className={cn(
+                'grid gap-4 sm:grid-cols-2',
+                !decay.enabled && 'pointer-events-none opacity-40'
+              )}
             >
-              <Save className="size-4" />
-              Salvar decaimento
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              <Field
+                label="Período"
+                value={decay.periodHours}
+                onChange={(periodHours) =>
+                  setDecay((prev) => ({ ...prev, periodHours }))
+                }
+                min={1}
+                max={8760}
+                step={1}
+                suffix="horas"
+                hint="A cada período completo desde a criação a tarefa perde pontos. Janela limitada ao prazo: uma tarefa com menos de um período até o vencimento não perde nada."
+              />
+              <Field
+                label="Pontos perdidos"
+                value={decay.pointsPerPeriod}
+                onChange={(pointsPerPeriod) =>
+                  setDecay((prev) => ({ ...prev, pointsPerPeriod }))
+                }
+                min={1}
+                max={1000}
+                step={1}
+                suffix="por período"
+                hint="Descontados por período; o valor nunca fica negativo (piso em 0)."
+              />
+            </div>
 
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-              <ListTodo className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Limites de tarefas</CardTitle>
-          <CardDescription>
-            Rede de segurança contra erro de digitação e contra a lista do
-            dependente crescer sem limite. Zero desliga cada limite.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Teto de pontos"
-              value={rules.maxPointsPerTask}
-              onChange={(maxPointsPerTask) =>
-                setRules((prev) => ({ ...prev, maxPointsPerTask }))
-              }
-              min={0}
-              max={1_000_000}
-              step={1}
-              suffix="por tarefa"
-              hint="0 = sem teto. Acima disso o servidor recusa a tarefa — evita que um zero a mais vire uma fortuna de pontos."
-            />
-            <Field
-              label="Tarefas ativas"
-              value={rules.maxActiveTasks}
-              onChange={(maxActiveTasks) =>
-                setRules((prev) => ({ ...prev, maxActiveTasks }))
-              }
-              min={0}
-              max={999}
-              step={1}
-              suffix="por dependente"
-              hint="0 = sem limite. Conta pendentes, em andamento e não entregues; tarefa em espera não conta (o dependente não a vê)."
-            />
-          </div>
+            {decayError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {decayError}
+              </p>
+            ) : null}
+            {decaySuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {decaySuccess}
+              </p>
+            ) : null}
 
-          {rulesError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {rulesError}
-            </p>
-          ) : null}
-          {rulesSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {rulesSuccess}
-            </p>
-          ) : null}
-
-<div className="flex justify-end">
+            <div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
-              onClick={() => void saveRules()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar limites
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                onClick={() => void saveDecay()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar decaimento
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardAction>
-            <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-              <Globe className="size-5" />
-            </span>
-          </CardAction>
-          <CardTitle>Fuso horário</CardTitle>
-          <CardDescription>
-            Define que horas são para a casa. Muda o horário em que os comunicados
-            são cobrados e o dia que conta na Streak.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <label
-              htmlFor="house-timezone"
-              className="text-sm font-medium text-slate-700"
-            >
-              Fuso da casa
-            </label>
-            <TimezoneSelect
-              value={timezone}
-              options={timezoneOptions}
-              onChange={setTimezone}
-            />
-            <p className="text-xs text-slate-500">
-              Padrão: Recife. Só os horários de comunicados e a contagem de dias da
-              Streak usam isso — o prazo das tarefas continua sendo o horário do
-              dispositivo de cada um.
-            </p>
-            <p className="text-xs font-medium text-slate-600">
-              Agora na casa: {houseTimezoneOffset}
-            </p>
-          </div>
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                <ListTodo className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Limites de tarefas</CardTitle>
+            <CardDescription>
+              Rede de segurança contra erro de digitação e contra a lista do
+              dependente crescer sem limite. Zero desliga cada limite.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Teto de pontos"
+                value={rules.maxPointsPerTask}
+                onChange={(maxPointsPerTask) =>
+                  setRules((prev) => ({ ...prev, maxPointsPerTask }))
+                }
+                min={0}
+                max={1_000_000}
+                step={1}
+                suffix="por tarefa"
+                hint="0 = sem teto. Acima disso o servidor recusa a tarefa — evita que um zero a mais vire uma fortuna de pontos."
+              />
+              <Field
+                label="Tarefas ativas"
+                value={rules.maxActiveTasks}
+                onChange={(maxActiveTasks) =>
+                  setRules((prev) => ({ ...prev, maxActiveTasks }))
+                }
+                min={0}
+                max={999}
+                step={1}
+                suffix="por dependente"
+                hint="0 = sem limite. Conta pendentes, em andamento e não entregues; tarefa em espera não conta (o dependente não a vê)."
+              />
+            </div>
 
-          {timezoneError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {timezoneError}
-            </p>
-          ) : null}
-          {timezoneSuccess ? (
-            <p role="status" className="text-sm text-emerald-700">
-              {timezoneSuccess}
-            </p>
-          ) : null}
+            {rulesError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {rulesError}
+              </p>
+            ) : null}
+            {rulesSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {rulesSuccess}
+              </p>
+            ) : null}
 
-<div className="flex justify-end">
+            <div className="flex justify-end">
               <Button
                 type="button"
                 size="sm"
-              onClick={() => void saveTimezone()}
-              disabled={pending}
-            >
-              <Save className="size-4" />
-              Salvar fuso
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                onClick={() => void saveRules()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar limites
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                <Globe className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Fuso horário</CardTitle>
+            <CardDescription>
+              Define que horas são para a casa. Muda o horário em que os comunicados
+              são cobrados e o dia que conta na Streak.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="house-timezone"
+                className="text-sm font-medium text-slate-700"
+              >
+                Fuso da casa
+              </label>
+              <TimezoneSelect
+                value={timezone}
+                options={timezoneOptions}
+                onChange={setTimezone}
+              />
+              <p className="text-xs text-slate-500">
+                Padrão: Recife. Só os horários de comunicados e a contagem de dias da
+                Streak usam isso — o prazo das tarefas continua sendo o horário do
+                dispositivo de cada um.
+              </p>
+              <p className="text-xs font-medium text-slate-600">
+                Agora na casa: {houseTimezoneOffset}
+              </p>
+            </div>
+
+            {timezoneError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {timezoneError}
+              </p>
+            ) : null}
+            {timezoneSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {timezoneSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveTimezone()}
+                disabled={pending}
+              >
+                <Save className="size-4" />
+                Salvar fuso
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
+                <Ruler className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Limites de texto</CardTitle>
+            <CardDescription>
+              Quantos caracteres cada descrição aceita. O campo mostra a contagem ao
+              vivo e o servidor recusa o que passar do limite. Zero desliga o
+              limite daquele campo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field
+                label="Tarefa"
+                value={limits.taskDescription}
+                onChange={(taskDescription) =>
+                  setLimits((prev) => ({ ...prev, taskDescription }))
+                }
+                min={TEXT_LIMIT_MIN}
+                max={TEXT_LIMIT_MAX}
+                step={1}
+                suffix="caracteres"
+                hint="Descrição que o tutor escreve na tarefa."
+              />
+              <Field
+                label="Recompensa"
+                value={limits.rewardDescription}
+                onChange={(rewardDescription) =>
+                  setLimits((prev) => ({ ...prev, rewardDescription }))
+                }
+                min={TEXT_LIMIT_MIN}
+                max={TEXT_LIMIT_MAX}
+                step={1}
+                suffix="caracteres"
+                hint="Vale também para a sugestão que o dependente envia."
+              />
+              <Field
+                label="Conquista"
+                value={limits.achievementDescription}
+                onChange={(achievementDescription) =>
+                  setLimits((prev) => ({ ...prev, achievementDescription }))
+                }
+                min={TEXT_LIMIT_MIN}
+                max={TEXT_LIMIT_MAX}
+                step={1}
+                suffix="caracteres"
+                hint="Texto que explica a meta da conquista."
+              />
+            </div>
+
+            {limitsError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {limitsError}
+              </p>
+            ) : null}
+            {limitsSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {limitsSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveLimits()}
+                disabled={savingLimits}
+              >
+                <Save className="size-4" />
+                {savingLimits ? 'Salvando…' : 'Salvar limites de texto'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </CardColumns>
     </div>
   )

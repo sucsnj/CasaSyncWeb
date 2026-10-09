@@ -16,6 +16,8 @@ import {
   maxAchievementLevel,
 } from '@/utils/achievements'
 import { syncAchievementProgress } from '@/utils/achievement-progress'
+import { getHouseTextLimitsSettings } from '@/utils/house-settings'
+import { checkTextLimit } from '@/utils/text-limits'
 import { incrementDependentStat } from './stats'
 
 const ACHIEVEMENTS_IMAGE_MARKER = '/casasync-media/achievements/'
@@ -138,6 +140,15 @@ export async function createAchievement(
   const validation = validateAchievementFields(input)
   if (validation) return { ok: false, error: validation }
 
+  // Limite de caracteres da descrição (chave `text_limits`, 0 = sem limite).
+  const limits = await getHouseTextLimitsSettings(activeHouse.id)
+  const descriptionError = checkTextLimit(
+    'da conquista',
+    input.description,
+    limits.achievementDescription
+  )
+  if (descriptionError) return { ok: false, error: descriptionError }
+
   const now = new Date().toISOString()
   const { data: achievementRow, error } = await admin
     .from('achievements')
@@ -226,6 +237,18 @@ export async function updateAchievement(
     levelMultiplier: patch.levelMultiplier ?? 1,
   })
   if (validation) return { ok: false, error: validation }
+
+  // A descrição não entra em `validateAchievementFields` (que valida o patch
+  // inteiro com placeholders), então o limite é checado aqui.
+  if (patch.description !== undefined) {
+    const limits = await getHouseTextLimitsSettings(activeHouse.id)
+    const descriptionError = checkTextLimit(
+      'da conquista',
+      patch.description,
+      limits.achievementDescription
+    )
+    if (descriptionError) return { ok: false, error: descriptionError }
+  }
 
   const updates: Database['public']['Tables']['achievements']['Update'] = {
     updated_at: new Date().toISOString(),
@@ -676,11 +699,11 @@ export async function claimAchievementReward(
   const update =
     achievement.is_repeatable
       ? {
-          level: nextLevel,
-          current_progress: 0,
-          unlocked_at: null,
-          updated_at: now,
-        }
+        level: nextLevel,
+        current_progress: 0,
+        unlocked_at: null,
+        updated_at: now,
+      }
       : { level: nextLevel, updated_at: now }
 
   const { data: updated, error } = await admin

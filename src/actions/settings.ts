@@ -13,6 +13,7 @@ import {
   DEFAULT_TASK_DECAY,
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
+  DEFAULT_TEXT_LIMITS,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type HouseTimezoneSettings,
@@ -23,7 +24,9 @@ import {
   type TaskDecaySettings,
   type TaskRulesSettings,
   type TaskSlaSettings,
+  type TextLimitsSettings,
 } from '@/utils/settings'
+import { TEXT_LIMIT_MAX, TEXT_LIMIT_MIN } from '@/utils/text-limits'
 import { isValidTimeZone } from '@/utils/timezone'
 import { MUTEABLE_CATEGORIES } from '@/types/notifications'
 import { POINTS_MAX } from './types'
@@ -102,6 +105,13 @@ export async function updateHouseSettings(
     revalidatePath('/tasks')
     revalidatePath('/rewards')
   }
+  if (key === 'text_limits') {
+    // O limite entra no `maxLength`/contador dos TRÊS formulários do ADMIN, cada
+    // um na sua tela — por isso as três rotas.
+    revalidatePath('/tasks')
+    revalidatePath('/rewards')
+    revalidatePath('/achievements')
+  }
 
   return { ok: true, message: 'Configurações salvas.' }
 }
@@ -123,23 +133,25 @@ function validateSettings(
   if (key === 'notification_mute') return validateNotificationMute(patch)
   if (key === 'task_rules') return validateTaskRules(patch)
   if (key === 'house_timezone') return validateHouseTimezone(patch)
+  if (key === 'text_limits') return validateTextLimits(patch)
   return validateNotificationRetention(patch)
 }
 
 type SettingsResult =
   | {
-      ok: true
-      value:
-        | RewardPricingSettings
-        | QuickMessageSettings
-        | TaskSlaSettings
-        | ExtensionRulesSettings
-        | NotificationRetentionSettings
-        | NotificationMuteSettings
-        | TaskDecaySettings
-        | TaskRulesSettings
-        | HouseTimezoneSettings
-    }
+    ok: true
+    value:
+    | RewardPricingSettings
+    | QuickMessageSettings
+    | TaskSlaSettings
+    | ExtensionRulesSettings
+    | NotificationRetentionSettings
+    | NotificationMuteSettings
+    | TaskDecaySettings
+    | TaskRulesSettings
+    | HouseTimezoneSettings
+    | TextLimitsSettings
+  }
   | { ok: false; error: string }
 
 function validateRewardPricing(patch: Record<string, unknown>): SettingsResult {
@@ -372,6 +384,40 @@ function validateHouseTimezone(patch: Record<string, unknown>): SettingsResult {
   }
 
   base.timezone = timezone
+
+  return { ok: true, value: base }
+}
+
+/**
+ * Limite de caracteres das descrições. Inteiro de `TEXT_LIMIT_MIN` (0 = sem
+ * limite) a `TEXT_LIMIT_MAX`; os três campos saem do default quando omitidos, e
+ * um campo a mais enviado pelo cliente **não entra** no jsonb (a base é o
+ * default, como nas outras chaves).
+ */
+function validateTextLimits(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_TEXT_LIMITS }
+
+  const campos: Array<keyof TextLimitsSettings> = [
+    'taskDescription',
+    'rewardDescription',
+    'achievementDescription',
+  ]
+
+  for (const campo of campos) {
+    const value = patch[campo] ?? base[campo]
+    if (
+      !isFiniteNumber(value) ||
+      !Number.isInteger(value) ||
+      value < TEXT_LIMIT_MIN ||
+      value > TEXT_LIMIT_MAX
+    ) {
+      return {
+        ok: false,
+        error: `Cada limite deve ser um inteiro de ${TEXT_LIMIT_MIN} (sem limite) até ${TEXT_LIMIT_MAX}.`,
+      }
+    }
+    base[campo] = value
+  }
 
   return { ok: true, value: base }
 }

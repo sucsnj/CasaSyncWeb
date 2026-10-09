@@ -23,6 +23,7 @@ export type HouseSettingsKey =
   | 'task_decay'
   | 'task_rules'
   | 'house_timezone'
+  | 'text_limits'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -151,6 +152,23 @@ export type HouseTimezoneSettings = {
   timezone: string
 }
 
+/**
+ * Limite de caracteres das **descrições** que o ADMIN escreve: tarefa, recompensa
+ * e conquista. `0` = sem limite (mesma convenção de `task_rules`).
+ *
+ * A regra puramente no cliente é o `maxLength` do campo; a validade de verdade
+ * é o servidor (`checkTextLimit` em `src/utils/text-limits.ts`), porque o
+ * cliente é só conveniência. Default 500 nas três.
+ */
+export type TextLimitsSettings = {
+  /** Máximo de caracteres da descrição de uma tarefa (0 = sem limite). */
+  taskDescription: number
+  /** Máximo de caracteres da descrição de uma recompensa (0 = sem limite). */
+  rewardDescription: number
+  /** Máximo de caracteres da descrição de uma conquista (0 = sem limite). */
+  achievementDescription: number
+}
+
 export const DEFAULT_TASK_SLA: TaskSlaSettings = {
   defaultDueDays: 1,
   dueSoonHours: 4,
@@ -184,6 +202,12 @@ export const DEFAULT_TASK_RULES: TaskRulesSettings = {
 
 export const DEFAULT_HOUSE_TIMEZONE_SETTINGS: HouseTimezoneSettings = {
   timezone: DEFAULT_HOUSE_TIMEZONE,
+}
+
+export const DEFAULT_TEXT_LIMITS: TextLimitsSettings = {
+  taskDescription: 500,
+  rewardDescription: 500,
+  achievementDescription: 500,
 }
 
 export function mergeSettings<T extends Record<string, unknown>>(

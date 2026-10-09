@@ -11,6 +11,7 @@ import {
   getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
   getHouseTimezoneSettings,
+  getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
 import { formatZonedOffset, houseTimezoneOptions } from '@/utils/timezone'
@@ -70,6 +71,7 @@ export default async function AdminSettingsPage() {
     taskDecay,
     taskRules,
     houseTimezone,
+    textLimits,
   ] = await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
@@ -80,6 +82,7 @@ export default async function AdminSettingsPage() {
     getHouseTaskDecaySettings(activeHouse.id),
     getHouseTaskRulesSettings(activeHouse.id),
     getHouseTimezoneSettings(activeHouse.id),
+    getHouseTextLimitsSettings(activeHouse.id),
   ])
 
   // Offset do fuso da casa, calculado NO SERVIDOR e repassado como texto: o
@@ -105,6 +108,7 @@ export default async function AdminSettingsPage() {
         houseTimezone={houseTimezone}
         houseTimezoneOffset={houseTimezoneOffset}
         timezoneOptions={timezoneOptions}
+        textLimits={textLimits}
       />
     </div>
   )

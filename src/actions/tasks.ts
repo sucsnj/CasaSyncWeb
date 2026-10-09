@@ -19,11 +19,13 @@ import {
   registerAchievementProgress,
 } from './achievements'
 import { normalizeTaskTitle } from '@/utils/task-normalize'
+import { checkTextLimit } from '@/utils/text-limits'
 import {
   getHouseExtensionRulesSettings,
   getHouseTaskDecaySettings,
   getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
+  getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import type { ActionResult } from './types'
@@ -254,6 +256,17 @@ export async function createTask(
   const pointsCapError = checkPointsCap(input.points, rules.maxPointsPerTask)
   if (pointsCapError) return { ok: false, error: pointsCapError }
 
+  // Limite de caracteres da descrição (chave `text_limits`, 0 = sem limite).
+  // Custo zero de round-trip: o getter entra no mesmo `getHouseSettingsMap` que o
+  // `task_rules` acima já leu — `React.cache` memoiza por casa no mesmo request.
+  const limits = await getHouseTextLimitsSettings(activeHouse.id)
+  const descriptionError = checkTextLimit(
+    'da tarefa',
+    input.description,
+    limits.taskDescription
+  )
+  if (descriptionError) return { ok: false, error: descriptionError }
+
   const { data: assignee } = await admin
     .from('house_members')
     .select('id')
@@ -417,6 +430,13 @@ export async function updateTask(
   }
   if ('description' in patch) {
     const desc = patch.description?.trim()
+    const limits = await getHouseTextLimitsSettings(activeHouse.id)
+    const descriptionError = checkTextLimit(
+      'da tarefa',
+      desc,
+      limits.taskDescription
+    )
+    if (descriptionError) return { ok: false, error: descriptionError }
     updates.description = desc ? desc : null
   }
   if ('points' in patch) {
