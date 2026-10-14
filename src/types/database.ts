@@ -176,6 +176,8 @@ export interface Database {
           completed_at: string | null
           due_date: string | null
           image_url: string | null
+          attachment_name: string | null
+          attachment_type: string | null
           extension_requested: boolean
           extension_reason: string | null
           extension_count: number
@@ -196,6 +198,8 @@ export interface Database {
           completed_at?: string | null
           due_date?: string | null
           image_url?: string | null
+          attachment_name?: string | null
+          attachment_type?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
           extension_count?: number
@@ -216,6 +220,8 @@ export interface Database {
           completed_at?: string | null
           due_date?: string | null
           image_url?: string | null
+          attachment_name?: string | null
+          attachment_type?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
           extension_count?: number

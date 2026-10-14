@@ -6,7 +6,7 @@ Fonte de verdade do código: `src/types/database.ts` (espelho manual). Para rege
 npx supabase gen types typescript --project-id <project-ref> > src/types/database.generated.ts
 ```
 
-As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication, bucket `casasync-media`, `tasks.decay_started_at`, as 3 colunas das conquistas, a tabela `house_settings` + policy, as tabelas `achievements`/`dependent_achievements` e a tabela `dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`) já foram aplicados no projeto atual — **nada está pendente no banco**, exceto as tabelas de **comunicados** (`comunicados`/`comunicado_deliveries`, feature nova): o SQL em `docs/sql/comunicados.sql` **aguarda aplicação** no dashboard Supabase (ver seção "Comunicados" no topo do `PROJECT_STATUS.md`).
+As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem pasta `supabase/` no repo). Mudanças de schema são aplicadas manualmente no dashboard do Supabase — ver `AGENTS.md` §3. **Todos os scripts documentados aqui, no `PROJECT_STATUS.md` e nos ADRs (colunas de imagem — incl. `rewards.active` e `notifications.image_url`/`message_id` da mensagem rápida —, `reward_suggestions`, flags `extension_*`, enum `NOT_DELIVERED`, tabela `notifications` + policy + publication, bucket `casasync-media`, `tasks.decay_started_at`, as 3 colunas das conquistas, a tabela `house_settings` + policy, as tabelas `achievements`/`dependent_achievements` e a tabela `dependent_stats` + migração `COMPLETED_TASKS→TASKS_APPROVED`) já foram aplicados no projeto atual — **nada está pendente no banco**, exceto: (1) as tabelas de **comunicados** (`comunicados`/`comunicado_deliveries`, feature nova): o SQL em `docs/sql/comunicados.sql` **aguarda aplicação** no dashboard Supabase (ver seção "Comunicados" no topo do `PROJECT_STATUS.md`); (2) as 2 colunas do **anexo de tarefa** (`tasks.attachment_name`/`attachment_type`): SQL em `docs/sql/task_attachment.sql` **aguarda aplicação** (ver seção "Anexo de arquivo na tarefa" no topo do `PROJECT_STATUS.md`).
 
 ## Tabelas
 
@@ -52,7 +52,9 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | created_by | uuid FK → profiles | |
 | completed_by / completed_at | uuid / timestamptz | nullable |
 | due_date | timestamptz | SLA (`src/utils/task-sla.ts`); **sempre gravado com fuso** — o cliente envia o instante ISO via `datetimeLocalToIso` e o servidor (`normalizeDueDate`) rejeita string naive (seria lida como UTC e deslocaria o prazo) |
-| image_url | text | |
+| image_url | text | URL do **anexo** da tarefa (bucket `casasync-media`, pasta `tasks/`). Também guarda a imagem de tarefas antigas (sem `attachment_type`) |
+| attachment_name | text | nullable; nome original do arquivo, só para exibição. **Aguardando aplicação** (`docs/sql/task_attachment.sql`) |
+| attachment_type | text | nullable; MIME do anexo, na lista fechada de `src/utils/task-attachment.ts` (`image/*`, `video/*`, `application/pdf`, `text/html`). null = tarefa antiga, tratada como imagem inline. **Aguardando aplicação** |
 | extension_requested | bool | pedido de adiamento |
 | extension_reason | text | justificativa obrigatória |
 | extension_count | int | default 0; quantos adiamentos a tarefa já recebeu (soma na aprovação); `>= 0` |

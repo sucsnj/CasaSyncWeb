@@ -31,12 +31,8 @@ import {
 } from '@/utils/datetime-local'
 import type { Tables } from '@/types/database'
 import { DebouncedField } from './debounced-field'
-// DESABILITADO — envio de imagem em tarefas (decisão de produto, 2026): as
-// imagens de tarefa inflavam o storage e a feature foi desativada. A coluna
-// `tasks.image_url` e as actions continuam intactas; imagens de tarefas
-// antigas seguem sendo exibidas nos cards. Reativar = descomentar import,
-// estado e bloco de formulário abaixo.
-// import { ImageUpload } from '@/components/ui/image-upload'
+import { TaskAttachmentInput } from './task-attachment-input'
+import { TaskAttachmentView } from './task-attachment-view'
 import { Button } from '@/components/ui/button'
 import { LimitedTextarea } from '@/components/ui/limited-textarea'
 import { ClearableInput } from '@/components/ui/clearable-input'
@@ -121,8 +117,13 @@ export function TasksAdmin({
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  // DESABILITADO — estado do upload de imagem de tarefas (ver comentário na importação).
-  // const [taskImageUrl, setTaskImageUrl] = useState<string | null>(null)
+  // Anexo do form de criação (imagem, vídeo, PDF ou página HTML — arquivo
+  // único). A URL vai em `image_url`; nome e tipo andam junto na action.
+  const [taskAttachment, setTaskAttachment] = useState<{
+    url: string | null
+    name: string | null
+    type: string | null
+  }>({ url: null, name: null, type: null })
   const [dueDate, setDueDate] = useState(() =>
     modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays)
   )
@@ -350,6 +351,7 @@ export function TasksAdmin({
     setPoints('5')
     setAssignedTo(defaultAssignee)
     setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
+    setTaskAttachment({ url: null, name: null, type: null })
     setReuseTask(null)
     setConfirmDuplicate(false)
     setSuggestionsOpen(false)
@@ -430,7 +432,9 @@ export function TasksAdmin({
           dueDate: datetimeLocalToIso(dueDate),
           points: pointsValue,
           assignedTo,
-          imageUrl: null,
+          imageUrl: taskAttachment.url,
+          attachmentName: taskAttachment.name,
+          attachmentType: taskAttachment.type,
         },
         confirmDuplicate ? { force: true } : undefined
       )
@@ -714,6 +718,40 @@ export function TasksAdmin({
     void updateTask(task.id, { assigned_to: next })
   }
 
+  /**
+   * Anexo do card: trocar o arquivo ou remover. O upload acontece no
+   * `TaskAttachmentInput` (que valida tamanho/tipo antes de enviar) e chega aqui
+   * com a URL já no storage — a action valida de novo (fail-closed), grava nome e
+   * tipo e apaga o arquivo antigo do bucket.
+   */
+  function changeAttachment(
+    task: Task,
+    attachment: { url: string | null; name: string | null; type: string | null }
+  ) {
+    const patch = {
+      image_url: attachment.url,
+      attachment_name: attachment.name,
+      attachment_type: attachment.type,
+    }
+    // Otimista: o card mostra o anexo novo/removido na hora; em erro volta ao
+    // valor anterior (`task` é o card como estava antes desta mudança).
+    setTasks((prev) => upsertTask(prev, { ...task, ...patch }))
+    void (async () => {
+      try {
+        const result = await updateTask(task.id, patch)
+        if (!result.ok) {
+          setTasks((prev) => upsertTask(prev, task))
+          toast.error(result.error)
+          return
+        }
+        toast.success(attachment.url ? 'Anexo atualizado.' : 'Anexo removido.')
+      } catch {
+        setTasks((prev) => upsertTask(prev, task))
+        toast.error('Falha de conexão. O anexo não foi alterado.')
+      }
+    })()
+  }
+
   function toggleExpanded(taskId: string) {
     setExpandedIds((prev) => {
       const next = new Set(prev)
@@ -903,24 +941,19 @@ export function TasksAdmin({
                 />
               </div>
 
-              {/*
-              Bloco DESATIVADO — upload de imagem da tarefa (decisão de produto, 2026):
-              envio de imagens em tarefas foi desligado para NÃO INFLAR o
-              storage/banco. Com o campo oculto (`image_url`) removido, o
-              `formData.get('image_url')` volta null e a tarefa nasce sem imagem.
-              A coluna `tasks.image_url` segue no schema e imagens de tarefas
-              antigas continuam aparecendo nos cards. Reativar = descomentar.
-            */}
-              {/* <div className="flex flex-col gap-2 md:col-span-2">
-              <Label>Imagem (opcional)</Label>
-              <ImageUpload
-                folder="tasks"
-                ownerId={houseId}
-                value={taskImageUrl}
-                onChange={setTaskImageUrl}
-              />
-              <input type="hidden" name="image_url" value={taskImageUrl ?? ''} />
-            </div> */}
+              <div className="flex flex-col gap-2 md:col-span-2">
+                <Label>Anexo (opcional)</Label>
+                <TaskAttachmentInput
+                  ownerId={houseId}
+                  url={taskAttachment.url}
+                  name={taskAttachment.name}
+                  type={taskAttachment.type}
+                  onChange={setTaskAttachment}
+                />
+                {/* A URL vai em `image_url` (coluna que já existia); nome e tipo
+                    são gravados pelo `createTask` a partir daqui. */}
+                <input type="hidden" name="image_url" value={taskAttachment.url ?? ''} />
+              </div>
 
               {formError ? (
                 <p className="text-sm text-destructive md:col-span-2" role="alert">
@@ -1098,14 +1131,26 @@ export function TasksAdmin({
 
                     {isExpanded ? (
                       <>
-                        {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
+                        {/* Anexo: miniatura (imagem) ou chip com ícone — clicar
+                            abre o arquivo em uma nova aba do navegador. */}
                         {task.image_url ? (
-                          <img
-                            src={task.image_url}
-                            alt=""
-                            className="h-32 w-full rounded-xl border border-slate-200 object-cover"
+                          <TaskAttachmentView
+                            url={task.image_url}
+                            name={task.attachment_name}
+                            type={task.attachment_type}
                           />
                         ) : null}
+
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs text-slate-500">Anexo</span>
+                          <TaskAttachmentInput
+                            ownerId={houseId}
+                            url={task.image_url}
+                            name={task.attachment_name}
+                            type={task.attachment_type}
+                            onChange={(attachment) => changeAttachment(task, attachment)}
+                          />
+                        </div>
 
                         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                           <DebouncedField
@@ -1375,12 +1420,23 @@ export function TasksAdmin({
                     {isExpanded ? (
                       <>
                         {task.image_url ? (
-                          <img
-                            src={task.image_url}
-                            alt=""
-                            className="mt-1 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                          <TaskAttachmentView
+                            url={task.image_url}
+                            name={task.attachment_name}
+                            type={task.attachment_type}
                           />
                         ) : null}
+
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          <span className="text-xs text-slate-500">Anexo</span>
+                          <TaskAttachmentInput
+                            ownerId={houseId}
+                            url={task.image_url}
+                            name={task.attachment_name}
+                            type={task.attachment_type}
+                            onChange={(attachment) => changeAttachment(task, attachment)}
+                          />
+                        </div>
 
                         {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
                             edição: os mesmos campos do card pendente, com salvamento

@@ -195,7 +195,117 @@ e `/login` **200** — o caminho **não autenticado**, anterior à mudança.
 
 ---
 
+## Anexo de arquivo na tarefa — imagem, vídeo, HTML ou PDF (implementado — **SQL a aplicar**)
+
+### O que foi implementado
+- **Um arquivo por tarefa**, anexado pelo ADMIN: no form de criação e no card
+  expandido (inclusive no card "Em espera"), com **trocar/remover**. Aceita
+  **imagem, vídeo, PDF ou página HTML**, até **5 MB** (o mesmo teto da mensagem
+  rápida — o upload de tarefa tinha sido desligado em 2026 justamente para não
+  inflar o storage, que é do plano Hobby, 1 GB).
+- **A URL do anexo vai em `tasks.image_url`** (a coluna que já existia) e as **2
+  colunas novas** `attachment_name` (nome original) e `attachment_type` (MIME)
+  guardam o resto — **SQL em `docs/sql/task_attachment.sql`, a aplicar no
+  Supabase antes do deploy**. Um único caminho de código: tarefa antiga, com
+  `image_url` e **sem** `attachment_type`, continua caindo no caso "imagem"
+  (`attachmentKind(null)` → `'image'`), que é exatamente o render de antes.
+- **Abre em nova aba do navegador** (`<a href target="_blank"
+  rel="noopener noreferrer">`, então ctrl/mouse-middle também funcionam). O
+  componente só escolhe a **aparência** (miniatura para imagem, chip com ícone
+  para os demais) — quem decide como abrir é o browser, e ele já faz a coisa
+  certa por tipo.
+- **Por que o HTML abre RENDERIZADO e não como código** (o ponto que motivou o
+  pedido): o que decide é o **content-type gravado no upload**. `uploadMedia`
+  (`src/utils/media.ts`) agora resolve um MIME pela extensão quando o browser
+  entrega `file.type` **vazio** — o caso mais comum em `.html` e `.mov`. Sem
+  isso o storage guardaria `application/octet-stream` e o anexo **baixaria** em
+  vez de abrir. Esse ajuste vale para **todas** as pastas do bucket, não só
+  `tasks/`.
+- **Regras puras em `src/utils/task-attachment.ts`** (módulo puro, importado
+  pelo client **e** pelas actions): `TASK_ATTACHMENT_MAX_MB`/`_MAX_BYTES`,
+  `TASK_ATTACHMENT_TYPES` (lista **fechada** de MIME),
+  `resolveAttachmentType`/`attachmentTypeFromName` (fallback por extensão),
+  `attachmentKind`/`attachmentKindLabel`, `formatAttachmentSize` e
+  **`validateTaskAttachment` — fail closed, no servidor**: (1) a URL precisa
+  ser do bucket na **pasta `tasks/`** (mesma defesa de `sendQuickMessage` com
+  `messages/` e de `createAchievement` com `achievements/` — senão o ADMIN
+  apontaria a tarefa para uma página externa), (2) o tipo precisa estar na
+  lista, (3) o nome ≤120 e sem caractere de controle.
+- **`createTask`/`updateTask` gravam/apagam os 3 campos juntos** — `image_url:
+  null` limpa nome e tipo (nada de arquivo sem nome, nem nome sem arquivo) — e
+  `removeTaskAttachment` **apaga o arquivo antigo do bucket** quando o ADMIN
+  troca (best-effort, só quando a URL mudou, e **nunca** fora da pasta
+  `tasks/`). Sem isso o storage só cresceria, que é a razão do desligamento
+  anterior.
+- **O nome original nunca entra no caminho do storage** (é um UUID — ver
+  `uploadMedia`): o nome serve só para exibição. O path continua
+  `tasks/<houseId>/<uuid>.<ext>`.
+- **UI:** `TaskAttachmentInput` (`src/components/tasks/task-attachment-input.tsx`
+  — valida tamanho/tipo **antes** de enviar, mostra miniatura ou chip com nome e
+  tem botão de remover) e `TaskAttachmentView`
+  (`task-attachment-view.tsx` — exibição **compartilhada** por ADMIN e
+  dependente). O card do ADMIN troca/remove com update otimista + rollback por
+  snapshot em erro (mesmo padrão dos outros campos).
+- **Notificação `TASK_CREATED`** acrescenta **"Há um anexo para ver."** quando há
+  arquivo — é o que faz o dependente abrir o app para ver.
+
+### SQL a aplicar no Supabase (antes do deploy)
+`docs/sql/task_attachment.sql` — duas colunas nullable e um índice parcial:
+```sql
+alter table public.tasks add column if not exists attachment_name text;
+alter table public.tasks add column if not exists attachment_type text;
+create index if not exists tasks_house_attachment_idx
+  on public.tasks (house_id) where attachment_type is not null;
+```
+Sem backfill e nullable: rodar depois do deploy não quebra nada, mas o app lê
+as colunas novas — então **SQL antes do deploy**, como nas outras features.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+Regras puras conferidas executando o módulo real com `node --experimental-strip-types`
+(script temporário fora do repo, sem dependência nova): **33 casos** — resolução
+de tipo com `file.type` vazio (`.html`, `.htm`, `.JPEG` maiúsculo, `.mov`),
+`accept`, `attachmentKind` nos 4 tipos + `null` (legado) e a validação
+fail-closed (URL externa barrada, pasta errada barrada, tipo fora da lista
+barrado, tipo ausente mas extensão válida aceito, nome com caractere de
+controle barrado, nome >120 barrado).
+
+### Pontos de atenção
+- **Ordem obrigatória: SQL antes do deploy** — o `select('*')` da tarefa e a
+  gravação das colunas novas quebram com `column does not exist`.
+- **HTML servido do bucket público é uma URL pública** (o bucket é público por
+  escolha antiga, para as imagens). Abrir o HTML numa aba do domínio
+  `*.supabase.co` **não** dá acesso ao app (origem diferente, sem cookie/sessão
+  do CasaSync), mas o arquivo pode exibir qualquer conteúdo — quem anexa é o
+  **ADMIN da casa**, então o risco é o tutor mostrar algo enganoso ao próprio
+  dependente. Se um dia isso incomodar, o caminho é bucket privado + URL assinada
+  de curta duração, não uma flag no app.
+- **`validateTaskAttachment` é a barreira real**, não o `accept` do input nem a
+  validação do client: URL e MIME chegam do cliente.
+- **Não reintroduzir o `ImageUpload` (de imagem) em tarefa** — o caminho agora é
+  o anexo, e o `ImageUpload` antigo é para foto de avatar/casa/recompensa.
+- **Não aumentar o teto de 5 MB sem pensar no bucket**: 1 GB é o total do plano
+  Hobby, e vídeo é o formato que mais consome. O `removeTaskAttachment` é o que
+  segura o crescimento quando o ADMIN troca o arquivo.
+- **Um anexo por tarefa** — um segundo arquivo exigiria mexer no schema (o
+  escolhido foi reusar `image_url`, que é 1:1).
+- Testado em tela ainda não: vale conferir HTML (renderiza, não baixa), PDF
+  (abre no visualizador), imagem, vídeo e a troca/remoção no card.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **Anexo de arquivo na tarefa:** o ADMIN anexa **um arquivo por tarefa** (imagem,
+  vídeo, PDF ou página HTML, até 5 MB) no form de criação e troca/remove no card.
+  Ao clicar, abre em **nova aba do navegador** — a URL pública do storage é
+  renderizada pelo browser conforme o tipo (HTML renderiza, PDF abre no
+  visualizador, imagem/vídeo abrem direto), então o app não precisa de viewer. O
+  que faz o HTML renderizar em vez de baixar é o **content-type do upload**, e
+  `uploadMedia` agora resolve o MIME pela extensão quando o browser manda
+  `file.type` vazio. SQL das 2 colunas novas (`tasks.attachment_name`/
+  `attachment_type`) em `docs/sql/task_attachment.sql`, **a aplicar no
+  Supabase antes do deploy**. Ver a seção no topo do documento.
 
 - **Shell das rotas de topo em route group `(app)`:** `/tasks`, `/rewards` e
   `/achievements` não tinham `layout.tsx` — montavam a nav dentro do

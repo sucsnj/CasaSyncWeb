@@ -28,6 +28,10 @@ import {
   getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
+import {
+  attachmentTypeFromName,
+  validateTaskAttachment,
+} from '@/utils/task-attachment'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
 
@@ -40,6 +44,13 @@ type TaskPatch = {
   points?: number
   assigned_to?: string | null
   image_url?: string | null
+  /**
+   * Anexo (arquivo único). Vai junto com `image_url` — a URL do anexo é gravada
+   * em `image_url`, e estas duas carregam o nome original e o MIME. Passar
+   * `image_url: null` limpa os três de uma vez.
+   */
+  attachment_name?: string | null
+  attachment_type?: string | null
 }
 
 type CreateTaskInput = {
@@ -49,6 +60,34 @@ type CreateTaskInput = {
   points: number
   assignedTo: string
   imageUrl: string | null
+  attachmentName?: string | null
+  attachmentType?: string | null
+}
+
+/**
+ * Remove (best-effort) o anexo antigo do bucket `casasync-media` (pasta
+ * `tasks/`), quando o ADMIN troca o arquivo ou remove o anexo. Sem isso o
+ * storage só cresce — e o bucket é do plano Hobby (1 GB).
+ *
+ * Nunca derruba a edição: falha aqui é logada e o fluxo segue.
+ */
+async function removeTaskAttachment(
+  admin: ReturnType<typeof createAdminClient>,
+  url: string | null
+): Promise<void> {
+  if (!url) return
+  const at = url.indexOf('/casasync-media/')
+  if (at === -1) return
+  const path = url.slice(at + 1).split('?')[0]
+  // Só remove o que é realmente da pasta de anexos de tarefa — nunca toca em
+  // nada que o ADMIN tenha apontado por engano (URL externa).
+  if (!path.startsWith('tasks/')) return
+  try {
+    const { error } = await admin.storage.from('casasync-media').remove([path])
+    if (error) console.error('[TASKS] Falha ao remover anexo antigo:', error.message)
+  } catch (err) {
+    console.error('[TASKS] Falha ao remover anexo antigo:', err)
+  }
 }
 
 /**
@@ -267,6 +306,18 @@ export async function createTask(
   )
   if (descriptionError) return { ok: false, error: descriptionError }
 
+  // Anexo (opcional): a URL precisa ser do bucket da casa, na pasta `tasks/`, e
+  // o tipo precisa estar na lista fechada — validação fail-closed, porque a URL
+  // e o MIME chegam do cliente.
+  const attachment = input.imageUrl
+    ? validateTaskAttachment(
+        input.imageUrl,
+        input.attachmentName,
+        input.attachmentType
+      )
+    : null
+  if (attachment) return { ok: false, error: attachment }
+
   const { data: assignee } = await admin
     .from('house_members')
     .select('id')
@@ -329,6 +380,11 @@ export async function createTask(
       created_by: auth.adminId,
       status: 'PENDING',
       image_url: input.imageUrl,
+      attachment_name: input.imageUrl ? (input.attachmentName ?? null) : null,
+      attachment_type: input.imageUrl
+        ? (input.attachmentType ??
+          attachmentTypeFromName(input.attachmentName ?? '')) || null
+        : null,
       decay_started_at: new Date().toISOString(),
     })
     .select('*')
@@ -342,7 +398,10 @@ export async function createTask(
     actorId: auth.adminId,
     type: 'TASK_CREATED',
     title: 'Nova tarefa',
-    body: `Você recebeu a tarefa "${title}" (${input.points} pts).`,
+    // Com anexo, avisa: é o que faz o dependente abrir o app para ver o arquivo.
+    body: `Você recebeu a tarefa "${title}" (${input.points} pts).${
+      input.imageUrl ? ' Há um anexo para ver.' : ''
+    }`,
     link: '/tasks',
   }
 
@@ -390,7 +449,7 @@ export async function updateTask(
   const { data: task } = await admin
     .from('tasks')
     .select(
-      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, created_at, decay_started_at'
+      'house_id, status, due_date, extension_requested, extension_reason, points, assigned_to, created_at, decay_started_at, image_url'
     )
     .eq('id', taskId)
     .maybeSingle()
@@ -530,7 +589,36 @@ export async function updateTask(
     updates.assigned_to = nextAssignee
   }
   if ('image_url' in patch) {
-    updates.image_url = patch.image_url?.trim() ? patch.image_url.trim() : null
+    const nextUrl = patch.image_url?.trim() ? patch.image_url.trim() : null
+    updates.image_url = nextUrl
+
+    if (nextUrl) {
+      // Anexo novo/trocado: nome e tipo andam sempre juntos com a URL (fail
+      // closed — URL e MIME chegam do cliente).
+      const error = validateTaskAttachment(
+        nextUrl,
+        patch.attachment_name,
+        patch.attachment_type
+      )
+      if (error) return { ok: false, error }
+      updates.attachment_name = patch.attachment_name?.trim() || null
+      updates.attachment_type =
+        patch.attachment_type?.trim().toLowerCase() ||
+        attachmentTypeFromName(patch.attachment_name ?? '') ||
+        null
+
+      // Trocar o arquivo não pode deixar o antigo ocupando o bucket (1 GB no
+      // plano Hobby) — só quando a URL realmente mudou.
+      if (nextUrl !== task.image_url) {
+        await removeTaskAttachment(admin, task.image_url)
+      }
+    } else {
+      // Remover o anexo limpa os três campos de uma vez (nada de arquivo sem
+      // nome, nem nome sem arquivo).
+      updates.attachment_name = null
+      updates.attachment_type = null
+      await removeTaskAttachment(admin, task.image_url)
+    }
   }
 
   // Decaimento: o relógio reinicia a cada EDIÇÃO (o momento da edição vira o

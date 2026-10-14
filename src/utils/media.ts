@@ -12,6 +12,36 @@ export type MediaFolder =
   | 'achievements'
 
 /**
+ * MIME por extensão, para os casos em que o browser entrega `file.type` vazio
+ * (comum em `.html` e `.mov`).
+ *
+ * **Por que isso importa:** o content-type gravado no storage é o que decide se
+ * o browser RENDERIZA ou BAIXA o arquivo. Sem content-type (ou com
+ * `application/octet-stream`), abrir a URL baixa o arquivo em vez de mostrar a
+ * página — que é exatamente o defeito do anexo em HTML.
+ */
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  pdf: 'application/pdf',
+  html: 'text/html',
+  htm: 'text/html',
+}
+
+function contentTypeFor(file: File, extension: string): string {
+  const declared = (file.type ?? '').split(';')[0].trim()
+  if (declared) return declared
+  return CONTENT_TYPE_BY_EXTENSION[extension] ?? 'application/octet-stream'
+}
+
+/**
  * Identificador único para o nome do arquivo. `crypto.randomUUID` só existe em
  * contexto seguro (HTTPS/localhost) — fora dele (ex.: acesso por `http://<ip>`)
  * usamos um fallback aleatório + timestamp (não precisa ser UUID válido no path
@@ -25,8 +55,12 @@ function randomFileId(): string {
 }
 
 /**
- * Upload de imagem para o bucket público `casasync-media`, dentro da pasta do
+ * Upload de arquivo para o bucket público `casasync-media`, dentro da pasta do
  * dono (`folder/id/<uuid>.<ext>`). Retorna a URL pública ou `null` em falha.
+ *
+ * O caminho é sempre um **UUID** — o nome original do arquivo NUNCA entra no
+ * path (serve só para exibição no card).
+ *
  * Uso exclusivamente client-side (browser storage API do Supabase).
  */
 export async function uploadMedia(
@@ -42,7 +76,10 @@ export async function uploadMedia(
   try {
     const { error } = await supabase.storage
       .from(MEDIA_BUCKET)
-      .upload(path, file, { contentType: file.type, upsert: false })
+      .upload(path, file, {
+        contentType: contentTypeFor(file, ext),
+        upsert: false,
+      })
 
     if (error) throw error
 

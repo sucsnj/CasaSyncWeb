@@ -17,6 +17,7 @@ import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { Modal } from '@/components/ui/modal'
+import { TaskAttachmentView } from './task-attachment-view'
 import {
   POINTS_PILL_CLASS,
   taskAccentByStatus,
@@ -293,12 +294,13 @@ export function TasksDependent({
                 <Card key={task.id} className={cardClass}>
                   <CardContent className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0 flex-1">
-                      {/* Imagem só de tarefas antigas — upload desabilitado (não inflar storage). */}
+                      {/* Anexo: miniatura (imagem) ou chip com ícone — clicar
+                          abre o arquivo em uma nova aba do navegador. */}
                       {task.image_url ? (
-                        <img
-                          src={task.image_url}
-                          alt=""
-                          className="mb-3 h-32 w-full rounded-xl border border-slate-200 object-cover"
+                        <TaskAttachmentView
+                          url={task.image_url}
+                          name={task.attachment_name}
+                          type={task.attachment_type}
                         />
                       ) : null}
                       <p className="font-semibold text-slate-800">{task.title}</p>
