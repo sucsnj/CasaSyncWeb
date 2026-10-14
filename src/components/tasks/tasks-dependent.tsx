@@ -301,6 +301,7 @@ export function TasksDependent({
                           url={task.image_url}
                           name={task.attachment_name}
                           type={task.attachment_type}
+                          taskId={task.id}
                         />
                       ) : null}
                       <p className="font-semibold text-slate-800">{task.title}</p>

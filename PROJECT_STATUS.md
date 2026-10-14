@@ -214,13 +214,33 @@ e `/login` **200** — o caminho **não autenticado**, anterior à mudança.
   componente só escolhe a **aparência** (miniatura para imagem, chip com ícone
   para os demais) — quem decide como abrir é o browser, e ele já faz a coisa
   certa por tipo.
-- **Por que o HTML abre RENDERIZADO e não como código** (o ponto que motivou o
-  pedido): o que decide é o **content-type gravado no upload**. `uploadMedia`
-  (`src/utils/media.ts`) agora resolve um MIME pela extensão quando o browser
-  entrega `file.type` **vazio** — o caso mais comum em `.html` e `.mov`. Sem
-  isso o storage guardaria `application/octet-stream` e o anexo **baixaria** em
-  vez de abrir. Esse ajuste vale para **todas** as pastas do bucket, não só
-  `tasks/`.
+- **O HTML NÃO abre renderizado pela URL do storage** (achado em teste em tela, e
+  o ponto mais importante desta entrega): o **Supabase Storage força
+  `Content-Type: text/plain` em qualquer `text/html`** — mitigação de XSS
+  deliberada, documentada como *"For security, HTML files are returned as plain
+  text"* (docs do Storage; supabase/storage#186 fechado como by-design). Com
+  `text/plain` + `X-Content-Type-Options: nosniff`, o browser mostra o **código**
+  da página. **Medido no bucket**, e a conclusão é inequívoca: o
+  `storage.objects.metadata.mimetype` está **`text/html`** (ou seja, o upload
+  gravou certo) e a resposta pública é `text/plain` + `nosniff` +
+  `CSP: default-src 'none'; sandbox`. Não é o app, não é o content-type do
+  upload, não é cache do CDN (`cf-cache-status: REVALIDATED`) e não é config do
+  bucket (`allowed_mime_types`/`file_size_limit` são `null`): é o gateway.
+  **Consequência:** o anexo HTML abre por **`GET /api/task-attachment/[taskId]`**
+  (`src/app/api/task-attachment/[taskId]/route.ts`), que revalida a sessão
+  (ADMIN membro da casa / DEPENDENT dono da tarefa), busca os bytes e devolve
+  `text/html` com **`CSP: sandbox allow-scripts`** — a página renderiza (CSS e
+  JS funcionam) numa **origem opaca**, sem cookies/`localStorage` do app e sem
+  poder navegar a aba que a abriu. **Sem `default-src`** de propósito: num
+  documento sandboxed o `'self'` passa a ser a origem opaca e deixaria de casar
+  com a URL do próprio documento, então um `img-src 'self'` bloquearia até as
+  imagens relativas da página. Imagem/vídeo/PDF **continuam pela URL pública** (o
+  gateway entrega o content-type correto para eles) — só o HTML paga o desvio.
+- **O `content-type` do upload continua sendo resolvido por extensão** quando o
+  browser entrega `file.type` vazio: `uploadMedia` (`src/utils/media.ts`) resolve
+  um MIME pela extensão. Isso não é o que faz o HTML renderizar (o gateway
+  sobrescreve), mas evita `application/octet-stream` — que faria o anexo BAIXAR
+  em vez de abrir — e vale para todas as pastas do bucket.
 - **Regras puras em `src/utils/task-attachment.ts`** (módulo puro, importado
   pelo client **e** pelas actions): `TASK_ATTACHMENT_MAX_MB`/`_MAX_BYTES`,
   `TASK_ATTACHMENT_TYPES` (lista **fechada** de MIME),
@@ -274,12 +294,13 @@ controle barrado, nome >120 barrado).
 - **Ordem obrigatória: SQL antes do deploy** — o `select('*')` da tarefa e a
   gravação das colunas novas quebram com `column does not exist`.
 - **HTML servido do bucket público é uma URL pública** (o bucket é público por
-  escolha antiga, para as imagens). Abrir o HTML numa aba do domínio
-  `*.supabase.co` **não** dá acesso ao app (origem diferente, sem cookie/sessão
-  do CasaSync), mas o arquivo pode exibir qualquer conteúdo — quem anexa é o
-  **ADMIN da casa**, então o risco é o tutor mostrar algo enganoso ao próprio
-  dependente. Se um dia isso incomodar, o caminho é bucket privado + URL assinada
-  de curta duração, não uma flag no app.
+  escolha antiga, para as imagens) e o **gateway não serve HTML renderizado** —
+  por isso o anexo HTML passa por `/api/task-attachment/[taskId]`, com sessão
+  revalidada e `CSP: sandbox allow-scripts`. **Ainda assim o arquivo pode exibir
+  qualquer conteúdo** — quem anexa é o **ADMIN da casa**, então o risco é o tutor
+  mostrar algo enganoso ao próprio dependente (o sandbox garante que a página não
+  alcança a sessão do app). Se um dia isso incomodar, o caminho é trocar o anexo
+  HTML por um tipo que o browser renderize nativamente.
 - **`validateTaskAttachment` é a barreira real**, não o `accept` do input nem a
   validação do client: URL e MIME chegam do cliente.
 - **Não reintroduzir o `ImageUpload` (de imagem) em tarefa** — o caminho agora é

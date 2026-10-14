@@ -18,29 +18,40 @@ const KIND_ICON: Record<TaskAttachmentKind, typeof FileText> = {
  * Anexo da tarefa na tela — **abre em nova aba do navegador** (`<a target>` de
  * verdade, então ctrl/ botão do meio também funcionam).
  *
- * Abrir a URL pública do storage já entrega o comportamento certo por tipo,
- * sem viewer no app: o browser **renderiza** a página HTML, mostra o PDF no
- * visualizador nativo, toca o vídeo e exibe a imagem. O que este componente
- * decide é apenas a **aparência** (miniatura para imagem, chip para os demais).
+ * Abrir a URL pública do storage já entrega o comportamento certo para imagem,
+ * vídeo e PDF. **O HTML é a exceção**: o Supabase Storage força `text/plain`
+ * nesse tipo (mitigação de XSS deliberada), então abrir a URL mostraria o
+ * **código** da página. Para ele, o link vai para a rota do app
+ * (`/api/task-attachment/<id>`), que devolve os bytes com `text/html` e uma CSP
+ * `sandbox` — a página renderiza numa **origem opaca**, sem acesso ao app.
  *
- * Anexa a uma imagem antiga (`image_url` sem `attachment_type`) cai no mesmo
+ * O que este componente decide é apenas a **aparência** (miniatura para imagem,
+ * chip para os demais).
+ *
+ * Anexo a uma imagem antiga (`image_url` sem `attachment_type`) cai no mesmo
  * caminho de imagem — o `attachmentKind` devolve `image` quando não há tipo.
  */
 export function TaskAttachmentView({
   url,
   name,
   type,
+  taskId,
 }: {
   url: string
   name?: string | null
   type?: string | null
+  /** Id da tarefa — necessário só para o anexo HTML (ver acima). */
+  taskId?: string
 }) {
   const kind = attachmentKind(type)
   const label = name ?? attachmentKindLabel(kind)
 
   // `noopener`/`noreferrer`: a aba nova não ganha acesso à origem do app.
   const openProps = {
-    href: url,
+    href:
+      kind === 'html' && taskId
+        ? `/api/task-attachment/${taskId}`
+        : url,
     target: '_blank',
     rel: 'noopener noreferrer',
   } as const

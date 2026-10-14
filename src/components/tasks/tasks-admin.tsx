@@ -1138,6 +1138,7 @@ export function TasksAdmin({
                             url={task.image_url}
                             name={task.attachment_name}
                             type={task.attachment_type}
+                            taskId={task.id}
                           />
                         ) : null}
 
@@ -1424,6 +1425,7 @@ export function TasksAdmin({
                             url={task.image_url}
                             name={task.attachment_name}
                             type={task.attachment_type}
+                            taskId={task.id}
                           />
                         ) : null}
 
