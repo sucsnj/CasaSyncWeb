@@ -96,7 +96,116 @@ e a forma corrompida do mesmo acento não passa.
 
 ---
 
+## Shell das rotas de topo: route group `(app)` — o `loading.tsx` parou de comer a nav (concluído — sem mudança de schema)
+
+### O problema
+`/tasks`, `/rewards` e `/achievements` são rotas **de topo na URL** (não filhas de
+`/dashboard`) e **não tinham `layout.tsx`**: cada uma montava o `DashboardNav`
+**dentro do `page.tsx`**. O `loading.tsx` do segmento substitui a página
+inteira, então durante a navegação a nav e a bottom nav sumiam — no lugar
+saía um cabeçalho cinza do `PageSkeleton header`, que é só um placeholder de
+pulsos, não a nav. Os layouts de `/dashboard/*` nunca tiveram o problema porque
+lá a nav está no `layout.tsx`.
+
+E o sintoma era só a ponta visível de uma duplicação maior: as 3 páginas
+mantinham **cada uma** o shell inteiro (nav, `getMyNotifications`, casa,
+castigo, ajustes de mensagem rápida, `hasClaimableAchievement`, comunicados
+devidos, `registerLoginDay`, `AlertQueueOverlay`) e os arrays de itens da nav
+**tinham 5 cópias** (2 layouts do dashboard + 3 páginas).
+
+### A solução
+Route group **`src/app/(app)`** com **um** `layout.tsx` para as três rotas — o
+mesmo papel que os layouts dentro de `/dashboard/*`. Route group não altera a
+URL, então `/tasks` continua `/tasks` (o build confirma: as 16 rotas e os
+mesmos tipos).
+
+- **Layout fica ACIMA do Suspense** criado pelo `loading.tsx`: o skeleton cobre
+  só o conteúdo e a nav real fica montada durante a navegação. Os 3
+  `loading.tsx` passaram a `PageSkeleton` **sem** `header` (o `header` sobra
+  para quando o skeleton é a página INTEIRA, sem layout acima).
+- **As 3 páginas encolheram** para o que é delas: a casa do contexto, os ajustes
+  que os cards realmente usam e o conteúdo. Difusões: −244 linhas no total.
+- **Navegar entre `/tasks`, `/rewards` e `/achievements` não remonta mais** a
+  nav, o sino, o canal de Realtime das notificações, o listener de toast e o
+  registro de push — antes cada página montava os seus (e abria canais
+  duplicados).
+- **`src/components/dashboard/nav-items.ts`** (novo): `ADMIN_NAV_ITEMS` e
+  `DEPENDENT_NAV_ITEMS` como fonte única, importados pelos 3 shells (layout do
+  ADMIN, layout do dependente e o novo). As 5 cópias inline saíram.
+
+### Efeito colateral deliberado (uma escolha, não um acidente)
+O shell ganhou o que os layouts do dashboard já tinham e estas páginas não:
+**`RealtimeToastListener`, `PushNotificationsSetup` e `PushPermissionPrompt`**.
+Ou seja, em `/tasks`, `/rewards` e `/achievements` o dependente agora **ouve o
+toast em tempo real** e o **registro de push do aparelho acontece ao abrir o
+app** nessas rotas — antes isso só acontecia dentro de `/dashboard/*`. É o
+comportamento que já existia nos dois dashboards, então a inconsistência aqui
+eram as 3 páginas, não os dashboards.
+
+`RealtimePointsListener` ficou de fora de propósito: ele é um listener de UX da
+tela (refresh do saldo no badge), já coberto em `/rewards` pelo `useProfilePoints`
+do próprio componente, e adicionar um canal novo nestas rotas não é parte do
+problema que foi resolvido.
+
+### Efeito colateral aceito
+- **Dependente sem casa**: a `AlertQueueOverlay` passou a ser montada pelo shell
+  (antes cada página só a montava **dentro** do ramo "com casa"). Sem casa ela
+  entra com a fila vazia — e aí ainda aparece um alerta de **penalização** não
+  lida, que é de nível de conta e não de casa. É o mesmo comportamento que o
+  layout do dependente já tinha.
+- **`/achievements` paga ≤ 2 round-trips a mais** para o dependente: o badge
+  dourado da nav é `hasClaimableAchievement` (1 query das linhas desbloqueadas +
+  1 da `is_repeatable` das conquistas envolvidas) e hoje era derivado das views
+  que a própria página carregava. Com a nav no shell, o cálculo é do shell. Os
+  dois valores vêm do mesmo estado no mesmo request (mesmas tabelas), então o
+  badge não pisca — é só query redundante numa rota só. `/tasks` e `/rewards`
+  já pagavam esse cálculo antes.
+- **Trocar de casa ativa pela tela de ADMIN** continua revalidando as rotas por
+  `revalidateHouseContext()` (cookie `httpOnly`): o nome/id da casa é uma
+  **prop** do shell, então o `router.refresh()` precisa repropagar. Na prática o
+  cookie é lido em cada render de layout, e a troca de casa já navegava antes.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(16 rotas, tipos idênticos — `ƒ /tasks`, `ƒ /rewards`, `ƒ /achievements`,
+`ƒ Proxy` ativo). `npm run check:encoding` ✓. Smoke no `next dev` (o do
+usuário, em `:3000`): as 4 rotas protegidas **307 → `/login?redirectedFrom=…`**
+e `/login` **200** — o caminho **não autenticado**, anterior à mudança.
+
+### Pontos de atenção
+- **O caminho autenticado precisa de teste em tela** (não automatizável aqui):
+  entrar como ADMIN e como DEPENDENT e navegar `/tasks → /rewards →
+  achievements → /tasks`, conferindo que (a) a nav **não some** durante a
+  navegação, (b) o sino e o item "Conquistas" dourado continuam certos, (c) o
+  item ativo acompanha a rota, (d) o castigo (dependente) e a fila de
+  comunicados aparecem nas 3 telas, e (e) trocar a casa ativa a partir de
+  `/tasks` atualiza a nav (o nome das casas é prop do shell).
+- **`loading.tsx` NUNCA substitui o layout do mesmo segmento** — é essa a
+  regra que o grupo `(app)` KarlMarx straighten. Se uma rota nova de topo
+  precisar de skeleton sem sumir a nav, ela precisa de um layout com o shell.
+- **`getMyNotifications` não é `React.cache`**: é por isso que o overlay foi
+  para o layout e saiu das páginas. Se ele voltar a ser chamado nos dois
+  lugares, some com a duplicação antes (não basta "funcionar").
+- **O `React.cache` no eixo certo** continua valendo: `getSessionProfile`,
+  `getAdminHouses`, `getDependentHouse`, `hasClaimableAchievement` e
+  `getActivePunishment` são memoizados por request, então o shell e a página
+  pagam 1 vez só. O que **não** é memoizado e por isso **não** pode ser
+  lido nos dois lados é `getMyNotifications`.
+- Requer deploy para valer online.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **Shell das rotas de topo em route group `(app)`:** `/tasks`, `/rewards` e
+  `/achievements` não tinham `layout.tsx` — montavam a nav dentro do
+  `page.tsx`, e o `loading.tsx` do segmento substituía a página inteira, então a
+  nav **sumia** durante a navegação (virava um placeholder cinza). Agora as três
+  compartilham um `layout.tsx` no grupo `(app)`: o skeleton cobre só o conteúdo,
+  navegar entre elas não remonta mais nav/sino/toast/push, os dados do shell não
+  são buscados duas vezes e os itens da nav viraram fonte única
+  (`dashboard/nav-items.ts`). `lint`/`typecheck`/`build` ✓. Ver a seção no topo
+  do documento.
 
 - **Reajuste de pontos aceita valor negativo e "Editar comunicado" rola até o
   form:** o campo de pontos era controlado com `Number(value)` e o próprio DOM

@@ -1,4 +1,5 @@
-import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
+import { DashboardNav } from '@/components/dashboard/dashboard-nav'
+import { ADMIN_NAV_ITEMS } from '@/components/dashboard/nav-items'
 import {
   getActiveAdminHouse,
   getAdminHouses,
@@ -8,14 +9,6 @@ import { getMyNotifications } from '@/utils/notifications'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
-
-const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'Visão geral' },
-  { href: '/dashboard/admin/houses', label: 'Casas' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
 
 export default async function AdminDashboardLayout({
   children,
@@ -40,7 +33,7 @@ export default async function AdminDashboardLayout({
   return (
     <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
       <DashboardNav
-        items={adminItems}
+        items={ADMIN_NAV_ITEMS}
         userName={profile?.full_name}
         userId={user?.id}
         notifications={notifications}

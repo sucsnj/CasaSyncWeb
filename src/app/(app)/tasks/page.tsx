@@ -1,32 +1,22 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { after } from 'next/server'
 import Link from 'next/link'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
-  getAdminHouses,
   getDependentHouse,
   getHouseAssignees,
   getProfileNames,
   getSessionProfile,
 } from '@/utils/house'
-import { getMyNotifications } from '@/utils/notifications'
-import { hasClaimableAchievement } from '@/utils/achievement-progress'
-import { getActivePunishment } from '@/utils/active-punishment'
 import {
   getHouseExtensionRulesSettings,
-  getHouseQuickMessageSettings,
   getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
   getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
-import { registerLoginDay } from '@/actions/stats'
-import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
-import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
-import { getDueComunicados } from '@/actions/comunicados'
 import {
   Card,
   CardContent,
@@ -40,21 +30,6 @@ export const metadata: Metadata = {
 }
 
 export const dynamic = 'force-dynamic'
-
-const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'Visão geral' },
-  { href: '/dashboard/admin/houses', label: 'Casas' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
-
-const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'Visão geral' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
 
 function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
   return (
@@ -94,35 +69,14 @@ export default async function TasksPage() {
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
-  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
-  const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
-    await Promise.all([
-      getMyNotifications(user.id),
-      isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
-      isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-      // Item "Conquistas" da nav dourado quando há resgate disponível.
-      isAdmin ? Promise.resolve(false) : hasClaimableAchievement(user.id),
-      // Nomes das casas do ADMIN: o sino marca de qual casa é cada notificação
-      // e troca a casa antes de navegar. De graça — `getActiveAdminHouse` já
-      // chama `getAdminHouses` por dentro e ambos são `React.cache`.
-      isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
-    ])
-
-  const houseNames = Object.fromEntries(
-    adminHouses.map((house) => [house.id, house.name])
-  )
-
-  const quickMessageSettings = !isAdmin && dependentHouse
-    ? await getHouseQuickMessageSettings(dependentHouse.id)
-    : undefined
-
-  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
-  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
-  const punishment =
-    !isAdmin && dependentHouse
-      ? await getActivePunishment(user.id, dependentHouse.id)
-      : null
+  // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
+  // (nav, sino, castigo, comunicados) vive no `layout.tsx` do grupo `(app)` —
+  // aqui só interessa a casa para carregar os cards. A sessão é reutilizada
+  // entre as chamadas via `React.cache` em `utils/house.ts`.
+  const [activeHouse, dependentHouse] = await Promise.all([
+    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+  ])
 
   // Settings de prazos/SLA e de adiamento da casa, aplicadas nos cards de
   // tarefas (prazo padrão, chip "Prazo próximo" e botões de adiamento).
@@ -176,10 +130,6 @@ export default async function TasksPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
-      // Escrita, fora do caminho do render — ver a nota no layout do dependente.
-      after(() => registerLoginDay(dependentHouse.id, user.id))
-
       const { data: tasks } = await admin
         .from('tasks')
         .select('*')
@@ -195,44 +145,18 @@ export default async function TasksPage() {
         taskList.map((task) => task.created_by)
       )
 
-      const dueComunicados = await getDueComunicados()
-
       content = (
-        <>
-          <TasksDependent
-            key={dependentHouse.id}
-            houseId={dependentHouse.id}
-            initialTasks={taskList}
-            creatorNames={creatorNames}
-            dueSoonHours={taskSlaSettings?.dueSoonHours}
-            taskDecay={taskDecaySettings}
-          />
-          <AlertQueueOverlay
-            userId={user.id}
-            initialQueue={dueComunicados}
-            initialNotifications={notifications}
-          />
-        </>
+        <TasksDependent
+          key={dependentHouse.id}
+          houseId={dependentHouse.id}
+          initialTasks={taskList}
+          creatorNames={creatorNames}
+          dueSoonHours={taskSlaSettings?.dueSoonHours}
+          taskDecay={taskDecaySettings}
+        />
       )
     }
   }
 
-  return (
-    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
-      <DashboardNav
-        items={isAdmin ? adminItems : dependentItems}
-        userName={profile.full_name}
-        points={isAdmin ? undefined : profile.points}
-        userId={user.id}
-        notifications={notifications}
-        role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
-        quickMessageSettings={quickMessageSettings}
-        hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
-        punishment={isAdmin ? null : punishment}
-        activeHouseId={isAdmin ? (activeHouse?.id ?? null) : null}
-        houseNames={isAdmin ? houseNames : undefined}
-      />
-      <main className="flex flex-col gap-6">{content}</main>
-    </div>
-  )
+  return <main className="flex flex-col gap-6">{content}</main>
 }

@@ -1,26 +1,14 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { after } from 'next/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
-  getAdminHouses,
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
-import { getMyNotifications } from '@/utils/notifications'
-import { hasClaimableAchievement } from '@/utils/achievement-progress'
-import { getActivePunishment } from '@/utils/active-punishment'
-import {
-  getHouseQuickMessageSettings,
-  getHouseTextLimitsSettings,
-} from '@/utils/house-settings'
-import { registerLoginDay } from '@/actions/stats'
-import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
+import { getHouseTextLimitsSettings } from '@/utils/house-settings'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
-import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
-import { getDueComunicados } from '@/actions/comunicados'
 import type { Tables } from '@/types/database'
 
 export const metadata: Metadata = {
@@ -28,21 +16,6 @@ export const metadata: Metadata = {
 }
 
 export const dynamic = 'force-dynamic'
-
-const adminItems: NavItem[] = [
-  { href: '/dashboard/admin', label: 'Visão geral' },
-  { href: '/dashboard/admin/houses', label: 'Casas' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
-
-const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'Visão geral' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
 
 type Redemption = Tables<'reward_redemptions'>
 
@@ -59,27 +32,13 @@ export default async function RewardsPage() {
   const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
-  // Notificações e a casa (ativa p/ ADMIN, do dependente) em paralelo. A
-  // sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
-  const [notifications, activeHouse, dependentHouse, hasClaimable, adminHouses] =
-    await Promise.all([
-      getMyNotifications(user.id),
-      isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
-      isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
-      // Item "Conquistas" da nav dourado quando há resgate disponível.
-      isAdmin ? Promise.resolve(false) : hasClaimableAchievement(user.id),
-      // Nomes das casas do ADMIN, para o sino (ver `tasks/page.tsx`). De graça:
-      // `getActiveAdminHouse` já chama `getAdminHouses` e ambos são `React.cache`.
-      isAdmin ? getAdminHouses(user.id) : Promise.resolve([]),
-    ])
-
-  const houseNames = Object.fromEntries(
-    adminHouses.map((house) => [house.id, house.name])
-  )
-
-  const quickMessageSettings = !isAdmin && dependentHouse
-    ? await getHouseQuickMessageSettings(dependentHouse.id)
-    : undefined
+  // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
+  // (nav, sino, castigo, comunicados) vive no `layout.tsx` do grupo `(app)`.
+  // A sessão é reutilizada entre as chamadas via `React.cache` em `utils/house.ts`.
+  const [activeHouse, dependentHouse] = await Promise.all([
+    isAdmin ? getActiveAdminHouse() : Promise.resolve(null),
+    isAdmin ? Promise.resolve(null) : getDependentHouse(user.id),
+  ])
 
   // Teto de caracteres da descrição (chave `text_limits). Admin no formulário da
   // recompensa, dependente no da sugestão — que vira recompensa na aprovação.
@@ -87,13 +46,6 @@ export default async function RewardsPage() {
   const textLimitsSettings = houseIdForSettings
     ? await getHouseTextLimitsSettings(houseIdForSettings)
     : undefined
-
-  // Castigo ativo do tutor (ADR-0020): ícone de triângulo ao lado do sino, só do
-  // DEPENDENT. Sem Realtime — lido no render desta tela (como os comunicados).
-  const punishment =
-    !isAdmin && dependentHouse
-      ? await getActivePunishment(user.id, dependentHouse.id)
-      : null
 
   let content: React.ReactNode
 
@@ -197,10 +149,6 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      // Conquistas: acesso diário do dependente (APP_LOGIN_DAYS/STREAK_LOGIN_DAYS).
-      // Escrita, fora do caminho do render — ver a nota no layout do dependente.
-      after(() => registerLoginDay(dependentHouse.id, user.id))
-
       const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
         await Promise.all([
           admin
@@ -236,53 +184,27 @@ export default async function RewardsPage() {
         })
       )
 
-      const dueComunicados = await getDueComunicados()
-
       content = (
-        <>
-          <RewardsDependent
-            key={dependentHouse.id}
-            houseId={dependentHouse.id}
-            myId={user.id}
-            initialPoints={profile.points}
-            initialRewards={rewards ?? []}
-            initialRedemptions={redemptionViews}
-            initialSuggestions={(suggestions ?? []).map((suggestion) => ({
-              id: suggestion.id,
-              title: suggestion.title,
-              description: suggestion.description,
-              points_cost: suggestion.points_cost,
-              status: suggestion.status,
-              created_at: suggestion.created_at,
-            }))}
-            textLimits={textLimitsSettings}
-          />
-          <AlertQueueOverlay
-            userId={user.id}
-            initialQueue={dueComunicados}
-            initialNotifications={notifications}
-          />
-        </>
+        <RewardsDependent
+          key={dependentHouse.id}
+          houseId={dependentHouse.id}
+          myId={user.id}
+          initialPoints={profile.points}
+          initialRewards={rewards ?? []}
+          initialRedemptions={redemptionViews}
+          initialSuggestions={(suggestions ?? []).map((suggestion) => ({
+            id: suggestion.id,
+            title: suggestion.title,
+            description: suggestion.description,
+            points_cost: suggestion.points_cost,
+            status: suggestion.status,
+            created_at: suggestion.created_at,
+          }))}
+          textLimits={textLimitsSettings}
+        />
       )
     }
   }
 
-  return (
-    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
-      <DashboardNav
-        items={isAdmin ? adminItems : dependentItems}
-        userName={profile.full_name}
-        points={isAdmin ? undefined : profile.points}
-        userId={user.id}
-        notifications={notifications}
-        role={isAdmin ? 'ADMIN' : 'DEPENDENT'}
-        quickMessageSettings={quickMessageSettings}
-        hasClaimableAchievement={isAdmin ? undefined : hasClaimable}
-        punishment={isAdmin ? null : punishment}
-        activeHouseId={isAdmin ? (activeHouse?.id ?? null) : null}
-        houseNames={isAdmin ? houseNames : undefined}
-      />
-      <main className="flex flex-col gap-6">{content}</main>
-    </div>
-  )
+  return <main className="flex flex-col gap-6">{content}</main>
 }

@@ -1,4 +1,5 @@
-import { DashboardNav, type NavItem } from '@/components/dashboard/dashboard-nav'
+import { DashboardNav } from '@/components/dashboard/dashboard-nav'
+import { DEPENDENT_NAV_ITEMS } from '@/components/dashboard/nav-items'
 import { getDependentHouse, getSessionProfile } from '@/utils/house'
 import { hasClaimableAchievement } from '@/utils/achievement-progress'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
@@ -12,13 +13,6 @@ import { AlertQueueOverlay } from '@/components/alerts/alert-queue-overlay'
 import { getDueComunicados } from '@/actions/comunicados'
 import { getActivePunishment } from '@/utils/active-punishment'
 import { after } from 'next/server'
-
-const dependentItems: NavItem[] = [
-  { href: '/dashboard/dependent', label: 'Visão geral' },
-  { href: '/tasks', label: 'Tarefas' },
-  { href: '/rewards', label: 'Recompensas' },
-  { href: '/achievements', label: 'Conquistas' },
-]
 
 export default async function DependentDashboardLayout({
   children,
@@ -63,7 +57,7 @@ export default async function DependentDashboardLayout({
   return (
     <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
       <DashboardNav
-        items={dependentItems}
+        items={DEPENDENT_NAV_ITEMS}
         userName={profile?.full_name}
         points={profile?.points}
         userId={user?.id}
