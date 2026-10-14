@@ -42,7 +42,70 @@ e a forma corrompida do mesmo acento não passa.
 
 ---
 
+## Campo de pontos aceita valor negativo + "Editar comunicado" rola até o form (concluído — sem mudança de schema)
+
+### O que foi feito
+- **Reajuste de pontos não acebia valor negativo** (`houses-manager.tsx`): o campo
+  "Novo total de pontos" era um `type="number"` **controlado** com
+  `value={pointsNewValue}` e `onChange={… Number(event.target.value)}`. O DOM de um
+  `input[type=number]` **não guarda** o valor intermediário `"-"` (a sanitização
+  devolve string vazia até o número ficar completo), então digitar `-` produzia
+  `Number("") === 0`, o React reescrevia o `value` com `0` e **o campo apagava o
+  "-" e tudo que já tinha sido digitado**. Numa penalização — cujo valor É o
+  negativo — o campo era praticamente impossível de usar.
+  - O input passou a ser **não controlado** (`defaultValue={pointsMember.points}`
+    + `onChange` só espelhando a string em `pointsInput`), então o React nunca
+    escreve de volta e o `-` sobrevive. O valor autoritativo continua sendo o
+    `FormData` do submit — nada mudou no servidor (`validatePoints` já rejeita
+    `NaN`, fail-closed).
+  - A "Descrição do ajuste" (obrigatória só em penalização) deixou de comparar
+    número cru: usa o derivado **`pointsIsPenalty`** (`pointsParsed < saldo`,
+    com guarda de vazio/`NaN`), o que também resolve o caso do meio-digitado —
+    `"-"` não dispara mais a obrigatoriedade antes de o valor existir.
+  - **`inputMode="numeric"` removido**: no celular o teclado só de dígitos não tem
+    o `-`, então a penalização era impossível de digitar no Android/iPhone também.
+    `step={1}` explícito (inteiro).
+  - `setPointsInput(String(member.points))` ao abrir o modal e após o
+    `form.reset()` do sucesso, para o espelho não ficar defasado do campo.
+- **Editar comunicado rola a página até o form** (`comunicados-admin.tsx`): o form
+  fica **acima** da lista, então clicar "Editar" num card no fim da tela abria o form
+  fora de vista. Entrou o mesmo par do `achievements-admin.tsx`:
+  `formRef` no `<Card>` (`scroll-mt-24` para o header fixo de 4rem não cobrir) +
+  `titleRef` no `ClearableInput` do título, com `useEffect` em `[showForm,
+  editingId]` fazendo `scrollIntoView({ behavior: 'smooth', block: 'start' })` +
+  `focus({ preventScroll: true })` — o `preventScroll` evita que o foco brusco
+  cancele a rolagem suave, e o `editingId` na dependência cobre trocar de card em
+  edição sem fechar o form.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+`npm run check:encoding` ✓. A classe `scroll-mt-24` conferida **no CSS gerado**
+(`.scroll-mt-24{scroll-margin-top:calc(var(--spacing) * 24)}`), como manda o
+`AGENTS.md` §2.
+
+### Pontos de atenção
+- **`<input type="number">` controlado é armadilha para valor negativo:** o DOM
+  sanitiza o `"-"` intermediário para `""`, e um `value` controlado reescreve o
+  campo a cada tecla. Se surgir outro campo que precise aceitar `-`, use
+  `defaultValue` + espelho em string (não `value` + `Number()`).
+- A comparação "isso é penalização?" é o derivado `pointsIsPenalty` — **não**
+  reintroduzir comparação com `Number(estado)` cru, que volta a divergir nos
+  estados intermediários (`""` → 0, `NaN` → todas as comparações `false`).
+- O `step={1}` casa com `validatePoints` (`Number.isInteger`); não relaxar para
+  `step="any"` sem alinhar o servidor.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **Reajuste de pontos aceita valor negativo e "Editar comunicado" rola até o
+  form:** o campo de pontos era controlado com `Number(value)` e o próprio DOM
+  descarta o `"-"` intermediário num `type="number"` — o `-` e o que já estava
+  digitado sumiam a cada tecla. Passou a ser não controlado (`defaultValue` +
+  espelho textual), com `inputMode="numeric"` removido (no celular o teclado só
+  de dígitos não tinha o `-`). E o "Editar" de comunicado agora rola suavemente
+  até o form (no topo da lista) e põe o foco no título, igual às conquistas.
+  `lint`/`typecheck`/`build` ✓. Ver a seção no topo do documento.
 
 - **Encoding corrigido em todo o repositório:** o mojibake que o PowerShell deixou
   em `src/app/tasks/page.tsx`, `src/app/rewards/page.tsx`,

@@ -123,10 +123,27 @@ export function HousesManager({
   const [passwordPending, setPasswordPending] = useState(false)
 
   const [pointsMember, setPointsMember] = useState<Member | null>(null)
-  const [pointsNewValue, setPointsNewValue] = useState<number>(0)
+  // Espelho **textual** do campo de pontos, usado só para decidir se a
+  // "Descrição do ajuste" fica obrigatória (penalização). O input em si é
+  // NÃO controlado de propósito: `<input type="number">` sanitiza o valor
+  // intermediário "-" para string vazia (o DOM não guarda "-" num number), então
+  // reescrever o `value` controlado a cada tecla apagava o "-" e tudo que já
+  // tinha sido digitado — bem no meio de uma penalização, que é justamente o
+  // valor negativo. Sem `value`, o React não escreve de volta e o campo aceita
+  // "-5". O valor autoritativo continua sendo o `FormData` do submit.
+  const [pointsInput, setPointsInput] = useState('')
   const [pointsError, setPointsError] = useState<string | null>(null)
   const [pointsSuccess, setPointsSuccess] = useState<string | null>(null)
   const [pointsPending, setPointsPending] = useState(false)
+
+  // Penalização = novo total MENOR que o saldo atual (e não precisa explicar o
+  // motivo quando o valor está em branco ou ainda é um "-" pela metade).
+  const pointsParsed = pointsInput.trim() === '' ? null : Number(pointsInput)
+  const pointsIsPenalty =
+    pointsParsed !== null &&
+    Number.isFinite(pointsParsed) &&
+    pointsMember !== null &&
+    pointsParsed < pointsMember.points
 
   // Castigo do dependente (ADR-0020): só indicador, não mexe em pontos. Campos
   // do form ficam uncontrolled (lidos via FormData no submit).
@@ -420,6 +437,10 @@ export function HousesManager({
 
       toast.success('Pontos atualizados!')
       form.reset()
+      // `reset()` devolve o campo ao `defaultValue`; o espelho precisa voltar
+      // junto, senão a "Descrição do ajuste" continuaria exigida/habilitada por
+      // causa do valor que acabou de ser salvo.
+      setPointsInput(String(pointsMember.points))
       setPointsSuccess(result.message ?? 'Pontos atualizados.')
       router.refresh()
     } finally {
@@ -966,7 +987,7 @@ export function HousesManager({
                         onClick={() => {
                           setPointsError(null)
                           setPointsSuccess(null)
-                          setPointsNewValue(member.points)
+                          setPointsInput(String(member.points))
                           setPointsMember(member)
                         }}
                       >
@@ -1264,9 +1285,11 @@ export function HousesManager({
                 id="member-new-points"
                 name="newPoints"
                 type="number"
-                inputMode="numeric"
-                value={pointsNewValue}
-                onChange={(event) => setPointsNewValue(Number(event.target.value))}
+                step={1}
+                // Sem `inputMode="numeric"`: no celular o teclado só de dígitos
+                // não tem o "-", então a penalização ficava impossível de digitar.
+                defaultValue={pointsMember.points}
+                onChange={(event) => setPointsInput(event.target.value)}
                 required
               />
             </div>
@@ -1279,8 +1302,8 @@ export function HousesManager({
                 type="text"
                 autoComplete="off"
                 placeholder="Informe a descrição do ajuste"
-                disabled={pointsNewValue >= pointsMember.points}
-                required={pointsNewValue < pointsMember.points}
+                disabled={!pointsIsPenalty}
+                required={pointsIsPenalty}
                 suppressHydrationWarning
                 defaultValue=""
               />

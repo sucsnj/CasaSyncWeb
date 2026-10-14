@@ -219,12 +219,13 @@ export function AlertQueueOverlay({
               {item.description}
             </p>
 
-            {item.remaining > 1 ? (
+            {/* Não há mais a necessidade de mostrar o número de vezes restantes
+            {/* {item.remaining > 1 ? (
               <p className="text-center text-xs text-slate-500">
                 Este comunicado aparecerá mais {item.remaining - 1}{' '}
                 {item.remaining - 1 === 1 ? 'vez' : 'vezes'}.
               </p>
-            ) : null}
+            ) : null} */}
 
             <div className="flex flex-col gap-1.5">
               <label

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Megaphone, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
@@ -75,6 +75,20 @@ export function ComunicadosAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Comunicado | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+
+  // O form fica ACIMA da lista: ao tocar em "Editar" num card lá embaixo, abrir
+  // o form não ajudava em nada se ele continuasse fora da tela. A rolagem suave
+  // (com `scroll-mt-24` para o header fixo de 4rem não cobrir o card) mais o
+  // foco no título deixam o ADMIN pronto para digitar — mesmo padrão das
+  // conquistas. `editingId` na dependência cobre trocar de card sem fechar o form.
+  const formRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!showForm) return
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    titleRef.current?.focus({ preventScroll: true })
+  }, [showForm, editingId])
 
   function upsertComunicado(comunicado: Comunicado) {
     setComunicados((prev) => {
@@ -251,7 +265,7 @@ export function ComunicadosAdmin({
       </div>
 
       {showForm ? (
-        <Card>
+        <Card ref={formRef} className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Megaphone className="size-5 text-violet-600" />
@@ -266,6 +280,7 @@ export function ComunicadosAdmin({
                 </label>
                 <ClearableInput
                   id="comunicado-title"
+                  ref={titleRef}
                   value={form.title}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, title: event.target.value }))
