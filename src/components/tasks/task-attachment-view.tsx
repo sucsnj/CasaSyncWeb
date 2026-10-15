@@ -36,15 +36,27 @@ export function TaskAttachmentView({
   name,
   type,
   taskId,
+  hideFileName = false,
 }: {
   url: string
   name?: string | null
   type?: string | null
   /** Id da tarefa — necessário só para o anexo HTML (ver acima). */
   taskId?: string
+  /**
+   * Esconde o **nome do arquivo** de página HTML, mostrando só o rótulo do
+   * tipo ("Página"). Usado no cartão do **dependente**: o nome de uma página
+   * exportada ("Untitled.html", "aula-3-semana.html") é ruído — o que importa
+   * ali é que existe uma página para abrir. O ADMIN continua vendo o nome, que
+   * ele mesmo escolheu no upload. Imagem, vídeo e PDF seguem mostrando o nome
+   * nos dois lados.
+   */
+  hideFileName?: boolean
 }) {
   const kind = attachmentKind(type)
-  const label = name ?? attachmentKindLabel(kind)
+  const kindLabel = attachmentKindLabel(kind)
+  const showName = !(hideFileName && kind === 'html')
+  const label = showName ? (name ?? kindLabel) : kindLabel
 
   // `noopener`/`noreferrer`: a aba nova não ganha acesso à origem do app.
   const openProps = {
@@ -91,7 +103,7 @@ export function TaskAttachmentView({
         <span className="truncate text-sm font-medium text-slate-700">{label}</span>
         <span className="flex items-center gap-1 text-xs text-slate-400">
           <Paperclip className="size-3" />
-          {attachmentKindLabel(kind)} · abrir em nova aba
+          {showName ? `${kindLabel} · ` : ''}abrir em nova aba
         </span>
       </span>
     </a>
