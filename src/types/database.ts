@@ -638,6 +638,7 @@ export interface Database {
           id: string
           house_id: string
           profile_id: string
+          level: number
           description: string | null
           duration_days: number | null
           expires_at: string | null
@@ -649,6 +650,7 @@ export interface Database {
           id?: string
           house_id: string
           profile_id: string
+          level?: number
           description?: string | null
           duration_days?: number | null
           expires_at?: string | null
@@ -660,6 +662,7 @@ export interface Database {
           id?: string
           house_id?: string
           profile_id?: string
+          level?: number
           description?: string | null
           duration_days?: number | null
           expires_at?: string | null

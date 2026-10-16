@@ -3,6 +3,7 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { after } from 'next/server'
 import {
   isPunishmentActive,
+  normalizePunishmentLevel,
   type ActivePunishment,
   type HouseActivePunishment,
 } from './punishments'
@@ -62,7 +63,7 @@ export const getActivePunishment = cache(
     try {
       const { data } = await admin
         .from('dependent_punishments')
-        .select('id, description, duration_days, expires_at, created_at')
+        .select('id, level, description, duration_days, expires_at, created_at')
         .eq('house_id', houseId)
         .eq('profile_id', profileId)
         .maybeSingle()
@@ -71,6 +72,7 @@ export const getActivePunishment = cache(
 
       return {
         id: data.id,
+        level: normalizePunishmentLevel(data.level),
         description: data.description?.trim() || null,
         durationDays: data.duration_days ?? null,
         expiresAt: data.expires_at ?? null,
@@ -106,7 +108,7 @@ export async function getHouseActivePunishments(
     const now = new Date()
     const { data } = await admin
       .from('dependent_punishments')
-      .select('id, profile_id, description, duration_days, expires_at, created_at')
+      .select('id, profile_id, level, description, duration_days, expires_at, created_at')
       .eq('house_id', houseId)
 
     return (data ?? [])
@@ -114,6 +116,7 @@ export async function getHouseActivePunishments(
       .map((row) => ({
         id: row.id,
         profileId: row.profile_id,
+        level: normalizePunishmentLevel(row.level),
         description: row.description?.trim() || null,
         durationDays: row.duration_days ?? null,
         expiresAt: row.expires_at ?? null,

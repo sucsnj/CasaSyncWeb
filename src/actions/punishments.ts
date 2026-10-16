@@ -5,6 +5,8 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   punishmentExpiryFromNow,
+  punishmentLevelLabel,
+  normalizePunishmentLevel,
   validatePunishmentFields,
   type ActivePunishment,
   type PunishmentInput,
@@ -81,6 +83,7 @@ async function assertCanPunish(
 /** Mapeia a linha gravada para o formato serializável que atravessa ao client. */
 function toActivePunishment(row: {
   id: string
+  level: number | null
   description: string | null
   duration_days: number | null
   expires_at: string | null
@@ -88,6 +91,7 @@ function toActivePunishment(row: {
 }): ActivePunishment {
   return {
     id: row.id,
+    level: normalizePunishmentLevel(row.level),
     description: row.description?.trim() || null,
     durationDays: row.duration_days ?? null,
     expiresAt: row.expires_at ?? null,
@@ -96,12 +100,18 @@ function toActivePunishment(row: {
 }
 
 /**
- * Aplica (ou SUBSTITUI) o castigo de um dependente da casa ativa.
+ * Aplica (ou SUBSTITUI) o aviso/castigo de um dependente da casa ativa.
  *
- * Os dois campos são opcionais: sem descrição o castigo aparece só com o ícone;
- * sem duração ele não expira (sai quando o ADMIN remove). Como a tabela tem
- * `unique (profile_id)`, um castigo já existente é sobrescrito — só existe um
- * castigo ativo por dependente.
+ * **Dois níveis, escolhidos pelo ADMIN:** `1` = aviso (o dependente vê o
+ * triângulo amarelo, avisando que o castigo está próximo) e `2` = castigo
+ * (triângulo vermelho). Os dois continuam sendo **só indicador** — nenhum ponto,
+ * tarefa, recompensa ou conquista é tocada (ADR-0020). Nível ausente cai no 2,
+ * que é o comportamento anterior.
+ *
+ * Descrição e duração são opcionais: sem descrição o aviso aparece só com o
+ * ícone; sem duração ele não expira (sai quando o ADMIN remove). Como a tabela
+ * tem `unique (profile_id)`, aplicar de novo **substitui** o anterior — trocar
+ * de nível é só salvar de novo.
  */
 export async function applyPunishment(
   profileId: string,
@@ -131,6 +141,8 @@ export async function applyPunishment(
       ? null
       : input.durationDays
   const expiresAt = punishmentExpiryFromNow(durationDays, now)
+  const level = normalizePunishmentLevel(input.level ?? null)
+  const label = punishmentLevelLabel(level)
 
   // `unique (profile_id)` transforma o "aplicar de novo" em substituição.
   const { data, error } = await admin
@@ -139,6 +151,7 @@ export async function applyPunishment(
       {
         house_id: auth.houseId,
         profile_id: profileId,
+        level,
         description,
         duration_days: durationDays,
         expires_at: expiresAt,
@@ -148,11 +161,11 @@ export async function applyPunishment(
       },
       { onConflict: 'profile_id' }
     )
-    .select('id, description, duration_days, expires_at, created_at')
+    .select('id, level, description, duration_days, expires_at, created_at')
     .single()
 
   if (error || !data) {
-    return { ok: false, error: 'Falha ao aplicar o castigo.' }
+    return { ok: false, error: `Falha ao aplicar o ${label.toLowerCase()}.` }
   }
 
   // Telas do dependente: a próxima renderização já mostra (ou some com) o ícone.
@@ -165,7 +178,9 @@ export async function applyPunishment(
   return {
     ok: true,
     data: { punishment: toActivePunishment(data) },
-    message: 'Castigo aplicado. O dependente verá um aviso no cabeçalho.',
+    message: `${label} aplicado. O dependente verá um triângulo ${
+      level === 1 ? 'amarelo' : 'vermelho'
+    } no cabeçalho.`,
   }
 }
 

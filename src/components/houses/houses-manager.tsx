@@ -23,8 +23,13 @@ import {
   PUNISHMENT_MAX_DESCRIPTION,
   PUNISHMENT_MAX_DURATION_DAYS,
   PUNISHMENT_MIN_DURATION_DAYS,
+  PUNISHMENT_LEVEL_WARNING,
+  PUNISHMENT_LEVELS,
   punishmentDurationLabel,
+  punishmentLevelHint,
+  punishmentLevelLabel,
   type HouseActivePunishment,
+  type PunishmentLevel,
 } from '@/utils/punishments'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
@@ -156,6 +161,12 @@ export function HousesManager({
   // deve apagar o que o ADMIN escreveu antes.
   const [punishDescription, setPunishDescription] = useState('')
   const [punishDuration, setPunishDuration] = useState('')
+  /**
+   * Nível escolhido no modal: 1 = aviso (triângulo amarelo), 2 = castigo
+   * (vermelho). Começa no castigo ATUAL; sem castigo nenhum, no 2 — que é o
+   * comportamento anterior, então salvar sem mexer no seletor não surpreende.
+   */
+  const [punishLevel, setPunishLevel] = useState<PunishmentLevel>(2)
 
   // Castigo ativo por dependente — busca O(1) na linha da lista e no modal.
   const punishmentByProfile = useMemo(
@@ -179,6 +190,7 @@ export function HousesManager({
         ? ''
         : String(current.durationDays)
     )
+    setPunishLevel(current?.level ?? 2)
     setPunishMember(member)
   }
 
@@ -488,6 +500,7 @@ export function HousesManager({
       const durationRaw = punishDuration.trim()
 
       const result = await applyPunishment(punishMember.profileId, {
+        level: punishLevel,
         description: punishDescription,
         durationDays: durationRaw === '' ? null : Number(durationRaw),
       })
@@ -498,7 +511,11 @@ export function HousesManager({
         return
       }
 
-      toast.success('Castigo aplicado!')
+      toast.success(
+        punishLevel === PUNISHMENT_LEVEL_WARNING
+          ? 'Aviso aplicado!'
+          : 'Castigo aplicado!'
+      )
       setPunishSuccess(result.message ?? 'Castigo aplicado.')
       // Os campos já são o que foi gravado — o `router.refresh()` traz o
       // castigo atual (com vencimento novo) para o bloco de leitura.
@@ -527,9 +544,9 @@ export function HousesManager({
         return
       }
 
-      toast.success('Castigo removido!')
-      setPunishSuccess('Castigo removido.')
-      // Sem castigo ativo os campos ficam vazios, para não sugerir que o texto
+      toast.success('Aviso removido!')
+      setPunishSuccess('Aviso removido — o dependente não vê mais o aviso.')
+      // Sem aviso ativo os campos ficam vazios, para não sugerir que o texto
       // apagado ainda vale.
       setPunishDescription('')
       setPunishDuration('')
@@ -915,7 +932,13 @@ export function HousesManager({
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {members.map((member) => (
+              {members.map((member) => {
+                // Aviso/castigo ativo desta linha (nível 1 = aviso amarelo,
+                // nível 2 = castigo vermelho) — só para pintar o botão.
+                const activeMemberPunishment = punishmentByProfile.get(
+                  member.profileId
+                )
+                return (
                 <li
                   key={member.profileId}
                   className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border border-input px-3 py-2 text-sm"
@@ -1002,15 +1025,18 @@ export function HousesManager({
                         size="sm"
                         className={cn(
                           'min-h-9 px-2 text-xs',
-                          punishmentByProfile.has(member.profileId)
+                          activeMemberPunishment?.level ===
+                          PUNISHMENT_LEVEL_WARNING
                             ? 'font-semibold text-amber-700 hover:bg-amber-50 hover:text-amber-800'
-                            : 'text-slate-500'
+                            : activeMemberPunishment
+                              ? 'font-semibold text-red-700 hover:bg-red-50 hover:text-red-800'
+                              : 'text-slate-500'
                         )}
                         onClick={() => openPunishmentModal(member)}
                         title={
-                          punishmentByProfile.has(member.profileId)
-                            ? 'Este dependente está com castigo ativo — clique para ver, substituir ou remover'
-                            : 'Aplicar um castigo (apenas um aviso no app, não altera pontos)'
+                          activeMemberPunishment
+                            ? `Este dependente está com ${punishmentLevelLabel(activeMemberPunishment.level).toLowerCase()} ativo — clique para ver, substituir ou remover`
+                            : 'Aplicar um aviso ou castigo (apenas um ícone no app, não altera pontos)'
                         }
                       >
                         <TriangleAlert className="size-3.5" />
@@ -1069,7 +1095,8 @@ export function HousesManager({
                     ) : null}
                   </span>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </CardContent>
@@ -1364,22 +1391,91 @@ export function HousesManager({
             onSubmit={handleSavePunishment}
             className="flex flex-col gap-3"
           >
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
+            <div
+              className={cn(
+                'flex items-start gap-2 rounded-xl border p-3 text-sm',
+                punishLevel === PUNISHMENT_LEVEL_WARNING
+                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              )}
+            >
+              <TriangleAlert
+                className={cn(
+                  'mt-0.5 size-4 shrink-0',
+                  punishLevel === PUNISHMENT_LEVEL_WARNING
+                    ? 'text-amber-600'
+                    : 'text-red-600'
+                )}
+              />
               <p>
-                O castigo é <strong>só um aviso</strong>: o dependente verá um
-                ícone de triângulo no cabeçalho do app. Nenhum ponto, tarefa ou
-                recompensa é alterado.
+                {punishLevel === PUNISHMENT_LEVEL_WARNING ? (
+                  <>
+                    O <strong>aviso</strong> é só um alerta de que o castigo está
+                    próximo: o dependente verá um triângulo <strong>amarelo</strong>
+                    {' '}no cabeçalho.
+                  </>
+                ) : (
+                  <>
+                    O <strong>castigo</strong> é <strong>só um aviso</strong>: o
+                    dependente verá um triângulo <strong>vermelho</strong> no
+                    cabeçalho do app. Nenhum ponto, tarefa ou recompensa é
+                    alterado.
+                  </>
+                )}
                 {currentPunishment
-                  ? ' Salvar abaixo substitui o castigo atual.'
+                  ? ' Salvar abaixo substitui o aviso atual.'
                   : ''}
               </p>
+            </div>
+
+            {/* Nível do aviso — 1 (aviso, amarelo) ou 2 (castigo, vermelho).
+                Substituir o aviso atual por um nível diferente é só salvar de
+                novo com o outro selecionado (`unique (profile_id)`). */}
+            <div className="grid gap-2">
+              <Label>Nível</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {PUNISHMENT_LEVELS.map((level) => {
+                  const selected = punishLevel === level
+                  const warning = level === PUNISHMENT_LEVEL_WARNING
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setPunishLevel(level)}
+                      aria-pressed={selected}
+                      className={cn(
+                        'flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors active:scale-[0.99]',
+                        selected
+                          ? warning
+                            ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200'
+                            : 'border-red-400 bg-red-50 ring-2 ring-red-200'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <TriangleAlert
+                          className={cn(
+                            'size-4 shrink-0',
+                            warning ? 'text-amber-600' : 'text-red-600'
+                          )}
+                        />
+                        <span className="text-sm font-semibold text-slate-800">
+                          {punishmentLevelLabel(level)}
+                        </span>
+                      </span>
+                      <span className="text-xs leading-relaxed text-slate-500">
+                        {punishmentLevelHint(level)}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             {currentPunishment ? (
               <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                  Castigo atual
+                  {punishmentLevelLabel(currentPunishment.level)} atual
                 </p>
                 <p className="text-sm whitespace-pre-wrap text-slate-800">
                   {currentPunishment.description ??
@@ -1421,17 +1517,22 @@ export function HousesManager({
                 maxLength={PUNISHMENT_MAX_DESCRIPTION}
                 value={punishDescription}
                 onChange={(event) => setPunishDescription(event.target.value)}
-                placeholder="Explique ao dependente o motivo do castigo."
+                placeholder="Explique ao dependente o motivo."
                 className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Opcional. Sem texto, o dependente vê apenas o aviso de que há um
-                castigo ativo (até {PUNISHMENT_MAX_DESCRIPTION} caracteres).
+                Opcional. Sem texto, o dependente vê apenas o aviso de que há um{' '}
+                {punishmentLevelLabel(punishLevel).toLowerCase()} ativo (até{' '}
+                {PUNISHMENT_MAX_DESCRIPTION} caracteres).
               </p>
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="punish-duration">Duração em dias (opcional)</Label>
+              <Label htmlFor="punish-duration">
+                {punishLevel === PUNISHMENT_LEVEL_WARNING
+                  ? 'Validade do aviso em dias (opcional)'
+                  : 'Duração do castigo em dias (opcional)'}
+              </Label>
               <Input
                 id="punish-duration"
                 name="durationDays"
@@ -1445,7 +1546,7 @@ export function HousesManager({
                 placeholder="Ex.: 7"
               />
               <p className="text-xs text-muted-foreground">
-                Opcional. Deixe vazio para o castigo não ter prazo (ele só sai
+                Opcional. Deixe vazio para o aviso não ter prazo (ele só sai
                 quando você remover). Com valor, expira sozinho depois de{' '}
                 {PUNISHMENT_MIN_DURATION_DAYS} a {PUNISHMENT_MAX_DURATION_DAYS}{' '}
                 dias.
@@ -1468,8 +1569,8 @@ export function HousesManager({
                 {punishPending
                   ? 'Salvando...'
                   : currentPunishment
-                    ? 'Substituir castigo'
-                    : 'Aplicar castigo'}
+                    ? `Substituir por ${punishmentLevelLabel(punishLevel).toLowerCase()}`
+                    : `Aplicar ${punishmentLevelLabel(punishLevel).toLowerCase()}`}
               </Button>
               {currentPunishment ? (
                 <Button
@@ -1478,7 +1579,7 @@ export function HousesManager({
                   disabled={punishPending}
                   onClick={handleRemovePunishment}
                 >
-                  Remover castigo
+                  Remover aviso
                 </Button>
               ) : null}
             </div>

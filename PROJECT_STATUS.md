@@ -315,7 +315,86 @@ controle barrado, nome >120 barrado).
 
 ---
 
+## Castigo com 2 níveis — aviso (amarelo) e castigo (vermelho) (implementado — SQL a aplicar)
+
+### O que mudou
+O castigo do dependente (`dependent_punishments`, ADR-0020) agora tem **dois
+níveis, escolhidos pelo ADMIN** no momento de aplicar:
+
+| nível | nome | triângulo | o que é |
+|---|---|---|---|
+| **1** | **Aviso** | **amarelo** | só avisa que o castigo está próximo |
+| **2** | **Castigo** | **vermelho** | o castigo vigente (comportamento anterior) |
+
+**A diferença entre os dois é a cor e o texto** — os dois continuam sendo **só
+indicador** (nenhuma escrita em `profiles.points`/`tasks`/`rewards`/
+`dependent_achievements`; a penalidade de verdade segue sendo o débito em
+`updateDependentPoints` com PIN e o `NOT_DELIVERED`). O nível 2 é exatamente o
+que já existia, e é por isso que é o `default` no banco: **as linhas já
+gravadas seguem valendo sem backfill**.
+
+- **SQL em `docs/sql/punishment_level.sql`** — `level int not null default 2` +
+  `CHECK (level in (1,2))`, **a aplicar**. O CHECK é a barreira no banco; a
+  action valida o mesmo conjunto antes de gravar.
+- **Regras puras em `src/utils/punishments.ts`**: `PUNISHMENT_LEVEL_WARNING`
+  (1) / `PUNISHMENT_LEVEL_PUNISHED` (2), o tipo `PunishmentLevel`,
+  `PUNISHMENT_LEVELS` (ordem de exibição), `punishmentLevelLabel`
+  ("Aviso"/"Castigo") e `punishmentLevelHint` (a linha de explicação no seletor).
+  `validatePunishmentFields` passou a **recusar nível fora de {1, 2}**
+  (fail-closed) — nível **ausente** cai no 2, que é o comportamento anterior.
+  `normalizePunishmentLevel` protege a leitura: valor inesperado do banco cai
+  no 2 — é o estado mais "barulhento" na tela do dependente, então é o lado
+  seguro de errar.
+- **`ActivePunishment` carrega o `level`**, que atravessa server → client
+  (`getActivePunishment` e `getHouseActivePunishments` já traziam a linha; só
+  falta o campo), então o botão da linha do dependente e o `PunishmentIndicator`
+  pintam pelo nível.
+- **UI do ADMIN** (`houses-manager.tsx`): o modal ganhou um **seletor de dois
+  botões** (Aviso / Castigo), inicializado do nível atual e com **default 2** —
+  salvar sem mexer no seletor não surpreende ninguém. O banner explicativo, os
+  rótulos dos campos ("Duração do castigo" vs "Validade do aviso"), o texto do
+  botão ("Aplicar aviso"/"Aplicar castigo", "Substituir por…") e o **botão da
+  linha do dependente** (âmbar com aviso, vermelho com castigo) seguem o nível
+  selecionado/atual. "Remover castigo" virou **"Remover aviso"** (vale para os
+  dois níveis).
+- **UI do DEPENDENTE** (`punishment-indicator.tsx`): `text-amber-300` no aviso e
+  `text-red-400` no castigo, com modal **"Aviso do tutor"** (que diz
+  explicitamente *"Ainda não há castigo — é um aviso de que o castigo está
+  próximo. Nada foi descontado."*) e **"Castigo ativo"**, cada um com seu painel
+  e seu texto.
+- **Continua sem notificação** (decisão do usuário): o aviso só chega ao
+  dependente no render, como o castigo — nada no sino, nada de push.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+Regras puras conferidas executando o módulo real com `node --experimental-strip-types`
+(script temporário fora do repo): **27 casos** — níveis válidos/inválidos
+(inclusive `'1'` como string, que é recusado), `normalizePunishmentLevel` com
+`9`/`null`/`undefined`/`'1'` caindo no 2, rótulos e hints, e a validação
+fail-closed (nível 3 barrado, descrição >500, duração 0/366/fracionária) sem
+que o nível válido "esconda" um erro de duração.
+
+### Pontos de atenção
+- **Nada pendente de regra:** os dois níveis são só indicador (ADR-0020
+  inalterado). Se um dia o "castigo" virar débito real, é outra discussão de
+  produto — não uma extensão deste campo.
+- **O default 2 é o que preserva o comportamento**: sem backfill e sem
+  `update`, as linhas antigas continuam sendo castigos (vermelho).
+- **Trocar de nível é salvar de novo** no mesmo modal (`unique (profile_id)`
+  continua sendo a regra: um aviso/castigo ativo por dependente).
+- Requer o SQL antes do deploy — o `select` do castigo já lê `level`.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **Castigo do dependente com 2 níveis:** o ADMIN escolhe entre **aviso** (nível
+  1, triângulo **amarelo** — só avisa que o castigo está próximo) e **castigo**
+  (nível 2, triângulo **vermelho** — o vigente). A diferença é a cor e o texto;
+  os dois continuam sendo **só indicador** (ADR-0020, nenhuma escrita em pontos,
+  tarefas ou conquistas) e **sem notificação**. SQL da coluna `level` em
+  `docs/sql/punishment_level.sql`, **a aplicar antes do deploy** (default 2, sem
+  backfill). Ver a seção no topo do documento.
 
 - **Anexo de arquivo na tarefa:** o ADMIN anexa **um arquivo por tarefa** (imagem,
   vídeo, PDF ou página HTML, até 5 MB) no form de criação e troca/remove no card.
