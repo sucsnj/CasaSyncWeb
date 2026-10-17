@@ -54,7 +54,7 @@ As migrações SQL **não ficam commitadas** (`supabase/*.sql` é gitignore; sem
 | due_date | timestamptz | SLA (`src/utils/task-sla.ts`); **sempre gravado com fuso** — o cliente envia o instante ISO via `datetimeLocalToIso` e o servidor (`normalizeDueDate`) rejeita string naive (seria lida como UTC e deslocaria o prazo) |
 | image_url | text | URL do **anexo** da tarefa (bucket `casasync-media`, pasta `tasks/`). Também guarda a imagem de tarefas antigas (sem `attachment_type`) |
 | attachment_name | text | nullable; nome original do arquivo, só para exibição. **Aguardando aplicação** (`docs/sql/task_attachment.sql`) |
-| attachment_type | text | nullable; MIME do anexo, na lista fechada de `src/utils/task-attachment.ts` (`image/*`, `video/*`, `application/pdf`, `text/html`). null = tarefa antiga, tratada como imagem inline. **Aguardando aplicação** |
+| attachment_type | text | nullable; MIME do anexo, na lista fechada de `src/utils/task-attachment.ts` (`image/*`, `video/*`, `application/pdf`, `text/html`) **ou `text/url`, que é um link da web** (não é arquivo: a URL vai como está em `image_url` e o link abre em nova aba). null = tarefa antiga, tratada como imagem inline. **Aguardando aplicação** |
 | extension_requested | bool | pedido de adiamento |
 | extension_reason | text | justificativa obrigatória |
 | extension_count | int | default 0; quantos adiamentos a tarefa já recebeu (soma na aprovação); `>= 0` |
@@ -236,9 +236,9 @@ Uma linha por (comunicado, dependente) — `UNIQUE (comunicado_id, profile_id)`.
 | id | uuid PK | default `gen_random_uuid()` |
 | house_id | uuid FK → houses | `on delete cascade`; o item é **da casa** (ADR-0024) |
 | title | text | obrigatório, 1–100 chars com `btrim`; **pode repetir** (sem índice único) |
-| file_url | text | obrigatório; URL pública no bucket `casasync-media`, **pasta `chest/`** (validado na action) |
-| file_name | text | nome **original** do arquivo, só para exibição (≤120, sem caractere de controle) |
-| file_type | text | MIME resolvido (upload ou extensão); `text/html` faz o app servir pela rota própria |
+| file_url | text | obrigatório; **arquivo**: URL pública no bucket `casasync-media`, pasta `chest/` (validado na action). **link**: endereço `http`/`https` da web, como está |
+| file_name | text | nome **original** do arquivo, só para exibição (≤120, sem caractere de controle); **`null` quando é link** |
+| file_type | text | MIME resolvido (upload ou extensão); `text/html` faz o app servir pela rota própria; **`text/url` = link da web** (não é arquivo, não vai para o bucket) |
 | created_by | uuid FK → profiles | `on delete set null` |
 | created_at / updated_at | timestamptz | listagem por `created_at desc` |
 

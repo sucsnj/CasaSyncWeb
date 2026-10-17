@@ -315,6 +315,113 @@ controle barrado, nome >120 barrado).
 
 ---
 
+## Link da web como anexo (tarefa e baú) — implementada, **sem SQL**
+
+### O que mudou
+O anexo deixou de ser **só arquivo**: o ADMIN pode agora colocar um **link da
+web** no lugar (ou além) do upload, e o clique abre em **nova aba** — vale
+**para os dois lados**, porque os dois usam o mesmo componente e o mesmo
+validador.
+
+- **O tipo gravado é `text/url`** (`LINK_ATTACHMENT_TYPE` em
+  `src/utils/task-attachment.ts`), em `tasks.attachment_type` e em
+  `chest_items.file_type`. Ele fica **fora** de `TASK_ATTACHMENT_TYPES` de
+  propósito: aquela lista é o que o `<input type="file">` aceita e o que o
+  upload valida — link não se escolhe num seletor de arquivos.
+- **O link não sobe para o storage**: a URL é gravada como está,
+  `attachment_name`/`file_name` fica **null** (link não tem "nome de arquivo") e
+  o chip mostra **só o domínio** (`attachmentLinkHost`, novo) com a URL completa
+  no `title` — o endereço costuma vir com parâmetros de rastreio, e o título do
+  item já dá o contexto. **O domínio nunca é truncado** e há selo **"Site
+  externo"** (ver o endurecimento do chip abaixo).
+- **`validateAttachment(url, name, type, folder)`** (novo, **genérico**) é quem
+  bifurca: link passa por `validateAttachmentLink`, arquivo segue com pasta +
+  tipo fechado + nome. `validateTaskAttachment` virou uma chamada ao genérico com
+  a pasta `tasks/`, e a fachada do baú passou a fazer o mesmo com `chest/` — ou
+  seja, a validação do baú **deixou de ter cópia própria** da regra.
+- **Fail closed no link** (`validateAttachmentLink`), 3 regras em ordem: (1) **só
+  `http:`/`https:`** — **lista de dois esquemas, não de bloqueio**, então
+  `javascript:`/`data:`/`vbscript:`/`file:`/`ftp:`/`blob:` e qualquer esquema
+  exótico caem fora **por construção**; (2) precisa de host, ≤
+  `ATTACHMENT_LINK_MAX` (2000), sem caractere de controle; (3) **nunca aponta para
+  o storage interno `casasync-media`** — conferido no **host**, no **caminho**, na
+  **query** e na URL crua. A razão do ponto 3: a troca de anexo **apaga o arquivo
+  antigo** (`removeStorageFile`), então um "link" apontando para um arquivo
+  interno apagaria algo que ele não possui.
+- **Endurecimento (2ª rodada, pedido explícito do usuário):** o ponto 3 checava
+  só o `pathname`, o que deixava passar `https://casasync-media.supabase.co/...`
+  e `https://qualquer.com/?to=casasync-media/...` (link que redireciona para
+  dentro do bucket) — agora a checagem cobre host + path + query + URL crua. E o
+  novo `normalizeAttachmentLink` faz o input **gravar o `href` que o parser
+  produziu**, então o que é validado é o que vira `href` no chip (antes,
+  `java<TAB>script:` era barrado na validação, mas o texto cru era o que ia para o
+  banco).
+- **UI:** alternador **Arquivo | Link** no `TaskAttachmentInput` (o modo nasce do
+  anexo atual, então quem edita um item que já tem link abre no modo link), input
+  de URL com "Salvar link" (Enter também salva) e o chip do
+  `TaskAttachmentView` ganhou `Link2` + selo **"Site externo"**.
+- **Endurecimento do chip (o vetor real de engano):** o label do link usava
+  `truncate`, e o reticências cai no **final** do host — que é onde mora o
+  domínio de verdade: `https://www.youtube.com.evil.com/aula` aparecia como
+  "www.youtube.com…", parecendo YouTube. Agora o **domínio quebra linha em vez de
+  ser cortado** (`break-all`, sem `truncate`), e a segunda linha carrega o selo
+  **"Site externo"**, que é o que distingue um link real de um texto que o
+  **celular linkificou sozinho** (iOS Safari e Android Chrome com *touch links*
+  transformam texto que parece URL em link — eles **nunca** linkificam
+  `javascript:`, então não é XSS; é navegação fora das nossas regras). O mesmo
+  cuidado foi aplicado no **preview do ADMIN** (`TaskAttachmentInput`). O nome de
+  arquivo continua com `truncate`: nome de arquivo não é destino.
+- **Nada de notificação específica:** o `TASK_CREATED` já diz "Há um anexo para
+  ver." quando há anexo, e o baú segue sem notificação (ADR-0024).
+- **Nenhum SQL:** `attachment_type` e `file_type` são `text` sem CHECK, então
+  nenhum tipo novo exige migração.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. Regras puras conferidas executando os módulos reais
+com `node --experimental-strip-types` (loader temporário fora do repo): **78
+casos** na rodada final (o mesmo conjunto de antes, mais os casos do
+endurecimento) —
+- **ponto 1 (esquema):** `https`/`http` aceitos (inclusive maiúsculo, com espaço
+  nas pontas e com porta); `javascript:` (maiúsculo, com espaço à esquerda e com
+  **TAB no esquema**), `data:` (HTML e base64), `vbscript:`, `file:`, `ftp:`,
+  `blob:`, `chrome-extension:`, `about:`, `mailto:`, `tel:`, sem esquema e sem
+  host **todos barrados**;
+- **ponto 3 (storage interno):** barrado no caminho (`tasks/` e `chest/`), no
+  **host** (`casasync-media.supabase.co` e `casasync-media.qualquer.com`), na
+  **query**, no fragment e com o token em caixa alta — e uma URL externa que só
+  *parece* o token (`google.com/search?q=casync-media`) **não** é barrada, então a
+  regra não é um "não deixa passar palavra parecida";
+- **normalização:** o `href` gravado é o do parser (espaço, `%20`, esquema em
+  minúsculas) e volta `null` em `javascript:`/bucket/vazio;
+- **integração e regressão:** link passa pelo validador da tarefa e do baú sem
+  checagem de pasta, link sem tipo cai no caso de arquivo e é barrado
+  (fail-closed), e os 4 tipos de arquivo seguem intactos (pasta trocada, tipo
+  fora da lista, nome >120/com controle).
+Classes novas conferidas **no CSS gerado** (`.bg-sky-50`, `.text-sky-600`,
+`.min-w-40`, `.min-h-9`, `.p-1`, `.shadow-sm`).
+
+**Bug encontrado pelos próprios testes na 1ª rodada:** a fachada do baú tinha
+perdido o import de `validateAttachment` numa edição (o `lint` passou — regra não
+existe para símbolo ausente em TS —, mas a execução do módulo acusou
+`ReferenceError`). Reposto e coberto pelo `typecheck`. Vale registrar: `lint`
+sozinho **não** pega import faltando.
+
+### Pontos de atenção
+- **O tipo `text/url` é o que separa link de arquivo** em toda a leitura
+  (`attachmentKind`), na validação e na apresentação. Não gravar o tipo (ou
+  gravar com o MIME da página) faz o link cair no caminho de arquivo — e ser
+  barrado, o que é o comportamento correto.
+- **Um anexo por item/tarefa:** link **ou** arquivo, nunca os dois (o banco tem
+  uma coluna só de URL). Para dois materiais, dois itens/anexos.
+- **Link não tem nome de arquivo:** o `X` de remover limpa os 3 campos, e o item
+  do baú sem arquivo é recusado pelo servidor (para tirar, o ADMIN exclui o item).
+- **`javascript:` barrado é requisito de segurança, não Gusto** — o chip vira
+  `<a href>`, e um esquema executável ali roda script na origem do app.
+- Requer deploy (o SQL já está aplicado, então é só subir o código).
+
+---
+
 ## Baú da casa — acervo de arquivos por casa (implementado — **SQL a aplicar**)
 
 ### O que foi implementado
@@ -481,6 +588,14 @@ que o nível válido "esconda" um erro de duração.
 ---
 
 ## Estado atual (verificado — sem pendências)
+
+- **Link da web como anexo (tarefa e baú):** o anexo pode ser um link `http`/
+  `https` no lugar do arquivo — tipo gravado `text/url`, que não sobe para o
+  storage, abre em **nova aba** e mostra **só o domínio** no chip. O validador
+  ficou **genérico por pasta** (`validateAttachment`), então tarefa e baú
+  compartilham a regra, e o link é **fail closed** (só `http`/`https`, com host,
+  ≤2000, e nunca apontando para dentro do bucket). Alternador **Arquivo | Link**
+  no input. **Sem SQL.** Ver a seção no topo.
 
 - **Baú da casa (rota `/chest`):** acervo de arquivos por casa — **só um título**
   (1–100, pode repetir) + 1 arquivo, com **os mesmos tipos e o mesmo teto de 5 MB

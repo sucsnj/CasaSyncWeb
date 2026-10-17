@@ -95,6 +95,51 @@ deploy).
     junto só no fluxo explícito/best-effort, como o resto do app). Nada é por
     dependente, então `expelMember`/`deleteDependentAccount` não entram aqui.
 
+## Emenda (link da web como anexo — sem SQL)
+
+Além dos arquivos, o anexo passou a aceitar um **link da web**, e a regra vale
+para **os dois lados** (tarefa e baú), porque os dois usam o mesmo componente e o
+mesmo validador.
+
+- **O tipo gravado é `text/url`** (`LINK_ATTACHMENT_TYPE` em
+  `src/utils/task-attachment.ts`), gravado em `tasks.attachment_type` /
+  `chest_items.file_type`. Ele fica **fora** de `TASK_ATTACHMENT_TYPES` de
+  propósito: aquela lista é o que o `<input type="file">` aceita e o que o upload
+  valida, e link não se escolhe num seletor de arquivos. Nenhuma coluna nova, nenhum
+  CHECK no banco — por isso **esta emenda não tem SQL**.
+- **Link não sobe para o storage.** A URL é gravada como está e o clique abre em
+  nova aba; o chip mostra **só o domínio** (`attachmentLinkHost`), com a URL
+  completa no `title`.
+- **`validateAttachment` (genérico) bifurra pelo tipo**: link passa por
+  `validateAttachmentLink`, arquivo segue com pasta + tipo fechado + nome. A
+  fachada do baú passou a chamar esse genérico com a pasta `chest/`, em vez de ter
+  a sua própria cópia da regra.
+- **Fail closed no link** (`validateAttachmentLink`), em três regras na
+  ordem — as duas primeiras são sobre **a URL como o browser vai interpretá-la**,
+  a terceira é sobre **para onde ela aponta**:
+  1. **só `http:`/`https:`** — lista de dois esquemas, não lista de bloqueio:
+     `javascript:` (que executaria script na origem do app), `data:`,
+     `vbscript:`, `file:`, `ftp:`, `blob:` e qualquer esquema exótico que
+     apareça depois caem **fora por construção**, sem precisar lembrar de bloquear
+     um a um;
+  2. **precisa de host**, ≤ `ATTACHMENT_LINK_MAX` (2000) e sem caractere de
+     controle;
+  3. **nunca aponta para o storage interno** (`casasync-media`) — verificado no
+     **host**, no **caminho**, na **query** e na URL crua. Checar só o caminho
+     deixaria passar `https://casasync-media.supabase.co/...` e um
+     `https://qualquer.com/?to=casasync-media/...`, que é o link tentando
+     *redirecionar* para dentro do bucket. A razão é prática: a troca de anexo
+     remove o arquivo antigo (`removeStorageFile`), e um "link" não tem dono nem
+     pasta — ele apagaria um arquivo que ele não possui.
+- **O que é gravado é o que foi validado**: `normalizeAttachmentLink` devolve o
+  `href` que o parser de URL produziu, e o input grava esse valor. Sem isso,
+  validar uma coisa e guardar outra é brecha esperando: `java\tscript:` passa
+  pela validação (o parser remove o TAB) mas o `href` renderizado seria o texto
+  cru.
+- **UI:** alternador **Arquivo | Link** no `TaskAttachmentInput` (o modo nasce do
+  anexo atual, para quem edita um item com link abrir já no modo link), e o chip
+  do `TaskAttachmentView` ganha o ícone `Link2` e o texto "link da web".
+
 ## Consequências
 - **Ordem de deploy:** o SQL (`docs/sql/chest_items.sql` — tabela, índices, RLS,
   policy de SELECT, publication) tem de estar aplicado **antes** do deploy, senão

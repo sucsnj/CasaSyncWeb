@@ -20,10 +20,17 @@ import {
   attachmentExtension,
   attachmentKind,
   attachmentKindLabel,
+  attachmentLinkHost,
   attachmentTypeFromName,
   formatAttachmentSize,
   isAllowedAttachmentType,
+  isLinkAttachmentType,
+  normalizeAttachmentLink,
   resolveAttachmentType,
+  validateAttachment,
+  validateAttachmentLink,
+  ATTACHMENT_LINK_MAX,
+  INTERNAL_MEDIA_BUCKET,
   TASK_ATTACHMENT_ACCEPT,
   TASK_ATTACHMENT_MAX_BYTES,
   TASK_ATTACHMENT_MAX_MB,
@@ -36,10 +43,16 @@ export {
   attachmentExtension,
   attachmentKind,
   attachmentKindLabel,
+  attachmentLinkHost,
   attachmentTypeFromName,
   formatAttachmentSize,
   isAllowedAttachmentType,
+  isLinkAttachmentType,
+  normalizeAttachmentLink,
   resolveAttachmentType,
+  validateAttachmentLink,
+  ATTACHMENT_LINK_MAX,
+  INTERNAL_MEDIA_BUCKET,
   TASK_ATTACHMENT_ACCEPT,
   TASK_ATTACHMENT_MAX_BYTES,
   TASK_ATTACHMENT_MAX_MB,
@@ -69,42 +82,17 @@ export const CHEST_ITEM_TITLE_MAX = 100
 /**
  * Validação do item gravado — **fail closed**, no servidor.
  *
- * As 3 defesas são as mesmas de `validateTaskAttachment`, com a pasta do baú:
- * 1. a URL precisa ser do bucket público, na pasta `chest/` (o mesmo cuidado que
- *    a tarefa exige com `tasks/`, `sendQuickMessage` com `messages/` e
- *    `createAchievement` com `achievements/`);
- * 2. o tipo precisa estar na lista fechada (reexportada acima);
- * 3. o nome original é limitado a 120 caracteres e não pode trazer caractere de
- *    controle — ele é só para exibição, nunca entra no caminho do storage.
+ * É o validador **genérico** (`validateAttachment`) com a pasta do baú: as
+ * mesmas defesas do anexo de tarefa — link pela validação de URL, arquivo pela
+ * pasta `chest/` + tipo da lista fechada + nome limitado — sem uma segunda
+ * cópia da regra.
  */
 export function validateChestItemAttachment(
   url: string,
   name: string | null | undefined,
   type: string | null | undefined
 ): string | null {
-  if (
-    !url.includes(`/${CHEST_ITEM_FOLDER}/`) ||
-    !url.includes('/casasync-media/')
-  ) {
-    return 'Arquivo inválido: ele precisa estar no storage da casa.'
-  }
-
-  const resolved =
-    (type ?? '').trim().toLowerCase() || attachmentTypeFromName(name ?? '')
-  if (!isAllowedAttachmentType(resolved)) {
-    return 'Formato não aceito. Envie imagem, vídeo, PDF ou página HTML.'
-  }
-
-  const safeName = (name ?? '').trim()
-  if (safeName.length > 120) {
-    return 'Nome do arquivo muito longo (máx. 120 caracteres).'
-  }
-  for (let i = 0; i < safeName.length; i++) {
-    const code = safeName.charCodeAt(i)
-    if (code < 32 || code === 127) return 'Nome do arquivo inválido.'
-  }
-
-  return null
+  return validateAttachment(url, name, type, CHEST_ITEM_FOLDER)
 }
 
 /**

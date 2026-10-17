@@ -1,9 +1,19 @@
 'use client'
 
-import { FileText, Film, Globe, ImageIcon, Paperclip } from 'lucide-react'
+import {
+  ExternalLink,
+  FileText,
+  Film,
+  Globe,
+  ImageIcon,
+  Link2,
+  Paperclip,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   attachmentKind,
   attachmentKindLabel,
+  attachmentLinkHost,
   type TaskAttachmentKind,
 } from '@/utils/task-attachment'
 
@@ -12,6 +22,7 @@ const KIND_ICON: Record<TaskAttachmentKind, typeof FileText> = {
   video: Film,
   pdf: FileText,
   html: Globe,
+  link: Link2,
 }
 
 /**
@@ -68,8 +79,12 @@ export function TaskAttachmentView({
 
   // O HTML é o único tipo que sai pela rota do app; imagem, vídeo e PDF vão
   // direto para a URL pública do storage (o gateway entrega o content-type certo
-  // para eles).
+  // para eles). O **link** também vai pela URL, mas para um site externo.
   const htmlTarget = htmlHref ?? (taskId ? `/api/task-attachment/${taskId}` : null)
+
+  // Link: o chip mostra o domínio (a URL costuma vir com parâmetros de
+  // rastreio) e a completa fica no `title`, que o hover do browser mostra.
+  const linkHost = kind === 'link' ? attachmentLinkHost(url) : null
 
   // `noopener`/`noreferrer`: a aba nova não ganha acesso à origem do app.
   const openProps = {
@@ -103,18 +118,56 @@ export function TaskAttachmentView({
   return (
     <a
       {...openProps}
-      title={`Abrir ${label} em uma nova aba`}
+      title={
+        kind === 'link'
+          ? `${url}\n\nAbrir em uma nova aba`
+          : `Abrir ${label} em uma nova aba`
+      }
       className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:bg-slate-50 active:scale-[0.99]"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+      <span
+        className={cn(
+          'flex size-10 shrink-0 items-center justify-center rounded-lg',
+          kind === 'link'
+            ? 'bg-sky-50 text-sky-600'
+            : 'bg-blue-50 text-blue-600'
+        )}
+      >
         <Icon className="size-5" />
       </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium text-slate-700">{label}</span>
-        <span className="flex items-center gap-1 text-xs text-slate-400">
-          <Paperclip className="size-3" />
-          {showName ? `${kindLabel} · ` : ''}abrir em nova aba
-        </span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {kind === 'link' ? (
+          // **O domínio nunca é truncado** (quebra linha em vez de cortar): o
+          // reticências do `truncate` cai no FINAL do host, que é onde mora o
+          // domínio real — `www.youtube.com…` lendo como `www.youtube.com` quando
+          // a URL era `www.youtube.com.evil.com`. Domínio inteiro visível, ou o
+          // chip mente sobre para onde vai.
+          <span className="break-all text-sm font-medium text-slate-700">
+            {linkHost}
+          </span>
+        ) : (
+          // Nome de arquivo não é destino: aqui o corte é só estética e evita
+          // card alto.
+          <span className="truncate text-sm font-medium text-slate-700">
+            {label}
+          </span>
+        )}
+        {kind === 'link' ? (
+          // O selo é o aviso de que o destino é **fora do app** — é o que
+          // distingue um link real de um texto que o celular linkificou sozinho.
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-700">
+              <ExternalLink className="size-3" />
+              Site externo
+            </span>
+            <span>abrir em nova aba</span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-xs text-slate-400">
+            <Paperclip className="size-3" />
+            {`${showName ? `${kindLabel} · ` : ''}abrir em nova aba`}
+          </span>
+        )}
       </span>
     </a>
   )
