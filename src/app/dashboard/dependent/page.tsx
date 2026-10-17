@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Gift, GraduationCap, ListTodo } from 'lucide-react'
+import { Gift, GraduationCap, ListTodo, Package } from 'lucide-react'
 import {
   getDependentHouse,
   getHouseTutors,
@@ -28,12 +28,19 @@ const actions = [
     icon: ListTodo,
     accent: 'bg-blue-100 text-blue-700',
   },
-  {
+{
     href: '/rewards',
     title: 'Recompensas',
-    description: 'Troque seus pontos por prêmios.',
+    description: 'Troque seus pontos por premios.',
     icon: Gift,
     accent: 'bg-amber-100 text-amber-700',
+  },
+  {
+    href: '/chest',
+    title: 'Baú',
+    description: 'Arquivos que seu tutor deixou para você.',
+    icon: Package,
+    accent: 'bg-teal-100 text-teal-700',
   },
 ] as const
 

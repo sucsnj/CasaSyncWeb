@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { House, Megaphone, SlidersHorizontal } from 'lucide-react'
+import { House, Megaphone, Package, SlidersHorizontal } from 'lucide-react'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import {
@@ -37,6 +37,15 @@ const actions = [
     description: 'Avisos que os dependentes confirmam.',
     icon: Megaphone,
     accent: 'bg-rose-100 text-rose-700',
+  },
+  {
+    // Baú: sem item na nav do ADMIN (ADR-0024, item 14) — o acervo é gerenciado
+    // por aqui, como os Comunicados.
+    href: '/chest',
+    title: 'Baú',
+    description: 'Arquivos que os dependentes podem consultar.',
+    icon: Package,
+    accent: 'bg-amber-100 text-amber-700',
   },
 ] as const
 

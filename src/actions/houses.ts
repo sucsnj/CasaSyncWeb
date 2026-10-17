@@ -16,6 +16,7 @@ import {
   validateUsername,
 } from './types'
 import { notifyUser } from '@/utils/notifications'
+import { removeStorageFile } from '@/utils/storage'
 import { getPushTable } from '@/lib/push-service'
 
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
@@ -47,6 +48,7 @@ const HOUSE_CONTEXT_ROUTES = [
   '/tasks',
   '/rewards',
   '/achievements',
+  '/chest',
 ] as const
 
 function revalidateHouseContext() {
@@ -1220,6 +1222,29 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
   if (punishmentsError) {
     return { ok: false, error: 'Falha ao excluir os castigos da casa.' }
   }
+
+  // Itens do baú da casa (ADR-0024). O FK já cascateia, mas a limpeza do resto
+  // da casa é explícita e em ordem — e os ARQUIVOS do bucket (pasta `chest/`)
+  // só saem por aqui: depois da casa apagada não existe mais action que os
+  // alcance, então sem isso eles ficariam ocupando o bucket para sempre.
+  const { data: chestItems } = await admin
+    .from('chest_items')
+    .select('file_url')
+    .eq('house_id', houseId)
+
+  const { error: chestError } = await admin
+    .from('chest_items')
+    .delete()
+    .eq('house_id', houseId)
+  if (chestError) {
+    return { ok: false, error: 'Falha ao excluir o baú da casa.' }
+  }
+
+  await Promise.all(
+    (chestItems ?? []).map((item) =>
+      removeStorageFile(admin, item.file_url, 'chest', 'HOUSES')
+    )
+  )
 
   const { error: achievementsError } = await admin
     .from('achievements')

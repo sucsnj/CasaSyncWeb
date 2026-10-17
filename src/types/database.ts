@@ -425,6 +425,57 @@ export interface Database {
           },
         ]
       }
+chest_items: {
+        Row: {
+          id: string
+          house_id: string
+          title: string
+          file_url: string
+          file_name: string | null
+          file_type: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          house_id: string
+          title: string
+          file_url: string
+          file_name?: string | null
+          file_type: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          house_id?: string
+          title?: string
+          file_url?: string
+          file_name?: string | null
+          file_type?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'chest_items_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'chest_items_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       achievements: {
         Row: {
           id: string

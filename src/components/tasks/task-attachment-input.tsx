@@ -22,6 +22,10 @@ import { cn } from '@/lib/utils'
  * Valida **antes** de enviar (tamanho e tipo) para não gastar upload com
  * arquivo recusado — mas quem barra de verdade é o servidor, na action: o
  * `file.type` vem do browser e o `accept` do input é contornável.
+ *
+ * **`folder` é opcional** (ADR-0024): o baú reusa este componente com a pasta
+ * `chest/` e o mesmo teto/lista de tipos. O default mantém o comportamento da
+ * tarefa idêntico — quem não passa a prop nem percebe a mudança.
  */
 export function TaskAttachmentInput({
   ownerId,
@@ -30,6 +34,7 @@ export function TaskAttachmentInput({
   type,
   onChange,
   disabled,
+  folder = TASK_ATTACHMENT_FOLDER,
 }: {
   ownerId: string
   url?: string | null
@@ -42,6 +47,12 @@ export function TaskAttachmentInput({
     type: string | null
   }) => void
   disabled?: boolean
+  /**
+   * Pasta do bucket onde o arquivo é enviado. Default = `tasks/` (a tarefa); o
+   * baú passa `chest/`, e a validação do servidor cobra a mesma pasta do lado
+   * da escrita.
+   */
+  folder?: string
 }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +74,11 @@ export function TaskAttachmentInput({
     setError(null)
     setUploading(true)
     try {
-      const uploaded = await uploadMedia(TASK_ATTACHMENT_FOLDER, file, ownerId)
+      const uploaded = await uploadMedia(
+        folder as Parameters<typeof uploadMedia>[0],
+        file,
+        ownerId
+      )
       if (!uploaded) throw new Error('Falha ao enviar o arquivo.')
       onChange({
         url: uploaded,

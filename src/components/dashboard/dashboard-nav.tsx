@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { CircleCheck, Gift, House, LayoutDashboard, ListTodo, Trophy } from 'lucide-react'
+import { CircleCheck, Gift, House, LayoutDashboard, ListTodo, Package, Trophy } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SignOutButton } from '@/components/auth/sign-out-button'
@@ -25,6 +25,7 @@ const itemIcons = {
   '/tasks': ListTodo,
   '/rewards': Gift,
   '/achievements': Trophy,
+  '/chest': Package,
 } as const
 
 function activeFor(href: string, pathname: string) {

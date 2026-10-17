@@ -230,6 +230,20 @@ RLS: policy de SELECT por membro e inclusion na publication Realtime são **inof
 
 Uma linha por (comunicado, dependente) — `UNIQUE (comunicado_id, profile_id)`. Sem policies client e **fora** da publication Realtime (leituras/escritas service-role; a UI de total de confirmações do ADMIN entra via `router.refresh()`).
 
+### chest_items
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | default `gen_random_uuid()` |
+| house_id | uuid FK → houses | `on delete cascade`; o item é **da casa** (ADR-0024) |
+| title | text | obrigatório, 1–100 chars com `btrim`; **pode repetir** (sem índice único) |
+| file_url | text | obrigatório; URL pública no bucket `casasync-media`, **pasta `chest/`** (validado na action) |
+| file_name | text | nome **original** do arquivo, só para exibição (≤120, sem caractere de controle) |
+| file_type | text | MIME resolvido (upload ou extensão); `text/html` faz o app servir pela rota própria |
+| created_by | uuid FK → profiles | `on delete set null` |
+| created_at / updated_at | timestamptz | listagem por `created_at desc` |
+
+Acervo de arquivos do baú (imagem, vídeo, PDF, HTML — **os mesmos tipos e o mesmo teto de 5 MB do anexo da tarefa**). Sem pontos, sem resgate e **sem notificação**: é consulta, não evento. RLS: policy de **SELECT por membro** (`chest_items_select_members`) e **na publication Realtime** — o baú é catálogo, então item novo/edição/exclusão chegam sem F5. Escritas **sempre** por service-role a partir das Server Actions (não há policy de escrita). Schema em `docs/sql/chest_items.sql` — **a aplicar no Supabase antes do deploy**.
+
 ### dependent_punishments
 | coluna | tipo | notas |
 |---|---|---|

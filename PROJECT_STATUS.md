@@ -315,6 +315,100 @@ controle barrado, nome >120 barrado).
 
 ---
 
+## Baú da casa — acervo de arquivos por casa (implementado — **SQL a aplicar**)
+
+### O que foi implementado
+Rota nova **`/chest`** (role-aware, no route group `(app)`): o ADMIN guarda
+arquivos que os dependentes consultam, e o dependente só abre. **Só um título**
+(1–100, pode repetir) + 1 arquivo — **sem pontos, sem resgate, sem notificação**.
+Decisões e alternativas descartadas em **ADR-0024**.
+
+- **Tabela `chest_items`** (`docs/sql/chest_items.sql`, **a aplicar**): `house_id`
+  (o item é **da casa**, como `tasks`/`rewards`), `title` com CHECK 1–100 e
+  **sem índice único** (pode repetir), `file_url`/`file_name`/`file_type`,
+  `created_by`, timestamps. RLS com **policy de SELECT por membro** +
+  `alter publication supabase_realtime` — **com Realtime**, porque baú é catálogo
+  (o mesmo argumento de `rewards`): item novo/edição/exclusão chegam sem F5.
+  Escritas só por service-role a partir das actions.
+- **O ADMIN escolhe a casa** no form (entre as casas que ele controla, inclusive
+  co-geridas) e a **casa do item é fixa**. A lista mostra **todas as suas casas**,
+  com **chip do nome** nas que não são a casa ativa — sem isso o item recém-criado
+  em outra casa sumiria da tela até ele trocar de casa.
+- **Título e arquivo editáveis de forma independente** (trocar o arquivo mantém o
+  título e apaga o antigo do storage; renomear mantém o arquivo). Excluir pede
+  `Modal` de confirmação.
+- **Escopo derivado da sessão** em todas as actions: o `houseId` que o cliente
+  manda no `createChestItem` é conferido contra `house_members` com
+  `role='ADMIN'`; `update`/`delete` autorizam pela **casa do próprio item** (lida
+  do banco), não pela casa ativa — é o que permite gerenciar o baú de várias casas
+  sem trocar. Item inexistente e item de outra casa devolvem a **mesma** mensagem.
+- **Aparência idêntica à da tarefa**, por reuso de propósito: `chest-attachment.ts`
+  é uma **fachada** sobre `task-attachment.ts` (reexporta a lista fechada de
+  tipos, o teto de 5 MB, `attachmentKind`, `resolveAttachmentType`, `accept`) e
+  acrescenta só a pasta `chest/` e os validadores do item. A apresentação é o
+  próprio `TaskAttachmentView`, com `hideFileName` no dependente (HTML mostra só
+  "Página"), e o upload é o próprio `TaskAttachmentInput` — **as duas props novas
+  são opcionais**, então o comportamento da tarefa ficou idêntico (diff de ~4
+  linhas em `src/components/tasks/*`, nenhuma linha duplicada).
+- **HTML servido pelo app** (`/api/chest-item/[itemId]`), pelo mesmo motivo de
+  sempre: o Supabase Storage força `text/plain` em `text/html`, então abrir a URL
+  pública mostraria o **código** da página. A rota devolve `text/html` com
+  `CSP: sandbox allow-scripts` (origem opaca) e autoriza **qualquer membro da
+  casa** do item — o baú é material da casa, não de uma pessoa. Imagem, vídeo e
+  PDF seguem pela URL pública.
+- **Busca por título** nos dois lados (`useMemo` sobre o estado da tela, mesmo
+  critério das buscas de recompensas) e lista em `CardColumns` (masonry).
+- **Aparição:** card na **Visão geral do ADMIN** e na **Visão geral do
+  dependente**; item na nav **só do dependente** (4 → **5 itens**). O ADMIN não
+  ganha item na nav — acesso pelo card, como Comunicados (ADR-0017).
+- **Limpeza:** `deleteHouse` apaga os itens em ordem explícita **e os arquivos**
+  da pasta `chest/` (`removeStorageFile`, best-effort) — depois que a casa some
+  não existe mais action que alcance esses arquivos. `expelMember`/
+  `deleteDependentAccount` não entram: o item é da casa, não do dependente.
+- `/chest` entrou em `HOUSE_CONTEXT_ROUTES` (`src/actions/houses.ts`), senão trocar
+  ou excluir a casa serviria o baú da casa anterior.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(17 rotas: `ƒ /chest`, `ƒ /api/chest-item/[itemId]`). Regras puras conferidas
+executando os módulos reais com `node --experimental-strip-types` (loader
+temporário fora do repo): **37 casos** — teto e lista de tipos idênticos aos da
+tarefa, resolução por extensão com `file.type` vazio (`.html`, `.mov`, `.JPEG`),
+`attachmentKind` nos 4 tipos, `validateChestItemAttachment` fail-closed (pasta
+`tasks/`/`messages/` barrada, URL externa barrada, tipo fora da lista barrado,
+nome >120 e com caractere de controle barrados) e `validateChestItemTitle`
+(vazio, 101 e quebra de linha barrados; 100 aceito). Classes novas conferidas
+**no CSS gerado** (`.bg-teal-100`, `.text-teal-700`, `.sm\:columns-2`,
+`.xl\:columns-3`, `.scroll-mt-24`, `.min-h-9`, `.pl-10`, `.size-3\.5`), como manda
+o `AGENTS.md` §2.
+
+### Pontos de atenção
+- **Ordem obrigatória: SQL antes do deploy** — sem a tabela, `/chest` quebra com
+  `relation "public.chest_items" does not exist`.
+- **O arquivo é obrigatório no item** (CHECK `not null` e a action recusa
+  arquivo vazio): o baú é acervo de arquivo, então "item sem arquivo" não tem o que
+  abrir. A remoção do arquivo **não** é caminho — para tirar, o ADMIN exclui o
+  item.
+- **Sem notificação por decisão** (ADR-0024, item 3): a lista é o canal. Se um dia
+  virar "material novo disponível", é um tipo novo no sino **e** uma categoria no
+  silenciamento (`notification_mute`) — que hoje tem só `tasks`/`rewards`/
+  `achievements`.
+- **A casa do item não muda** (ADR-0024, item 5): mover exigiria mexer no filtro de
+  Realtime e no cache por casa sem ganho real.
+- **`chest-attachment.ts` é fachada**: se um dia o anexo da tarefa ganhar um tipo
+  novo, o baú herda sem tocar lá. O risco inverso é o nome do módulo de origem
+  (`task-attachment`) ser canônico para um módulo que não é de tarefa.
+- **5 itens na bottom nav do dependente:** consequência aceita (ADR-0024), vale
+  conferir os rótulos na largura mais estreita em tela.
+- `src/utils/storage.ts` (`removeStorageFile`) é o helper genérico que nasceu da
+  função privada de `tasks.ts`: ele remove o arquivo do bucket no servidor, com
+  guarda de pasta (nunca apaga nada fora de `folder/`), e é usado pela troca/exclusão
+  do anexo da tarefa e pelos 3 lugares do baú. `achievements.ts` ainda tem a sua
+  própria cópia (`removeAchievementImage`) — pode adotar o helper depois.
+- **Testado em tela ainda não.**
+
+---
+
 ## Castigo com 2 níveis — aviso (amarelo) e castigo (vermelho) (implementado — SQL a aplicar)
 
 ### O que mudou
@@ -387,6 +481,17 @@ que o nível válido "esconda" um erro de duração.
 ---
 
 ## Estado atual (verificado — sem pendências)
+
+- **Baú da casa (rota `/chest`):** acervo de arquivos por casa — **só um título**
+  (1–100, pode repetir) + 1 arquivo, com **os mesmos tipos e o mesmo teto de 5 MB
+  do anexo da tarefa** (reaproveitados por fachada, sem duplicar componente). O
+  ADMIN escolhe a casa, pode renomear/trocar o arquivo/excluir, e gerencia as
+  casas dele sem trocar a casa ativa (chip do nome nos itens de outra casa); o
+  dependente só consulta e abre, com busca por título dos dois lados. **Sem
+  pontos, sem resgate e sem notificação**; Realtime sim (é catálogo). Item na nav
+  **só do dependente** (4 → 5) e card nas duas visões gerais. SQL da tabela
+  `chest_items` em `docs/sql/chest_items.sql`, **a aplicar antes do deploy**.
+  Ver a seção no topo e o **ADR-0024**.
 
 - **Castigo do dependente com 2 níveis:** o ADMIN escolhe entre **aviso** (nível
   1, triângulo **amarelo** — só avisa que o castigo está próximo) e **castigo**

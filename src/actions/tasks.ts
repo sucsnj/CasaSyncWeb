@@ -32,6 +32,7 @@ import {
   attachmentTypeFromName,
   validateTaskAttachment,
 } from '@/utils/task-attachment'
+import { removeStorageFile } from '@/utils/storage'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
 
@@ -62,32 +63,6 @@ type CreateTaskInput = {
   imageUrl: string | null
   attachmentName?: string | null
   attachmentType?: string | null
-}
-
-/**
- * Remove (best-effort) o anexo antigo do bucket `casasync-media` (pasta
- * `tasks/`), quando o ADMIN troca o arquivo ou remove o anexo. Sem isso o
- * storage só cresce — e o bucket é do plano Hobby (1 GB).
- *
- * Nunca derruba a edição: falha aqui é logada e o fluxo segue.
- */
-async function removeTaskAttachment(
-  admin: ReturnType<typeof createAdminClient>,
-  url: string | null
-): Promise<void> {
-  if (!url) return
-  const at = url.indexOf('/casasync-media/')
-  if (at === -1) return
-  const path = url.slice(at + 1).split('?')[0]
-  // Só remove o que é realmente da pasta de anexos de tarefa — nunca toca em
-  // nada que o ADMIN tenha apontado por engano (URL externa).
-  if (!path.startsWith('tasks/')) return
-  try {
-    const { error } = await admin.storage.from('casasync-media').remove([path])
-    if (error) console.error('[TASKS] Falha ao remover anexo antigo:', error.message)
-  } catch (err) {
-    console.error('[TASKS] Falha ao remover anexo antigo:', err)
-  }
 }
 
 /**
@@ -610,14 +585,14 @@ export async function updateTask(
       // Trocar o arquivo não pode deixar o antigo ocupando o bucket (1 GB no
       // plano Hobby) — só quando a URL realmente mudou.
       if (nextUrl !== task.image_url) {
-        await removeTaskAttachment(admin, task.image_url)
+        await removeStorageFile(admin, task.image_url, 'tasks', 'TASKS')
       }
     } else {
       // Remover o anexo limpa os três campos de uma vez (nada de arquivo sem
       // nome, nem nome sem arquivo).
       updates.attachment_name = null
       updates.attachment_type = null
-      await removeTaskAttachment(admin, task.image_url)
+      await removeStorageFile(admin, task.image_url, 'tasks', 'TASKS')
     }
   }
 

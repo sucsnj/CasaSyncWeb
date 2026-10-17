@@ -37,6 +37,7 @@ export function TaskAttachmentView({
   type,
   taskId,
   hideFileName = false,
+  htmlHref,
 }: {
   url: string
   name?: string | null
@@ -52,18 +53,27 @@ export function TaskAttachmentView({
    * nos dois lados.
    */
   hideFileName?: boolean
+  /**
+   * Rota do app que serve o anexo **HTML** deste arquivo (ADR-0024). O default
+   * é a rota da tarefa; o baú passa a dele — o isolamento (`CSP: sandbox`) e o
+   * motivo (o Supabase força `text/plain` em `text/html`) são exatamente os
+   * mesmos, então só muda quem autoriza a leitura.
+   */
+  htmlHref?: string
 }) {
   const kind = attachmentKind(type)
   const kindLabel = attachmentKindLabel(kind)
   const showName = !(hideFileName && kind === 'html')
   const label = showName ? (name ?? kindLabel) : kindLabel
 
+  // O HTML é o único tipo que sai pela rota do app; imagem, vídeo e PDF vão
+  // direto para a URL pública do storage (o gateway entrega o content-type certo
+  // para eles).
+  const htmlTarget = htmlHref ?? (taskId ? `/api/task-attachment/${taskId}` : null)
+
   // `noopener`/`noreferrer`: a aba nova não ganha acesso à origem do app.
   const openProps = {
-    href:
-      kind === 'html' && taskId
-        ? `/api/task-attachment/${taskId}`
-        : url,
+    href: kind === 'html' && htmlTarget ? htmlTarget : url,
     target: '_blank',
     rel: 'noopener noreferrer',
   } as const

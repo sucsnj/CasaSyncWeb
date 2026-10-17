@@ -10,6 +10,7 @@ export type MediaFolder =
   | 'suggestions'
   | 'messages'
   | 'achievements'
+  | 'chest'
 
 /**
  * MIME por extensão, para os casos em que o browser entrega `file.type` vazio
