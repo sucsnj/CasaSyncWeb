@@ -9,6 +9,7 @@ import {
 } from '@/utils/house'
 import { ChestAdmin } from '@/components/chest/chest-admin'
 import { ChestDependent } from '@/components/chest/chest-dependent'
+import { getHouseChestRulesSettings } from '@/utils/house-settings'
 import type { ChestItemView } from '@/components/chest/chest-types'
 
 export const metadata: Metadata = {
@@ -69,6 +70,13 @@ export default async function ChestPage() {
           .order('created_at', { ascending: false }),
       ])
 
+      // Teto de itens da **casa ativa** — o aviso de proximidade no form. As
+      // outras casas do ADMIN têm o próprio limite, que só a action conhece (ela
+      // recusa no `create`), então aqui só a ativa é exibida.
+      const { maxItems } = await getHouseChestRulesSettings(
+        activeHouse?.id ?? houses[0].id
+      )
+
       const nameById = new Map(houses.map((house) => [house.id, house.name]))
 
       content = (
@@ -80,6 +88,7 @@ export default async function ChestPage() {
           })) satisfies ChestItemView[]}
           houses={houses.map((house) => ({ id: house.id, name: house.name }))}
           activeHouseId={activeHouse?.id ?? houses[0].id}
+          maxItems={maxItems}
         />
       )
     }

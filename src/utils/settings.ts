@@ -22,6 +22,7 @@ export type HouseSettingsKey =
   | 'notification_mute'
   | 'task_decay'
   | 'task_rules'
+  | 'chest_rules'
   | 'house_timezone'
   | 'text_limits'
 
@@ -198,6 +199,27 @@ export const DEFAULT_TASK_DECAY: TaskDecaySettings = {
 export const DEFAULT_TASK_RULES: TaskRulesSettings = {
   maxPointsPerTask: 0,
   maxActiveTasks: 0,
+}
+
+/**
+ * Limite do baú da casa (ADR-0024).
+ *
+ * Existe por **disponibilidade**, não por regra de negócio: o bucket do storage é
+ * do plano Hobby (**1 GB no total, compartilhado entre todas as casas**) e cada
+ * anexo pode ter 5 MB. Sem teto, uma casa só (ou uma conta de ADMIN comprometida)
+ * enche o bucket e o upload para de funcionar no app inteiro.
+ *
+ * O default **não é 0**: os outros tetres nascem desligados para não mudar o
+ * comportamento de quem já usa, mas aqui o que se quer evitar é justamente o
+ * cenário de nenhum-teto — então o padrão é 50 (≈250 MB por casa no pior caso).
+ */
+export type ChestRulesSettings = {
+  /** Máximo de itens no baú da casa (0 = sem limite). */
+  maxItems: number
+}
+
+export const DEFAULT_CHEST_RULES: ChestRulesSettings = {
+  maxItems: 50,
 }
 
 export const DEFAULT_HOUSE_TIMEZONE_SETTINGS: HouseTimezoneSettings = {

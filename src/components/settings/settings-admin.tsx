@@ -15,6 +15,7 @@ import {
   Hourglass,
   ListTodo,
   MessageSquare,
+  Package,
   Plus,
   Ruler,
   Save,
@@ -35,6 +36,7 @@ import { Input } from '@/components/ui/input'
 import { CardColumns } from '@/components/ui/card-columns'
 import { cn } from '@/lib/utils'
 import type {
+  ChestRulesSettings,
   ExtensionRulesSettings,
   HouseTimezoneSettings,
   NotificationMuteSettings,
@@ -58,6 +60,9 @@ type SettingsAdminProps = {
   notificationMute: NotificationMuteSettings
   taskDecay: TaskDecaySettings
   taskRules: TaskRulesSettings
+  chestRulesProp: ChestRulesSettings
+  /** Quantos itens a casa ativa tem no baú agora (contagem do servidor). */
+  chestItemCount: number
   houseTimezone: HouseTimezoneSettings
   textLimits: TextLimitsSettings
   /** Offset do fuso já formatado no servidor (ex.: `UTC-03:00`) — texto estável. */
@@ -362,6 +367,8 @@ export function SettingsAdmin({
   notificationMute,
   taskDecay,
   taskRules,
+  chestRulesProp,
+  chestItemCount,
   houseTimezone,
   houseTimezoneOffset,
   timezoneOptions,
@@ -400,6 +407,17 @@ export function SettingsAdmin({
   const [rules, setRules] = useState<TaskRulesSettings>(taskRules)
   const [rulesError, setRulesError] = useState<string | null>(null)
   const [rulesSuccess, setRulesSuccess] = useState<string | null>(null)
+  const [chestRules, setChestRules] = useState<ChestRulesSettings>(chestRulesProp)
+  const [chestRulesError, setChestRulesError] = useState<string | null>(null)
+  const [chestRulesSuccess, setChestRulesSuccess] = useState<string | null>(null)
+
+  // Aviso de proximidade do limite do baú: 80% é o gatilho (mesma ideia do
+  // `maxItems` — o ADMIN precisa ver o número antes de bater no teto, não só
+  // quando já bateu).
+  const chestLimitNear =
+    chestRules.maxItems > 0 && chestItemCount >= Math.floor(chestRules.maxItems * 0.8)
+  const chestLimitReached =
+    chestRules.maxItems > 0 && chestItemCount >= chestRules.maxItems
 
   const [timezone, setTimezone] = useState<string>(houseTimezone.timezone)
   const [timezoneError, setTimezoneError] = useState<string | null>(null)
@@ -428,6 +446,7 @@ export function SettingsAdmin({
     | 'retention'
     | 'decay'
     | 'rules'
+    | 'chestRules'
     | 'timezone'
     | 'limits'
 
@@ -537,6 +556,15 @@ export function SettingsAdmin({
       () => updateHouseSettings('task_rules', { ...rules }),
       setRulesError,
       setRulesSuccess
+    )
+  }
+
+  function saveChestRules() {
+    void runSave(
+      'chestRules',
+      () => updateHouseSettings('chest_rules', { ...chestRules }),
+      setChestRulesError,
+      setChestRulesSuccess
     )
   }
 
@@ -1199,6 +1227,91 @@ export function SettingsAdmin({
               >
                 <Save className="size-4" />
                 {isSaving('rules') ? 'Salvando…' : 'Salvar limites'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Package className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Limite do baú</CardTitle>
+            <CardDescription>
+              Teto de itens que a casa pode ter no baú. Existe para o storage não
+              estourar: o bucket é de 1 GB e compartilhado entre todas as casas.
+              Zero desliga o limite.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Itens no baú"
+                value={chestRules.maxItems}
+                onChange={(maxItems) =>
+                  setChestRules((prev) => ({ ...prev, maxItems }))
+                }
+                min={0}
+                max={999}
+                step={1}
+                suffix="por casa"
+                hint="0 = sem limite. No pior caso cada item ocupa 5 MB, então 50 itens são ~250 MB desta casa."
+              />
+              {/* "N de M" com tom de aviso: o número é do render do servidor e
+                  já vem na prop, então não há query no client. */}
+              <div className="flex flex-col justify-end">
+                <p
+                  role="status"
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-sm',
+                    chestLimitReached
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : chestLimitNear
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-600'
+                  )}
+                >
+                  <span className="font-medium">
+                    {chestItemCount}
+                    {chestRules.maxItems > 0 ? ` de ${chestRules.maxItems}` : ''}{' '}
+                    itens neste baú
+                  </span>
+                  <span className="block text-xs">
+                    {chestLimitReached
+                      ? 'O limite foi atingido — exclua algum item ou aumente o limite acima.'
+                      : chestLimitNear
+                        ? 'Perto do limite. Vale conferir o que ainda está no baú.'
+                        : chestRules.maxItems > 0
+                          ? 'Cada item pode ter até 5 MB.'
+                          : 'Sem limite configurado.'}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {chestRulesError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {chestRulesError}
+              </p>
+            ) : null}
+            {chestRulesSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {chestRulesSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveChestRules()}
+                disabled={isSaving('chestRules')}
+              >
+                <Save className="size-4" />
+                {isSaving('chestRules') ? 'Salvando…' : 'Salvar limite'}
               </Button>
             </div>
           </CardContent>

@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
+  DEFAULT_CHEST_RULES,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
@@ -12,6 +13,7 @@ import {
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
   mergeSettings,
+  type ChestRulesSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type HouseTimezoneSettings,
@@ -129,6 +131,18 @@ export const getHouseTaskRulesSettings = cache(
   async (houseId: string): Promise<TaskRulesSettings> => {
     const value = await getHouseSettingsValue(houseId, 'task_rules')
     return mergeSettings(value, DEFAULT_TASK_RULES)
+  }
+)
+
+/**
+ * Limite de itens do baú da casa (ADR-0024). Lido pelo `createChestItem` (que
+ * recusa o item acima do teto) e pelo card de Configurações, que mostra
+ * "N de M itens".
+ */
+export const getHouseChestRulesSettings = cache(
+  async (houseId: string): Promise<ChestRulesSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'chest_rules')
+    return mergeSettings(value, DEFAULT_CHEST_RULES)
   }
 )
 

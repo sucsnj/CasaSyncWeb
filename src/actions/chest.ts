@@ -10,6 +10,7 @@ import {
   validateChestItemTitle,
 } from '@/utils/chest-attachment'
 import { removeStorageFile } from '@/utils/storage'
+import { getHouseChestRulesSettings } from '@/utils/house-settings'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
 
@@ -100,6 +101,44 @@ function revalidateChest() {
   revalidatePath('/dashboard/dependent')
 }
 
+/**
+ * Teto de itens do baú (chave `chest_rules`, ADR-0024).
+ *
+ * Existe por **disponibilidade**: o bucket é de 1 GB do plano Hobby e
+ * **compartilhado entre todas as casas**, então uma casa (ou uma conta de ADMIN
+ * comprometida) sem teto enche o storage e derruba o upload do app inteiro.
+ *
+ * Três decisões de espelhar `checkActiveTaskLimit`:
+ * - `0` = sem limite **não gera nenhuma query** (o desligado não custa nada);
+ * - conta os itens da **casa alvo** (`houseId` do form), e não da casa ativa — é o
+ *   único jeito de o teto valer para todas as casas que o ADMIN controla;
+ * - **erro de leitura libera o limite**: falhar por causa de uma contagem não pode
+ *   impedir trabalho legítimo do tutor.
+ */
+async function checkChestItemLimit(
+  admin: ReturnType<typeof createAdminClient>,
+  houseId: string,
+  maxItems: number
+): Promise<string | null> {
+  if (maxItems <= 0) return null
+
+  const { count, error } = await admin
+    .from('chest_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('house_id', houseId)
+
+  if (error) {
+    console.error('[CHEST] Falha ao contar itens do baú:', error)
+    return null
+  }
+
+  if ((count ?? 0) >= maxItems) {
+    return `O baú desta casa já tem ${count} de ${maxItems} itens. Exclua algum ou aumente o limite em Configurações.`
+  }
+
+  return null
+}
+
 export async function createChestItem(input: {
   houseId: string
   title: string
@@ -111,6 +150,11 @@ export async function createChestItem(input: {
 
   const auth = await assertAdminCanManage(admin, input.houseId)
   if (!auth.ok) return auth
+
+  // Teto de itens: barreira no servidor (a contagem na tela é só conveniência).
+  const { maxItems } = await getHouseChestRulesSettings(input.houseId)
+  const limitError = await checkChestItemLimit(admin, input.houseId, maxItems)
+  if (limitError) return { ok: false, error: limitError }
 
   const title = input.title.trim()
   const titleError = validateChestItemTitle(title)

@@ -140,6 +140,33 @@ mesmo validador.
   anexo atual, para quem edita um item com link abrir já no modo link), e o chip
   do `TaskAttachmentView` ganha o ícone `Link2` e o texto "link da web".
 
+## Emenda (limite de itens por casa)
+
+O baú não tinha teto, e o storage não perdoa: o bucket é do plano **Hobby, 1 GB
+no total e compartilhado entre todas as casas**, com até **5 MB** por item. Sem
+limite, uma casa — ou uma conta de ADMIN comprometida — enche o bucket e o
+upload para de funcionar no **app inteiro**, não só naquela casa.
+
+- **Nova chave `house_settings.chest_rules`** com `maxItems` (`0` = sem
+  limite), default **50** (≈250 MB por casa no pior caso). Chave nova, e não
+  dentro de `task_rules`: o baú não é tarefa, e o card "Limites de tarefas" é
+  documentado como tal. O default **não é 0** — os outros tetres nascem
+  desligados para não mudar o comportamento de quem já usa, mas aqui o que se quer
+  evitar é justamente o cenário de nenhum teto.
+- **A barreira é o servidor** (`checkChestItemLimit` no `createChestItem`),
+  espelhando `checkActiveTaskLimit`: `0` não gera **nenhuma query**; conta os
+  itens da **casa alvo** (a do form, não a casa ativa — é o único jeito de o teto
+  valer para todas as casas do ADMIN); e **erro de leitura libera o limite**,
+  porque falhar numa contagem não pode impedir trabalho legítimo.
+- **Aviso de proximidade nos dois lugares onde ele serve**: no form do baú
+  ("N de M itens desta casa", âmbar em 80%, botão desabilitado no limite) e no
+  card de Configurações ("N de M itens neste baú"). A contagem do form sai da
+  **lista já em memória**, então é 0 query.
+- **Limite que ele não dá:** o teto contém o apetite de *uma* casa, não o total.
+  Um teto global exigiria somar bytes, e hoje **não guardamos o tamanho do
+  arquivo** (sem coluna `file_size`) — isso exigiria migration. É a mitigação
+  barata, não a dura.
+
 ## Consequências
 - **Ordem de deploy:** o SQL (`docs/sql/chest_items.sql` — tabela, índices, RLS,
   policy de SELECT, publication) tem de estar aplicado **antes** do deploy, senão

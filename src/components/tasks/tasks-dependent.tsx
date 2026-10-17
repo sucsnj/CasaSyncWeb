@@ -302,6 +302,12 @@ export function TasksDependent({
                           name={task.attachment_name}
                           type={task.attachment_type}
                           taskId={task.id}
+                          // O HTML passa pelo aviso antes de abrir (ADR-0025):
+                          // servido em origem opaca, o arquivo não alcança a conta
+                          // de quem abre, mas pode exibir qualquer coisa — o aviso
+                          // diz isso em linguagem direta antes de mostrar o
+                          // material. Imagem/vídeo/PDF seguem diretos.
+                          htmlHref={`/abrir-anexo?kind=task&id=${task.id}`}
                           hideFileName
                         />
                       ) : null}

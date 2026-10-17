@@ -315,6 +315,79 @@ controle barrado, nome >120 barrado).
 
 ---
 
+## Aviso antes de abrir anexo HTML — aviso + fricção de 3s (implementado — sem SQL)
+
+### O problema que ele resolve
+O anexo HTML é servido pelo app (o Supabase força `text/plain` em `text/html`) com
+`CSP: sandbox allow-scripts`, o que já dá **origem opaca**: o script do anexo não
+lê cookie, não vê `localStorage`, não mexe no app, não abre aba e não redireciona a
+aba. **A sessão está protegida.** Mas sem `default-src`/`connect-src` (de
+propósito, para CSS/JS funcionarem) a página pode **exibir qualquer coisa** e falar
+com a internet — ou seja, o anexo pode desenhar uma **tela falsa de login** do
+CasaSync, com a barra de endereço mostrando o domínio do app.
+
+### O que foi implementado
+- **`/abrir-anexo?kind=task|chest&id=…`** (`src/app/abrir-anexo/page.tsx`): tela
+  **do próprio app**, **fora** do route group `(app)` (sem nav — o contexto mudado
+  fica óbvio, e o shell custaria leituras inúteis). Fundo **neutro escuro**
+  (`bg-slate-900`, o app é `bg-slate-100`) + **faixa âmbar no topo** em largura
+  toda: **"Conteúdo Externo do Tutor"**.
+- **Linguagem de criança**, sem jargão: "✋ Atenção! Você está prestes a abrir um
+  arquivo enviado por **[tutor]**" + "🚨 **Regra importante:** Nunca digite sua
+  senha ou dados do CasaSync dentro desta página." Debaixo, em discreto, o
+  `Arquivo:` e o `Material:` (contexto factual). O nome do tutor vem de
+  `created_by` (mesma leitura do row, sem query extra) e cai para **"seu tutor"**
+  quando o autor foi removido do perfil — o texto nunca vira `undefined`.
+- **Fricção proposital** (`src/components/attachments/open-html-attachment.tsx`):
+  o botão fica **desabilitado por 3 segundos** ("Aguarde 3s…") **e** só habilita
+  com a caixinha "[ ] Entendi que não devo digitar minha senha" marcada. Os dois
+  juntos de propósito: a contagem quebra o **reflexo** (não há o que clicar) e a
+  caixinha fixa a regra. A caixinha sozinha não resolveria — é **um clique**, ou
+  seja, só deslocaria o reflexo. `aria-live="polite"` para o contador ser
+  anunciado por leitor de tela.
+- **Núcleo de autorização único** (`src/utils/attachment-html.ts` →
+  `loadHtmlAttachment`): ela vivia escrita dentro de cada rota de API, e com o
+  aviso a mesma regra existiria em **três** arquivos — o primeiro que esquecesse
+  abriria anexo de outra pessoa. As 2 rotas de API foram refatoradas para usar o
+  helper, com **os mesmos status** (401 sem sessão, 403 sem permissão, 404 sem
+  anexo, sem revelar existência) e os mesmos cabeçalhos.
+- `meta: true` resolve quem enviou e a casa (2 leituras em `Promise.all`) **só na
+  tela de aviso**: as rotas não pagam round-trip à toa (§3 do `AGENTS.md`).
+- **Só o dependente passa pelo aviso** (o ADMIN é quem enviou), e **só o HTML**:
+  imagem/vídeo/PDF continuam indo direto pela URL do storage. O clique continua
+  abrindo em nova aba; o botão do aviso substitui o conteúdo dela.
+- **A neutralidade de origem não mudou** — `sandbox allow-scripts`, `nosniff`,
+  `no-store` intactos.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(18 rotas, com `ƒ /abrir-anexo`) · `npm run check:encoding` ✓. Classes conferidas
+**no CSS gerado** (`.bg-slate-900`, `.bg-amber-400`, `.bg-red-50`, `.border-red-300`,
+`.font-black`, `.accent-blue-600`, `.max-w-md`, `.min-h-svh`, `.text-3xl`,
+`.shadow-xl`, `.size-5`), como manda o `AGENTS.md` §2.
+
+**O que não pôde ser verificado aqui:** `loadHtmlAttachment` é **server-only**
+(importa `next/headers` via `utils/house.ts`), então — como os outros helpers com
+cliente service-role — **não roda standalone** com `node --experimental-strip-types`;
+a validação dele é por `typecheck`/`build` e por **teste em tela autenticada**. Os
+cabeçalhos (`htmlAttachmentHeaders`) também não foram executados por esse motivo:
+são o mesmo mapa de antes da extração, agora em um só lugar.
+
+### Pontos de atenção
+- **O aviso não é fronteira de autorização**: quem souber a URL crua pula (e pode,
+  porque ele é sobre confiança, não permissão). Quem protege de verdade é a origem
+  opaca.
+- **Ele derruba a surpresa, não o phishing**: material do tutor que vira tela de
+  login sem aviso prévio é o vetor que se salva.
+- **Custo:** um render a mais antes de abrir HTML, e só para o dependente.
+- **PDF** é da mesma classe social, mas o viewer do browser bloqueia JS e
+  submissão de PDF — risco menor, fora de escopo. **SVG** já é excluído da lista
+  de anexos e do `ImageUpload` (SVG executa script e seria servido na origem do
+  storage).
+- Alternativas descartadas e o porquê estão no **ADR-0025**.
+
+---
+
 ## Link da web como anexo (tarefa e baú) — implementada, **sem SQL**
 
 ### O que mudou
@@ -587,7 +660,99 @@ que o nível válido "esconda" um erro de duração.
 
 ---
 
+## CSP restritiva no anexo HTML + limite de itens do baú (implementado — sem SQL)
+
+### O que mudou (duas entregas na mesma rodada)
+
+**1. Política de recursos do anexo HTML** (`htmlAttachmentHeaders`,
+`src/utils/attachment-html.ts`, compartilhada pelas 2 rotas):
+
+```
+sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https:;
+style-src 'unsafe-inline' https:; img-src data: blob: https:; media-src data: blob: https:;
+font-src data: https:; connect-src 'none'; form-action 'none'
+```
+
+- **Fecha**: `fetch`/XHR/WebSocket/`sendBeacon`, envio de formulário,
+  `<iframe>`/`<object>`/Web Worker e `<link rel=prefetch>`. **Deixa**: script e CSS
+  inline **e externos em `https:`**, `eval()`, imagem/vídeo/fonte `https:`.
+- **Correção de 2ª rodada (achada em tela):** a primeira versão tinha
+  `script-src`/`style-src` **sem `https:`** e o anexo abriu **sem CSS e sem script**
+  — o material do tutor é página de verdade (folha de estilo de CDN, biblioteca de
+  JS, fonte da web), então a política nova havia matado o próprio caso de uso. A
+  correção **amplia o que já estava aberto** em vez de abrir canal novo: o script
+  remoto continua sem `fetch`, sem formulário e sem acesso ao app.
+- **`'self'` → `'none'`**: num documento sandboxed a origem é opaca (`null`), então
+  `'self'` **não casa com nada**. A string anterior ("sem `default-src` de
+  propósito") foi corrigida nos comentários junto com a política.
+- **Residual honesto:** `img-src https:` ainda aceita beacon por imagem, e
+  **nenhuma CSP bloqueia navegação** (`navigate-to` foi removido da spec e nunca
+  foi implementado). **A decisão que carrega o risco é `allow-scripts`** — sem
+  ele não há exfiltração, ao custo de quebrar anexo que precise de JS. Por isso o
+  aviso + fricção (`/abrir-anexo`) continuam sendo o controle real.
+
+**2. Limite de itens do baú por casa** (chave `chest_rules`, `maxItems`,
+default **50**, `0` = ilimitado):
+
+- Existe por **disponibilidade**: o bucket é do plano Hobby (**1 GB no total e
+  compartilhado entre todas as casas**) e cada anexo pode ter 5 MB, então uma casa
+  sem teto enche o storage e **derruba o upload do app inteiro**.
+- O default **não é 0** — os outros tetres nascem desligados para não mudar o
+  comportamento de quem já usa, mas aqui o risco é justamente o cenário de
+  nenhum teto.
+- **Barreira no servidor** (`checkChestItemLimit` no `createChestItem`,
+  espelhando `checkActiveTaskLimit`): `0` não gera **nenhuma query**; conta os
+  itens da **casa alvo do form** (não a casa ativa — é o único jeito de o teto
+  valer para todas as casas do ADMIN); **erro de leitura libera o limite**.
+- **Aviso de proximidade nos dois lugares**: no form do baú ("N de M itens desta
+  casa", âmbar em 80%, botão desabilitado no limite — contagem derivada da lista
+  em memória, **0 query**) e no card novo **"Limite do baú"** das Configurações
+  ("N de M itens neste baú").
+- **Limite honesto:** o teto contém o apetite de *uma* casa, não o total (50 ×
+  5 MB ≈ 250 MB por casa num bucket de 1 GB). Um teto global exigiria somar bytes
+  e hoje **não há coluna `file_size`** — exigiria migration.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. Classes novas conferidas **no CSS gerado**
+(`.bg-amber-50`, `.border-amber-200`, `.text-amber-800`, `.bg-red-50`,
+`.border-red-200`, `.text-red-800`, `.bg-amber-100`, `.text-amber-700`).
+
+**O que não pôde ser verificado aqui:** `loadHtmlAttachment` e `htmlAttachmentHeaders`
+moram num módulo **server-only** (importa `next/headers` via `utils/house.ts`), então
+**não rodam standalone** com `node --experimental-strip-types` — a validação é por
+`typecheck`/`build` e por **teste em tela autenticada**. Já a regra de validação de
+link (`validateAttachmentLink`, 78 casos) continua coberta pelos testes de módulo
+puro.
+
+### Pontos de atenção
+- **`'self'` não é "o domínio do app"** nesse contexto — em origem opaca ele não
+  casa com nada. Quem escrever `'self'` ali para "permitir o próprio site" está
+  documentando uma permissão inexistente.
+- **A CSP não fecha o phishing inteiro**: beacon por imagem e auto-navegação
+  continuam. A barreira do lado humano é o aviso + a fricção.
+- **A contagem do cliente pode estar defasada** (outra pessoa mexeu ao mesmo
+  tempo): o botão desabilitar é conveniência, o `checkChestItemLimit` é a barreira.
+
+---
+
 ## Estado atual (verificado — sem pendências)
+
+- **CSP restritiva no anexo HTML + limite de itens do baú:** a política de
+  recursos fecha `fetch`/formulário/iframe/script externo (e `'self'` foi trocado
+  por `'none'`, porque em origem opaca `'self'` não casa com nada), mantendo
+  script inline, CSS e mídia `https:`; e o baú ganhou **`chest_rules.maxItems`**
+  (default 50, `0` = ilimitado) com aviso de proximidade nos dois lugares. Sem SQL.
+  Ver a seção no topo e o **ADR-0025** / **ADR-0024**.
+
+- **Aviso antes de abrir anexo HTML:** tela do app em linguagem de criança, com
+  faixa "Conteúdo Externo do Tutor" em fundo escuro, **contagem de 3s** e caixinha
+  de confirmação antes de liberar o botão. O anexo já era servido em **origem
+  opaca** (`CSP: sandbox allow-scripts`), então a sessão nunca esteve exposta — o
+  aviso cobre o risco residual (uma página HTML poder exibir uma tela falsa de
+  login). Só o dependente passa por ele, e só no HTML. A autorização das duas
+  rotas agora mora num núcleo só (`loadHtmlAttachment`). Ver a seção no topo e o
+  **ADR-0025**.
 
 - **Link da web como anexo (tarefa e baú):** o anexo pode ser um link `http`/
   `https` no lugar do arquivo — tipo gravado `text/url`, que não sobe para o

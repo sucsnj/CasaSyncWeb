@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
+  DEFAULT_CHEST_RULES,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
@@ -14,6 +15,7 @@ import {
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
+  type ChestRulesSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type HouseTimezoneSettings,
@@ -96,6 +98,10 @@ export async function updateHouseSettings(
   if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay' || key === 'task_rules') {
     revalidatePath('/tasks')
   }
+  if (key === 'chest_rules') {
+    // O limite aparece no form do baú ("N de M") e no botão de adicionar.
+    revalidatePath('/chest')
+  }
   // `notification_mute` e `notification_retention` só afetam notificações
   // futuras, então não invalidam nenhuma tela.
   if (key === 'house_timezone') {
@@ -132,6 +138,7 @@ function validateSettings(
   if (key === 'task_decay') return validateTaskDecay(patch)
   if (key === 'notification_mute') return validateNotificationMute(patch)
   if (key === 'task_rules') return validateTaskRules(patch)
+  if (key === 'chest_rules') return validateChestRules(patch)
   if (key === 'house_timezone') return validateHouseTimezone(patch)
   if (key === 'text_limits') return validateTextLimits(patch)
   return validateNotificationRetention(patch)
@@ -149,6 +156,7 @@ type SettingsResult =
     | NotificationMuteSettings
     | TaskDecaySettings
     | TaskRulesSettings
+    | ChestRulesSettings
     | HouseTimezoneSettings
     | TextLimitsSettings
   }
@@ -366,6 +374,29 @@ function validateTaskRules(patch: Record<string, unknown>): SettingsResult {
 
   base.maxPointsPerTask = maxPointsPerTask
   base.maxActiveTasks = maxActiveTasks
+
+  return { ok: true, value: base }
+}
+
+/**
+ * Limite de itens do baú da casa (`0` = sem limite).
+ *
+ * Teto de 999 como o de tarefas ativas: mais que isso é cenário de bucket
+ * inundado, não uso legítimo — e o número redondo deixa a arquitetura óbvia
+ * (o que o `POINTS_MAX` faz pelo lado dos pontos).
+ */
+function validateChestRules(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_CHEST_RULES }
+
+  const maxItems = patch.maxItems ?? base.maxItems
+  if (!isFiniteNumber(maxItems) || !Number.isInteger(maxItems) || maxItems < 0 || maxItems > 999) {
+    return {
+      ok: false,
+      error: 'O limite de itens do baú deve ser um inteiro de 0 (sem limite) até 999.',
+    }
+  }
+
+  base.maxItems = maxItems
 
   return { ok: true, value: base }
 }

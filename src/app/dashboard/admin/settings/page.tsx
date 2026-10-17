@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
+  getHouseChestRulesSettings,
   getHouseExtensionRulesSettings,
   getHouseNotificationMuteSettings,
   getHouseNotificationRetentionSettings,
@@ -13,6 +14,7 @@ import {
   getHouseTimezoneSettings,
   getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
 import { formatZonedOffset, houseTimezoneOptions } from '@/utils/timezone'
 import {
@@ -70,8 +72,13 @@ export default async function AdminSettingsPage() {
     notificationMute,
     taskDecay,
     taskRules,
+    chestRules,
     houseTimezone,
     textLimits,
+    // Contagem de itens do baú **da casa ativa**: o card "Limite do baú" mostra
+    // "N de M". É 1 query extra só nesta tela (de ADMIN, rara) — os getters acima
+    // saem de graça do mesmo mapa por casa.
+    chestItemCount,
   ] = await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
@@ -81,8 +88,14 @@ export default async function AdminSettingsPage() {
     getHouseNotificationMuteSettings(activeHouse.id),
     getHouseTaskDecaySettings(activeHouse.id),
     getHouseTaskRulesSettings(activeHouse.id),
+    getHouseChestRulesSettings(activeHouse.id),
     getHouseTimezoneSettings(activeHouse.id),
     getHouseTextLimitsSettings(activeHouse.id),
+    createAdminClient()
+      .from('chest_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('house_id', activeHouse.id)
+      .then(({ count }) => count ?? 0),
   ])
 
   // Offset do fuso da casa, calculado NO SERVIDOR e repassado como texto: o
@@ -105,6 +118,8 @@ export default async function AdminSettingsPage() {
         notificationMute={notificationMute}
         taskDecay={taskDecay}
         taskRules={taskRules}
+        chestRulesProp={chestRules}
+        chestItemCount={chestItemCount}
         houseTimezone={houseTimezone}
         houseTimezoneOffset={houseTimezoneOffset}
         timezoneOptions={timezoneOptions}

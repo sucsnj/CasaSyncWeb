@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { cn } from '@/lib/utils'
 import {
   CHEST_ITEM_FOLDER,
   CHEST_ITEM_TITLE_MAX,
@@ -44,11 +45,14 @@ export function ChestAdmin({
   initialItems,
   houses,
   activeHouseId,
+  maxItems,
 }: {
   initialItems: ChestItemView[]
   /** Casas que o ADMIN controla (`house_members.role = 'ADMIN'`). */
   houses: { id: string; name: string }[]
   activeHouseId: string
+  /** Teto de itens por casa (`chest_rules`, `0` = sem limite). */
+  maxItems: number
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
@@ -117,6 +121,19 @@ export function ChestAdmin({
     if (!term) return items
     return items.filter((item) => item.title.toLowerCase().includes(term))
   }, [items, search])
+
+  // Contagem do baú da casa **selecionada no form**, derivada da lista que já
+  // está em memória — então o aviso de proximidade custa zero query. A barreira
+  // real continua sendo o `checkChestItemLimit` no servidor (esta contagem pode
+  // estar defasada se outra pessoa mexeu ao mesmo tempo).
+  const itemsInSelectedHouse = useMemo(
+    () => items.filter((item) => item.house_id === houseId).length,
+    [items, houseId]
+  )
+  const limitNear =
+    maxItems > 0 && itemsInSelectedHouse >= Math.floor(maxItems * 0.8)
+  const limitReached = maxItems > 0 && itemsInSelectedHouse >= maxItems
+  const limitBlocksCreate = limitReached && !editingId
 
   function resetForm() {
     setEditingId(null)
@@ -287,6 +304,31 @@ export function ChestAdmin({
                     Para qual casa o item fica disponível. A casa do item não muda
                     depois de criado.
                   </p>
+                  {/* Aviso de proximidade do teto de itens (`chest_rules`):
+                      aparece em 80% e trava o botão de adicionar no limite. A
+                      barreira real é o servidor. */}
+                  {maxItems > 0 && !editingId ? (
+                    <p
+                      role="status"
+                      className={cn(
+                        'rounded-xl border px-3 py-2 text-xs',
+                        limitReached
+                          ? 'border-red-200 bg-red-50 text-red-800'
+                          : limitNear
+                            ? 'border-amber-200 bg-amber-50 text-amber-800'
+                            : 'border-slate-200 bg-slate-50 text-slate-600'
+                      )}
+                    >
+                      <span className="font-medium">
+                        {itemsInSelectedHouse} de {maxItems} itens nesta casa.
+                      </span>{' '}
+                      {limitReached
+                        ? 'Exclua algum item ou aumente o limite em Configurações.'
+                        : limitNear
+                          ? 'Perto do limite do baú.'
+                          : ''}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-2">
@@ -326,12 +368,18 @@ export function ChestAdmin({
                 ) : null}
 
                 <div className="flex flex-col gap-2">
-                  <Button type="submit" disabled={pending} className="w-full">
+                  <Button
+                    type="submit"
+                    disabled={pending || limitBlocksCreate}
+                    className="w-full"
+                  >
                     {pending
                       ? 'Salvando...'
                       : editingId
                         ? 'Salvar item'
-                        : 'Adicionar ao baú'}
+                        : limitBlocksCreate
+                          ? 'Limite de itens atingido'
+                          : 'Adicionar ao baú'}
                   </Button>
                   {editingId ? (
                     <Button

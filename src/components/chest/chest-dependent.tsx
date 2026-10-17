@@ -112,7 +112,12 @@ export function ChestDependent({
                   url={item.file_url}
                   name={item.file_name}
                   type={item.file_type}
-                  htmlHref={`/api/chest-item/${item.id}`}
+                  // O HTML passa pelo aviso antes de abrir (ADR-0025): o
+                  // arquivo é servido em origem opaca, então não dá pra roubar
+                  // a conta — mas ele pode exibir qualquer coisa, e o aviso
+                  // separa "material do tutor" de "tela falsa" na cabeça de quem
+                  // é criança. Imagem/vídeo/PDF seguem diretos pela URL.
+                  htmlHref={`/abrir-anexo?kind=chest&id=${item.id}`}
                   hideFileName
                 />
               </CardContent>
