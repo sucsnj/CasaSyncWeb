@@ -89,8 +89,10 @@ deploy).
     casa, service-role (ADR-0006). Nada de parâmetro público de casa vindo do
     cliente.
 14. **Aparição:** card na **Visão geral do ADMIN** e na **Visão geral do
-    dependente**; item na nav **só do dependente** (4 → 5 itens). O ADMIN não ganha
-    item na nav — acesso pelo card, como Comunicados (ADR-0017).
+    dependente**, e **nenhum item na nav de nenhum papel** — como Comunicados
+    (ADR-0017). O dependente chegou a receber o item (4 → 5), mas ele saiu depois,
+    por decisão do usuário: o quinto item deixava a bottom nav do mobile apertada,
+    e o card da visão geral é onde se procura uma biblioteca de material.
 15. **Limpeza:** `deleteHouse` remove os itens por cascade (o arquivo no storage vai
     junto só no fluxo explícito/best-effort, como o resto do app). Nada é por
     dependente, então `expelMember`/`deleteDependentAccount` não entram aqui.
@@ -175,9 +177,9 @@ upload para de funcionar no **app inteiro**, não só naquela casa.
   segundo lugar do app que guarda arquivo do usuário; é o `removeStorageFile`
   best-effort na troca/exclusão que segura o crescimento quando o ADMIN troca o
   arquivo.
-- O dependente passa a ter **5 itens na bottom nav** do mobile: os rótulos ficam
-  mais apertados (verificar em tela na largura mais estreita) — consequência
-  aceita.
+- ~~O dependente passa a ter **5 itens na bottom nav** do mobile~~ —
+  **superado**: o baú ficou **só no card da visão geral**, então o dependente
+  volta a ter 4 itens e a bottom nav do mobile não fica apertada.
 - `chest-attachment.ts` é uma **fachada** sobre o módulo da tarefa. Se um dia o
   anexo da tarefa ganhar um tipo novo (ex.: áudio), a lista fechada muda **num**
   lugar e o baú herda — que é o ponto do reuso. Se a tarefa um dia for removida do

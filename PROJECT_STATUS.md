@@ -540,8 +540,9 @@ Decisões e alternativas descartadas em **ADR-0024**.
 - **Busca por título** nos dois lados (`useMemo` sobre o estado da tela, mesmo
   critério das buscas de recompensas) e lista em `CardColumns` (masonry).
 - **Aparição:** card na **Visão geral do ADMIN** e na **Visão geral do
-  dependente**; item na nav **só do dependente** (4 → **5 itens**). O ADMIN não
-  ganha item na nav — acesso pelo card, como Comunicados (ADR-0017).
+  dependente**, e **sem item na nav de nenhum papel** — o dependente recebeu e
+  depois perdeu o item (4 → **5 → 4**), porque o quinto deixava a bottom nav do
+  mobile apertada. O acesso é pelo card, como Comunicados (ADR-0017).
 - **Limpeza:** `deleteHouse` apaga os itens em ordem explícita **e os arquivos**
   da pasta `chest/` (`removeStorageFile`, best-effort) — depois que a casa some
   não existe mais action que alcance esses arquivos. `expelMember`/
@@ -579,8 +580,8 @@ o `AGENTS.md` §2.
 - **`chest-attachment.ts` é fachada**: se um dia o anexo da tarefa ganhar um tipo
   novo, o baú herda sem tocar lá. O risco inverso é o nome do módulo de origem
   (`task-attachment`) ser canônico para um módulo que não é de tarefa.
-- **5 itens na bottom nav do dependente:** consequência aceita (ADR-0024), vale
-  conferir os rótulos na largura mais estreita em tela.
+- ~~**5 itens na bottom nav do dependente**~~ — **superado**: o baú saiu da nav e o
+  dependente voltou a 4 itens, então a bottom nav do mobile não fica apertada.
 - `src/utils/storage.ts` (`removeStorageFile`) é o helper genérico que nasceu da
   função privada de `tasks.ts`: ele remove o arquivo do bucket no servidor, com
   guarda de pasta (nunca apaga nada fora de `folder/`), e é usado pela troca/exclusão
@@ -778,8 +779,8 @@ puro.
   ADMIN escolhe a casa, pode renomear/trocar o arquivo/excluir, e gerencia as
   casas dele sem trocar a casa ativa (chip do nome nos itens de outra casa); o
   dependente só consulta e abre, com busca por título dos dois lados. **Sem
-  pontos, sem resgate e sem notificação**; Realtime sim (é catálogo). Item na nav
-  **só do dependente** (4 → 5) e card nas duas visões gerais. SQL da tabela
+  pontos, sem resgate e sem notificação**; Realtime sim (é catálogo). **Sem item na
+  nav** de nenhum papel (só o card, nas duas visões gerais). SQL da tabela
   `chest_items` em `docs/sql/chest_items.sql`, **a aplicar antes do deploy**.
   Ver a seção no topo e o **ADR-0024**.
 
