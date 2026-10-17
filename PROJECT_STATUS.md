@@ -310,8 +310,9 @@ controle barrado, nome >120 barrado).
   segura o crescimento quando o ADMIN troca o arquivo.
 - **Um anexo por tarefa** — um segundo arquivo exigiria mexer no schema (o
   escolhido foi reusar `image_url`, que é 1:1).
-- Testado em tela ainda não: vale conferir HTML (renderiza, não baixa), PDF
-  (abre no visualizador), imagem, vídeo e a troca/remoção no card.
+- **Testado em tela** pelo usuário: o anexo HTML renderiza (com CSS e script, e
+  **sem** fazer `fetch` — a CSP não deixa o material sair para a rede), a troca de
+  arquivo funciona e o nome do link/chip aparece como esperado.
 
 ---
 
@@ -585,7 +586,7 @@ o `AGENTS.md` §2.
   guarda de pasta (nunca apaga nada fora de `folder/`), e é usado pela troca/exclusão
   do anexo da tarefa e pelos 3 lugares do baú. `achievements.ts` ainda tem a sua
   própria cópia (`removeAchievementImage`) — pode adotar o helper depois.
-- **Testado em tela ainda não.**
+- **Testado em tela** pelo usuário: adicionar item, editar título/arquivo, excluir, busca por título, chip da casa, item de HTML renderizando pela tela de aviso e o limite de itens bloqueando no teto.
 
 ---
 
@@ -738,6 +739,15 @@ puro.
 
 ## Estado atual (verificado — sem pendências)
 
+- **Retrato das brechas de segurança dos anexos (documentação, sem mudança de
+  código):** `docs/seguranca-anexos.md` registra as **10 brechas abertas** dos
+  anexos de tarefa e do baú — problema, causa, resultado e solução possível de
+  cada uma — mais o que **não** resolve (CSP não bloqueia navegação; `'self'`
+  não casa em origem opaca; sanitizar o HTML destrói o material) e uma ordem de
+  ataque por custo × ganho. As duas **[altas]** são o beacon por imagem e a
+  auto-navegação: as duas **só fecham** com `sandbox` sem `allow-scripts` ou sem
+  renderizar o HTML — ambas já avaliadas e recusadas pelo usuário (ADR-0025).
+
 - **CSP restritiva no anexo HTML + limite de itens do baú:** a política de
   recursos fecha `fetch`/formulário/iframe/script externo (e `'self'` foi trocado
   por `'none'`, porque em origem opaca `'self'` não casa com nada), mantendo
@@ -832,7 +842,9 @@ puro.
   pontos/configurações) e `task_proof` (comprovação por foto) **não entram no
   produto**; as regras atuais permanecem como estão. Registrado no **ADR-0023**
   para que não voltem como "pendência técnica" no futuro.
-- **Ainda não há deploy** dessas entregas.
+- **Deploy:** o SQL do baú (`chest_items`) já foi aplicado pelo usuário e o
+  `dependent_punishments.level` também; **falta subir o código** para o aviso, a
+  CSP do anexo HTML, o link da web e o limite de itens irem ao ar.
 - **Latência da navegação — Tier 1 entregue e Tier 2 parcial entregue.** O
   diagnóstico mediu que **cada round-trip ao banco custa ~86ms** (mediana de
   `settings/leitura`, uma query trivial de 4 colunas) — o custo é **latência de
