@@ -16,6 +16,7 @@ import {
   validateUsername,
 } from './types'
 import { notifyUser } from '@/utils/notifications'
+import { NEW_HOUSE_ATTACHMENTS } from '@/utils/settings'
 import { removeStorageFile } from '@/utils/storage'
 import { getPushTable } from '@/lib/push-service'
 
@@ -148,6 +149,33 @@ export async function createHouse(name: string): Promise<ActionResult> {
   if (membershipError) {
     await admin.from('houses').delete().eq('id', house.id)
     return { ok: false, error: 'Falha ao vincular à nova casa.' }
+  }
+
+  // Casa nova nasce com os **anexos desligados** (e o aviso de página ligado):
+  // material anexo é a parte do app que a casa precisa assumir (ADR-0026), então o
+  // padrão é opt-in explícito, e ligar exige o PIN do sistema.
+  //
+  // A gravação é **best-effort** e acontece só aqui — o *fallback de leitura*
+  // (`DEFAULT_ATTACHMENTS`) continua permissivo, então a falha deste insert não
+  // tranca ninguém: o pior caso é a casa nova nascer com anexos ligados. Falhar a
+  // criação da casa por causa de uma linha de configuração seria trocar um default
+  // permissivo por uma casa que não existe.
+  const { error: attachmentsError } = await admin.from('house_settings').upsert(
+    {
+      house_id: house.id,
+      key: 'attachments',
+      value: NEW_HOUSE_ATTACHMENTS,
+      updated_by: user.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'house_id,key' }
+  )
+
+  if (attachmentsError) {
+    console.error(
+      `[HOUSES] Casa ${house.id} criada sem o registro de anexos (vai valer o fallback):`,
+      attachmentsError
+    )
   }
 
   const cookieStore = await cookies()

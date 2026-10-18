@@ -106,8 +106,9 @@ em primeiro; siglas técnicas resolvidas no fim.
   HTML, dizendo que o material veio de fora e que senha não se digita ali. É
   **fricção contra phishing**, não autorização — quem souber a URL crua pula.
 - **Anexos da casa** (`house_settings.attachments`) — os três toggles
-  `{ tasksAllowed, chestAllowed, htmlWarning }`, todos **ligados por default**.
-  Alterar exige o **PIN do sistema** (`MASTER_PIN`), e só por
+  `{ tasksAllowed, chestAllowed, htmlWarning }`. **Casa nova nasce com os dois
+  anexos desligados** (e o aviso ligado); casa antiga sem a chave gravada cai no
+  fallback permissivo. Alterar exige o **PIN do sistema** (`MASTER_PIN`), e só por
   `updateAttachmentSettings` (ADR-0026).
 - **Baú pausado** — baú com `chestAllowed = false`: os itens continuam listados e
   podem ser excluídos, mas ninguém anexa material novo nem abre o que já está lá.

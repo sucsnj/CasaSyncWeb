@@ -237,12 +237,13 @@ export const DEFAULT_TEXT_LIMITS: TextLimitsSettings = {
  * Anexos da casa (ADR-0026): se a casa pode anexar material em tarefa/baú e se o
  * dependente passa pela tela de aviso antes de abrir uma página HTML.
  *
- * **Os três defaults são `true`** — o oposto da convenção dos tetres (`0` =
- * desligado, para não mudar o comportamento de quem já usa). Aqui o default
- * "desligado" *mudaria* o app de toda casa existente: quem hoje anexa arquivo na
- * tarefa perderia a feature sem ter pedido nada. O que se quer evitar não é
- * "ninguém configurou", é o contrário — casa que já usa não pode ser surprise por
- * um default.
+ * **Este é o fallback de LEITURA, e ele é permissivo de propósito:** ele é o que uma
+ * casa que **nunca salvou** a chave recebe — ou seja, as casas que já existiam
+ * quando a feature entrou. Se o fallback fosse "desligado", o deploy desligaria os
+ * anexos de todas elas sem ninguém pedir (e o material já enviado pararia de abrir).
+ * Por isso o default permissivo fica aqui, e a política "casa nova nasce
+ * trancada" é gravada **explicitamente** na criação da casa
+ * (`NEW_HOUSE_ATTACHMENTS`, escrita pelo `createHouse`).
  *
  * `htmlWarning` desligar **não** é o mesmo que anexar HTML sem barreira: a página
  * continua servida em origem opaca (`CSP: sandbox`), então o que some é a tela de
@@ -257,9 +258,26 @@ export type AttachmentSettings = {
   htmlWarning: boolean
 }
 
+/** Fallback de leitura: casa sem a chave gravada (as que já existiam). */
 export const DEFAULT_ATTACHMENTS: AttachmentSettings = {
   tasksAllowed: true,
   chestAllowed: true,
+  htmlWarning: true,
+}
+
+/**
+ * Configuração gravada na **casa recém-criada** (`createHouse`).
+ *
+ * É a política do produto para conta nova: **anexos desligados**, aviso de página
+ * **ligado**. Racional: material anexo é a parte do app que a casa precisa
+ * assumir (o anexo HTML pode exibir qualquer coisa — ADR-0025), então o caminho
+ * padrão é **opt-in explícito**, e ligar exige o PIN do sistema
+ * (`updateAttachmentSettings`). Quem já usava o app não é afetado: a chave só é
+ * gravada em casa nova, e o fallback de leitura continua permissivo.
+ */
+export const NEW_HOUSE_ATTACHMENTS: AttachmentSettings = {
+  tasksAllowed: false,
+  chestAllowed: false,
   htmlWarning: true,
 }
 

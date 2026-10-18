@@ -64,15 +64,26 @@ do sistema** — o único card de configuração que exige credencial:
 | Toggle | Efeito quando **desligado** |
 |---|---|
 | **Anexos em tarefas** | `createTask`/`updateTask` recusam anexo novo/trocado (arquivo **ou** link) e **ninguém** abre o que já está anexado |
-| **Anexos no baú** | idem para `createChestItem`/`updateChestItem`, por **casa** — e o baú fica **pausado**: os itens continuam listados e podem ser excluídos, mas não abrem nem recebem material novo (o arquivo é obrigatório no item) |
+| **Anexos no baú** | idem para `createChestItem`/`updateChestItem`, na casa do item — e o baú fica **pausado**: os itens continuam listados e podem ser excluídos, mas não abrem nem recebem material novo (o arquivo é obrigatório no item) |
 | **Aviso antes de abrir uma página** | `/abrir-anexo` redireciona direto ao anexo. A **barreira continua intacta** (origem opaca + `CSP: sandbox`): o que some é a tela "não digite sua senha" e a contagem de 3s |
 
-- **Chave nova `attachments`** (`house_settings`, jsonb — **sem SQL**):
-  `{ tasksAllowed, chestAllowed, htmlWarning }`, com `DEFAULT_ATTACHMENTS` em
-  `src/utils/settings.ts`. **Os três defaults são `true`** — o oposto da convenção
-  dos tetres (`0` = desligado), porque aqui o default desligado *mudaria* o app de
-  toda casa que já anexa. A leitura é `readBoolean` fail-closed no tipo (valor não
-  booleano cai no default ligado, nunca vira `undefined` que libertaria o anexo).
+- **Casa nova nasce TRANCADA:** `createHouse` grava a chave `attachments` com
+  `NEW_HOUSE_ATTACHMENTS` (anexos **desligados**, aviso **ligado**). É a política do
+  produto para conta nova: material anexo é a parte do app que a casa precisa
+  assumir (o HTML pode exibir qualquer coisa, ADR-0025), então o padrão é **opt-in
+  explícito** — e ligar exige o PIN do sistema.
+- **O fallback de leitura (`DEFAULT_ATTACHMENTS`) segue PERMISSIVO (3× `true`)**,
+  e essa distinção é o ponto: ele é o que a casa que **nunca salvou** a chave
+  recebe — ou seja, **as casas que já existiam**. Virar esse fallback para
+  "desligado" desligaria os anexos de **toda casa instalada** no deploy (e o
+  material já enviado pararia de abrir), que não é o que "conta recém criada"
+  pediu. Por isso a política de casa nova é **gravada explicitamente**.
+- **O insert do `createHouse` é best-effort** (`console.error` em falha): o pior
+  caso é a casa nova nascer **permissiva**, porque falhar a criação da casa por uma
+  linha de configuração seria trocar um default permissivo por uma casa que não
+  existe. O `DEFAULT_ATTACHMENTS` segue em `src/utils/settings.ts`; a leitura é
+  `readBoolean` fail-closed no tipo (valor não booleano cai no default ligado,
+  nunca vira `undefined` que libertaria o anexo).
 - **Escrita só por `updateAttachmentSettings`, que exige o `MASTER_PIN`** — mesma
   credencial do cadastro de ADMIN, comparação **exata** (como `registerAdmin`),
   **env ausente = recusa**, `console.warn` de tentativa errada **sem o valor do
@@ -115,11 +126,13 @@ assinada, o que mudaria **todas** as imagens do app.
 `npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
 `npm run check:encoding` ✓. Regras puras conferidas executando o módulo real com
 `node --experimental-strip-types` (loader temporário para o alias `@/`, fora do
-repo): **16 casos** — os 3 defaults ligados, linha ausente/`undefined` caindo no
-default, linha gravada com os 3 campos, campo ausente herdando default, whitelist
-com exatamente 3 campos, `readBoolean` recusando `'true'`/`1`/`0`/`null`/
-`undefined`/`{}`/`[]` (todos → ligado) e aceitando `false`, e a independência dos
-toggles. Classes novas conferidas **no CSS gerado** (`.bg-rose-100`,
+repo): **21 casos** — os 3 defaults **de casa nova** desligados (com o aviso ligado),
+o fallback de leitura (casa antiga) segue **3× ligado**, linha ausente/`undefined`
+caindo no fallback, linha gravada com os 3 campos, campo ausente herdando o
+fallback, whitelist com exatamente 3 campos, `readBoolean` recusando
+`'true'`/`1`/`0`/`null`/`undefined`/`{}`/`[]` (todos → ligado) e aceitando
+`false`, e a independência dos toggles. Classes novas conferidas **no CSS gerado**
+(`.bg-rose-100`,
 `.text-rose-700`, `.bg-amber-50`, `.border-amber-200`, `.text-amber-900`,
 `.bg-slate-50/60`, `.border-dashed`, `.max-w-xs`), como manda o `AGENTS.md` §2.
 
@@ -130,7 +143,12 @@ toggles. Classes novas conferidas **no CSS gerado** (`.bg-rose-100`,
 
 ### Pontos de atenção
 - **Nada pendente no banco.** `attachments` é só mais um valor jsonb em
-  `house_settings`; linha ausente cai no default (ligado).
+  `house_settings`; linha ausente cai no fallback (permissivo), e a casa nova recebe
+  a linha explícita do `createHouse`.
+- **Não virar o fallback `DEFAULT_ATTACHMENTS` para desligado**: ele é o que a casa
+  que nunca salvou a chave recebe (as já instaladas) — virar desligado tranca os
+  anexos de toda casa no deploy. A política de conta nova mora em
+  `NEW_HOUSE_ATTACHMENTS` + o insert do `createHouse`, não no fallback.
 - **`htmlWarning` desligado não enfraquece o isolamento** — só remove a camada
   humana. A proteção de sessão (origem opaca, ADR-0025) não muda.
 - **Desligar não apaga material** nem libera espaço no bucket (que é de 1 GB

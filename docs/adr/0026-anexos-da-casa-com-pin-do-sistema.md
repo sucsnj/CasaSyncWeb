@@ -27,10 +27,19 @@ Três fatos do terreno moldaram a decisão, e nenhum deles é óbvio:
 
 1. **Chave nova `attachments`**, com três booleanos:
    `{ tasksAllowed, chestAllowed, htmlWarning }`. Sem SQL — `house_settings` é jsonb.
-   **Os três defaults são `true`**, o oposto da convenção dos tetres (`0` =
-   desligado). Aqui o default desligado *mudaria* o app de toda casa existente
-   (quem hoje anexa perderia a feature sem ter pedido nada); o risco a evitar é
-   "casa que não configurou", não o contrário.
+   **Casa nova nasce trancada** (`NEW_HOUSE_ATTACHMENTS`: anexos **desligados**,
+   aviso **ligado**), gravada pelo `createHouse`: material anexo é a parte do app que
+   a casa precisa assumir (o anexo HTML pode exibir qualquer coisa, ADR-0025), então
+   o padrão é **opt-in explícito** — e ligar exige o PIN do sistema.
+   **O fallback de leitura (`DEFAULT_ATTACHMENTS`) segue permissivo (os três
+   `true`)**, e essa é a distinção que importa: ele é o que uma casa que *nunca
+   salvou* a chave recebe, ou seja, **as casas que já existiam**. Virar esse
+   fallback para "desligado" desligaria os anexos de toda casa instalada no deploy
+   — e o material já enviado pararia de abrir sem ninguém ter pedido. Por isso a
+   política de conta nova é **gravada explicitamente** na criação da casa, e o
+   insert é best-effort: se ele falhar, a casa nasce permissiva (log em
+   `[HOUSES]`), porque falhar a criação da casa por uma linha de configuração seria
+   pior que o default permissivo.
 2. **A escrita é SÓ por `updateAttachmentSettings`, que exige o `MASTER_PIN`** — o
    mesmo PIN do sistema que valida o cadastro de ADMIN. E `updateHouseSettings`
    **recusa a chave explicitamente** (`validateSettings`), porque o `validate`
@@ -93,7 +102,11 @@ Três fatos do terreno moldaram a decisão, e nenhum deles é óbvio:
   continua ocupando espaço do bucket (1 GB do plano Hobby, compartilhado).
 - **Com o baú pausado o item continua na lista** dos dois lados, com chip de cadeado.
 - **Custo de leitura:** zero round-trip novo nas telas que já liam settings da casa
-  (o getter entra no mesmo `getHouseSettingsMap`); **+1 consulta** no `/chest` do
-  ADMIN (a leitura multi-casa com `.in()`), que não tinha leitura de settings antes.
+  (o getter entra no mesmo `getHouseSettingsMap`) — inclusive o `/chest` do ADMIN,
+  que lê só a casa ativa (o baú é da casa, emenda do ADR-0024).
+- **Casa nova exige 1 passo a mais para anexar:** nasce trancada, então o tutor
+  precisa abrir Configurações e digitar o PIN do sistema uma vez para ligar. É o
+  custo da política "opt-in" — e o texto do form (sem input de anexo) já diz o que
+  fazer.
 - **Desligar o aviso não enfraquece o isolamento**, só remove a camada humana. A
   proteção de sessão (origem opaca) é a do ADR-0025 e não muda.
