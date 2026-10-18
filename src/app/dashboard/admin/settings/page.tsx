@@ -13,6 +13,7 @@ import {
   getHouseTaskSlaSettings,
   getHouseTimezoneSettings,
   getHouseTextLimitsSettings,
+  getHouseAttachmentSettings,
 } from '@/utils/house-settings'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
@@ -75,6 +76,9 @@ export default async function AdminSettingsPage() {
     chestRules,
     houseTimezone,
     textLimits,
+    // Opções de anexo (ADR-0026) — mais um getter no mesmo mapa por casa, então
+    // **zero round-trip novo** nesta tela.
+    attachmentSettings,
     // Contagem de itens do baú **da casa ativa**: o card "Limite do baú" mostra
     // "N de M". É 1 query extra só nesta tela (de ADMIN, rara) — os getters acima
     // saem de graça do mesmo mapa por casa.
@@ -91,6 +95,7 @@ export default async function AdminSettingsPage() {
     getHouseChestRulesSettings(activeHouse.id),
     getHouseTimezoneSettings(activeHouse.id),
     getHouseTextLimitsSettings(activeHouse.id),
+    getHouseAttachmentSettings(activeHouse.id),
     createAdminClient()
       .from('chest_items')
       .select('id', { count: 'exact', head: true })
@@ -124,6 +129,7 @@ export default async function AdminSettingsPage() {
         houseTimezoneOffset={houseTimezoneOffset}
         timezoneOptions={timezoneOptions}
         textLimits={textLimits}
+        attachmentSettings={attachmentSettings}
       />
     </div>
   )

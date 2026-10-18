@@ -45,6 +45,7 @@ import {
   ClipboardList,
   Clock3,
   ListTodo,
+  Lock,
   PauseCircle,
   PlayCircle,
   X,
@@ -91,6 +92,7 @@ export function TasksAdmin({
   maxExtensions = 0,
   taskDecay,
   textLimits,
+  attachmentsAllowed,
 }: {
   houseId: string
   initialTasks: Task[]
@@ -107,9 +109,16 @@ export function TasksAdmin({
   taskDecay?: TaskDecaySettings
   /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
   textLimits?: TextLimitsSettings
+  /**
+   * A casa permite anexar material em tarefa? (chave `attachments`, ADR-0026).
+   * Default `true` = ligado, que é o default da casa — o componente só esconde o
+   * input e o chip; quem recusa de verdade é o servidor.
+   */
+  attachmentsAllowed?: boolean
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
+  const attachmentsOn = attachmentsAllowed ?? true
   const router = useRouter()
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
@@ -942,17 +951,33 @@ export function TasksAdmin({
               </div>
 
               <div className="flex flex-col gap-2 md:col-span-2">
-                <Label>Anexo (opcional)</Label>
-                <TaskAttachmentInput
-                  ownerId={houseId}
-                  url={taskAttachment.url}
-                  name={taskAttachment.name}
-                  type={taskAttachment.type}
-                  onChange={setTaskAttachment}
-                />
-                {/* A URL vai em `image_url` (coluna que já existia); nome e tipo
-                    são gravados pelo `createTask` a partir daqui. */}
-                <input type="hidden" name="image_url" value={taskAttachment.url ?? ''} />
+                {attachmentsOn ? (
+                  <>
+                    <Label>Anexo (opcional)</Label>
+                    <TaskAttachmentInput
+                      ownerId={houseId}
+                      url={taskAttachment.url}
+                      name={taskAttachment.name}
+                      type={taskAttachment.type}
+                      onChange={setTaskAttachment}
+                    />
+                    {/* A URL vai em `image_url` (coluna que já existia); nome e tipo
+                        são gravados pelo `createTask` a partir daqui. */}
+                    <input type="hidden" name="image_url" value={taskAttachment.url ?? ''} />
+                  </>
+                ) : (
+                  // Casa com anexos desligados: o campo some inteiro (não fica
+                  // um input desabilitado que convida a tentar) e o servidor
+                  // recusa a gravação de qualquer modo — a UI é conveniência, a
+                  // barreira é o `createTask`.
+                  <div className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5">
+                    <Lock className="mt-0.5 size-4 shrink-0 text-slate-400" />
+                    <p className="text-xs text-slate-500">
+                      Os anexos estão desativados nesta casa — a tarefa pode ser criada
+                      sem material. Para anexar, ligue a opção em Configurações.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {formError ? (
@@ -1139,19 +1164,27 @@ export function TasksAdmin({
                             name={task.attachment_name}
                             type={task.attachment_type}
                             taskId={task.id}
+                            blocked={!attachmentsOn}
                           />
                         ) : null}
 
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-xs text-slate-500">Anexo</span>
-                          <TaskAttachmentInput
-                            ownerId={houseId}
-                            url={task.image_url}
-                            name={task.attachment_name}
-                            type={task.attachment_type}
-                            onChange={(attachment) => changeAttachment(task, attachment)}
-                          />
-                        </div>
+                        {/* Com os anexos desligados o card ainda mostra o que
+                            existe (para o ADMIN saber que há material guardado),
+                            mas não oferece trocar nem remover — `updateTask`
+                            aceita remover, e remover é justamente a limpeza que
+                            faz sentido com a casa desligada. */}
+                        {attachmentsOn ? (
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-xs text-slate-500">Anexo</span>
+                            <TaskAttachmentInput
+                              ownerId={houseId}
+                              url={task.image_url}
+                              name={task.attachment_name}
+                              type={task.attachment_type}
+                              onChange={(attachment) => changeAttachment(task, attachment)}
+                            />
+                          </div>
+                        ) : null}
 
                         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                           <DebouncedField
@@ -1426,19 +1459,22 @@ export function TasksAdmin({
                             name={task.attachment_name}
                             type={task.attachment_type}
                             taskId={task.id}
+                            blocked={!attachmentsOn}
                           />
                         ) : null}
 
-                        <div className="mt-2 flex flex-col gap-1.5">
-                          <span className="text-xs text-slate-500">Anexo</span>
-                          <TaskAttachmentInput
-                            ownerId={houseId}
-                            url={task.image_url}
-                            name={task.attachment_name}
-                            type={task.attachment_type}
-                            onChange={(attachment) => changeAttachment(task, attachment)}
-                          />
-                        </div>
+                        {attachmentsOn ? (
+                          <div className="mt-2 flex flex-col gap-1.5">
+                            <span className="text-xs text-slate-500">Anexo</span>
+                            <TaskAttachmentInput
+                              ownerId={houseId}
+                              url={task.image_url}
+                              name={task.attachment_name}
+                              type={task.attachment_type}
+                              onChange={(attachment) => changeAttachment(task, attachment)}
+                            />
+                          </div>
+                        ) : null}
 
                         {/* Pausar esconde a tarefa do dependente, mas NÃO congela a
                             edição: os mesmos campos do card pendente, com salvamento

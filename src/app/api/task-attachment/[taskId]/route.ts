@@ -1,7 +1,7 @@
 import {
+  htmlAttachmentFailureResponse,
   htmlAttachmentHeaders,
   loadHtmlAttachment,
-  type HtmlAttachmentFailure,
 } from '@/utils/attachment-html'
 
 /**
@@ -30,7 +30,12 @@ export async function GET(
   const { taskId } = await context.params
 
   const result = await loadHtmlAttachment('task', taskId)
-  if (!result.ok) return failureResponse(result.reason)
+  if (!result.ok) {
+    // 401 sem sessão · 403 sem permissão ou com os anexos da casa desligados ·
+    // 404 sem anexo (sem revelar existência). O mapa mora no núcleo, junto da
+    // autorização — ver `htmlAttachmentFailureResponse`.
+    return htmlAttachmentFailureResponse(result.reason, 'Anexo não encontrado')
+  }
 
   const file = await fetch(result.info.fileUrl, { cache: 'no-store' })
   if (!file.ok || !file.body) {
@@ -41,15 +46,4 @@ export async function GET(
     status: 200,
     headers: htmlAttachmentHeaders(result.info.fileName),
   })
-}
-
-/** 401 sem sessão, 403 sem permissão, 404 sem anexo (sem revelar existência). */
-function failureResponse(reason: HtmlAttachmentFailure): Response {
-  if (reason === 'no_session') {
-    return new Response('Não autorizado', { status: 401 })
-  }
-  if (reason === 'unauthorized') {
-    return new Response('Não autorizado', { status: 403 })
-  }
-  return new Response('Anexo não encontrado', { status: 404 })
 }

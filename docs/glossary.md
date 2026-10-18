@@ -93,6 +93,25 @@ em primeiro; siglas técnicas resolvidas no fim.
   cron e sem Realtime — o "disparo" agendado só é calculado num render
   server-side (abertura/troca de endpoint/refresh após confirmar).
 
+## Anexos
+- **Anexo** — arquivo **ou link** que o ADMIN pendura numa tarefa (`tasks.image_url`
+  + `attachment_name`/`attachment_type`) ou num item do baú (`chest_items.file_url`
+  + `file_name`/`file_type`). Link é o tipo `text/url`: não sobe para o storage e
+  abre em nova aba. Os 4 tipos de arquivo: imagem, vídeo, PDF e HTML.
+- **Anexo HTML** — o único tipo servido **pelo app** (`/api/task-attachment/[taskId]`,
+  `/api/chest-item/[itemId]`), porque o Supabase Storage força `text/plain` em
+  `text/html`. Sai em **origem opaca** (`CSP: sandbox`), então o material não alcança
+  a sessão de quem abre (ADR-0025).
+- **Aviso de anexo** (`/abrir-anexo`) — tela do app que o dependente vê antes do
+  HTML, dizendo que o material veio de fora e que senha não se digita ali. É
+  **fricção contra phishing**, não autorização — quem souber a URL crua pula.
+- **Anexos da casa** (`house_settings.attachments`) — os três toggles
+  `{ tasksAllowed, chestAllowed, htmlWarning }`, todos **ligados por default**.
+  Alterar exige o **PIN do sistema** (`MASTER_PIN`), e só por
+  `updateAttachmentSettings` (ADR-0026).
+- **Baú pausado** — baú com `chestAllowed = false`: os itens continuam listados e
+  podem ser excluídos, mas ninguém anexa material novo nem abre o que já está lá.
+
 ## Ganhos em Realtime
 - **publication `supabase_realtime`** — índices de quais tabelas emitem eventos.
 - **Realtime listener** — assinatura `postgres_changes` no browser via

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getSessionProfile } from '@/utils/house'
+import { getHouseAttachmentSettings } from '@/utils/house-settings'
 
 /**
  * Anexo **HTML** das tarefas e do baú — núcleo compartilhado entre quem **serve**
@@ -38,6 +39,12 @@ export type HtmlAttachmentInfo = {
   href: string
   /** URL do arquivo no storage — é daqui que a rota busca os bytes. */
   fileUrl: string
+  /**
+   * Casa dona do anexo. Sai **sem custo extra** (já veio na linha normalizada) e
+   * é o que permite à tela de aviso ler a configuração de `htmlWarning` sem
+   * pedir a casa por parâmetro do cliente.
+   */
+  houseId: string
   /** Título da tarefa ou do item (contexto do material). */
   title: string
   /** Nome original do arquivo, como o tutor enviou. */
@@ -47,8 +54,20 @@ export type HtmlAttachmentInfo = {
   houseName?: string | null
 }
 
-/** Motivo da recusa — vira o status HTTP da rota, sem ambiguidade. */
-export type HtmlAttachmentFailure = 'no_session' | 'unauthorized' | 'not_found'
+/**
+ * Motivo da recusa — vira o status HTTP da rota, sem ambiguidade.
+ *
+ * `attachments_disabled` é o caso da chave `attachments` (ADR-0026): a casa
+ * desligou os anexos daquele módulo. É um `403` como `unauthorized`, mas com
+ * mensagem própria — quem está autorizado já é membro da casa, então saber que a
+ * opção está desligada não revela nada. **Nenhum destes motivos diz se o anexo
+ * existe** (o `not_found` cobre "não existe" e "não é HTML" juntos).
+ */
+export type HtmlAttachmentFailure =
+  | 'no_session'
+  | 'unauthorized'
+  | 'not_found'
+  | 'attachments_disabled'
 
 /**
  * Linha do anexo já **normalizada** entre os dois módulos: `tasks` guarda a URL
@@ -106,11 +125,31 @@ export async function loadHtmlAttachment(
   })
   if (!authorized) return { ok: false, reason: 'unauthorized' }
 
+  // A casa desligou os anexos deste módulo? (ADR-0026). O HTML é o **único** tipo
+  // de anexo que passa pelo app — imagem/vídeo/PDF/link vão pela URL pública do
+  // bucket, que o app não consegue revogar (registrado como limite no ADR). Então
+  // esta é a barreira de leitura que o app de fato consegue manter.
+  //
+  // Fail closed: erro de leitura do `house_settings` **recusa** o anexo em vez de
+  // servir. O caminho oposto (falhou a leitura, então libera) transformaria uma
+  // falha transitória em janela de anexo liberado — e esta configuração é
+  // justamente a que exige PIN do sistema para mudar.
+  let attachmentsAllowed: boolean
+  try {
+    const attachments = await getHouseAttachmentSettings(row.houseId)
+    attachmentsAllowed = kind === 'task' ? attachments.tasksAllowed : attachments.chestAllowed
+  } catch (err) {
+    console.error('[ANEXO] Falha ao ler a configuração de anexos da casa — recusando:', err)
+    return { ok: false, reason: 'attachments_disabled' }
+  }
+  if (!attachmentsAllowed) return { ok: false, reason: 'attachments_disabled' }
+
   const info: HtmlAttachmentInfo = {
     kind,
     href:
       kind === 'task' ? `/api/task-attachment/${id}` : `/api/chest-item/${id}`,
     fileUrl: row.url,
+    houseId: row.houseId,
     title: row.title,
     fileName: row.fileName ?? (kind === 'task' ? 'anexo.html' : 'pagina.html'),
   }
@@ -298,4 +337,32 @@ export function htmlAttachmentHeaders(fileName: string): Record<string, string> 
     // Conteúdo por usuário: nunca no cache do navegador nem do CDN.
     'Cache-Control': 'private, no-store, max-age=0',
   }
+}
+
+/**
+ * Resposta de recusa das rotas `/api/task-attachment/[taskId]` e
+ * `/api/chest-item/[itemId]` — **um só mapa motivo → status**, compartilhado.
+ *
+ * Antes cada rota tinha a sua cópia (idêntica, mas cópia): o dia que uma learnsse
+ * um motivo novo e a outra não, uma serviria anexo onde a outra recusa. O mapa mora
+ * junto da autorização, que é a parte que não pode divergir.
+ *
+ * Nenhum motivo revela se o anexo existe: `not_found` cobre "não existe" e "não é
+ * HTML" ao mesmo tempo, e `unauthorized`/`attachments_disabled` são 403 para quem
+ * não tem relação com o material. O corpo é texto simples, sem HTML.
+ */
+export function htmlAttachmentFailureResponse(
+  reason: HtmlAttachmentFailure,
+  notFoundMessage: string
+): Response {
+  if (reason === 'no_session') {
+    return new Response('Não autorizado', { status: 401 })
+  }
+  if (reason === 'unauthorized') {
+    return new Response('Não autorizado', { status: 403 })
+  }
+  if (reason === 'attachments_disabled') {
+    return new Response('Anexos desativados nesta casa', { status: 403 })
+  }
+  return new Response(notFoundMessage, { status: 404 })
 }

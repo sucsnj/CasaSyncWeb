@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
+  DEFAULT_ATTACHMENTS,
   DEFAULT_CHEST_RULES,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
@@ -13,6 +14,7 @@ import {
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
   mergeSettings,
+  type AttachmentSettings,
   type ChestRulesSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
@@ -29,6 +31,15 @@ import {
 import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
 
 type SettingsRow = { key: HouseSettingsKey; value: Record<string, unknown> | null }
+
+/**
+ * Lê um campo booleano da configuração com fallback: só `true`/`false` aceitos.
+ * Qualquer outra coisa (string, número, `null`, campo ausente) usa o default — o
+ * jsonb é gravado por action validada, mas a leitura não pode depender disso.
+ */
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
 
 /**
  * Todas as configurações da casa em UMA leitura: `key -> value`.
@@ -143,6 +154,75 @@ export const getHouseChestRulesSettings = cache(
   async (houseId: string): Promise<ChestRulesSettings> => {
     const value = await getHouseSettingsValue(houseId, 'chest_rules')
     return mergeSettings(value, DEFAULT_CHEST_RULES)
+  }
+)
+
+/**
+ * Anexos da casa (ADR-0026). Lida nas actions de tarefa e de baú (para recusar
+ * anexo quando a casa desligou), nas rotas `/api/...` do anexo (recusar leitura com
+ * 403) e na tela `/abrir-anexo` (pular o aviso). Sai da **mesma** leitura por casa
+ * das outras chaves — o toggle não cria round-trip novo.
+ */
+export const getHouseAttachmentSettings = cache(
+  async (houseId: string): Promise<AttachmentSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'attachments')
+    // Fail-closed no tipo: um valor gravado que não seja booleano cai no default
+    // (ligado) em vez de virar um `undefined` que silenciosamente *liberta* o
+    // anexo. O que barra é o servidor, então liberar por leitura suja seria o pior
+    // dos dois erros.
+    const merged = mergeSettings(value, DEFAULT_ATTACHMENTS)
+    return {
+      tasksAllowed: readBoolean(merged.tasksAllowed, DEFAULT_ATTACHMENTS.tasksAllowed),
+      chestAllowed: readBoolean(merged.chestAllowed, DEFAULT_ATTACHMENTS.chestAllowed),
+      htmlWarning: readBoolean(merged.htmlWarning, DEFAULT_ATTACHMENTS.htmlWarning),
+    }
+  }
+)
+
+/**
+ * Anexos de **várias casas em UMA consulta** — existe para o form do baú, que
+ * deixa o ADMIN escolher a casa do item (ADR-0026).
+ *
+ * Por que não `getHouseAttachmentSettings` em cima de cada casa: o getter é
+ * memoizado por `(casa)`, então um ADMIN de 3 casas custaria **3 leituras** do
+ * mesmo `house_settings`. Aqui é uma consulta só com `.in('house_id', …)`, e o
+ * group-by sai no próprio JS — o número de round-trips não cresce com o número de
+ * casas (regra do `AGENTS.md` §3: contar round-trips, não estimar).
+ *
+ * `houseIds` vazio → mapa vazio **sem** consulta.
+ */
+export const getHousesAttachmentSettings = cache(
+  async (houseIds: string[]): Promise<Map<string, AttachmentSettings>> => {
+    const result = new Map<string, AttachmentSettings>()
+    if (houseIds.length === 0) return result
+
+    const admin = createAdminClient()
+    const { data } = await admin
+      .from('house_settings')
+      .select('house_id, value')
+      .eq('key', 'attachments')
+      .in('house_id', houseIds)
+
+    const byHouse = new Map<string, Record<string, unknown> | null>()
+    for (const row of (data ?? []) as Array<{ house_id: string; value: unknown }>) {
+      byHouse.set(
+        row.house_id,
+        (row.value ?? null) as Record<string, unknown> | null
+      )
+    }
+
+    // Casa sem linha (ou com linha suja) cai no default — **ligado**, que é o que
+    // preserva o comportamento de toda casa que não configurou nada.
+    for (const houseId of houseIds) {
+      const merged = mergeSettings(byHouse.get(houseId), DEFAULT_ATTACHMENTS)
+      result.set(houseId, {
+        tasksAllowed: readBoolean(merged.tasksAllowed, DEFAULT_ATTACHMENTS.tasksAllowed),
+        chestAllowed: readBoolean(merged.chestAllowed, DEFAULT_ATTACHMENTS.chestAllowed),
+        htmlWarning: readBoolean(merged.htmlWarning, DEFAULT_ATTACHMENTS.htmlWarning),
+      })
+    }
+
+    return result
   }
 )
 

@@ -25,6 +25,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
+  getHouseAttachmentSettings,
   getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
@@ -280,6 +281,20 @@ export async function createTask(
     limits.taskDescription
   )
   if (descriptionError) return { ok: false, error: descriptionError }
+
+  // A casa desligou os anexos em tarefa? (chave `attachments`, ADR-0026). Custo
+  // zero de round-trip: o getter entra no mesmo `getHouseSettingsMap` que os
+  // getters acima já leram. Só barra **anexo novo/trocado** — remover o arquivo
+  // continua permitido (é a limpeza justamente depois de a casa desligar).
+  if (input.imageUrl?.trim()) {
+    const attachments = await getHouseAttachmentSettings(activeHouse.id)
+    if (!attachments.tasksAllowed) {
+      return {
+        ok: false,
+        error: 'A casa desativou os anexos em tarefas. Ligue a opção em Configurações para anexar material.',
+      }
+    }
+  }
 
   // Anexo (opcional): a URL precisa ser do bucket da casa, na pasta `tasks/`, e
   // o tipo precisa estar na lista fechada — validação fail-closed, porque a URL
@@ -568,6 +583,17 @@ export async function updateTask(
     updates.image_url = nextUrl
 
     if (nextUrl) {
+      // A casa desligou os anexos? (ADR-0026) — mesmo getter, custo zero de
+      // round-trip. Conferido antes da validação da URL para a mensagem dizer o
+      // que aconteceu, e não "URL inválida" num anexo que nem podia ser anexado.
+      const attachments = await getHouseAttachmentSettings(activeHouse.id)
+      if (!attachments.tasksAllowed) {
+        return {
+          ok: false,
+          error: 'A casa desativou os anexos em tarefas. Ligue a opção em Configurações para anexar material.',
+        }
+      }
+
       // Anexo novo/trocado: nome e tipo andam sempre juntos com a URL (fail
       // closed — URL e MIME chegam do cliente).
       const error = validateTaskAttachment(

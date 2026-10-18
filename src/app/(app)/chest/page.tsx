@@ -9,7 +9,11 @@ import {
 } from '@/utils/house'
 import { ChestAdmin } from '@/components/chest/chest-admin'
 import { ChestDependent } from '@/components/chest/chest-dependent'
-import { getHouseChestRulesSettings } from '@/utils/house-settings'
+import {
+  getHouseAttachmentSettings,
+  getHouseChestRulesSettings,
+  getHousesAttachmentSettings,
+} from '@/utils/house-settings'
 import type { ChestItemView } from '@/components/chest/chest-types'
 
 export const metadata: Metadata = {
@@ -79,6 +83,16 @@ export default async function ChestPage() {
 
       const nameById = new Map(houses.map((house) => [house.id, house.name]))
 
+      // Anexos do baú, **por casa** (ADR-0026): o item tem casa própria e o form
+      // deixa o ADMIN escolher, então a decisão precisa ser da casa de destino.
+      // Uma consulta só com `.in()` — o custo não cresce com o número de casas
+      // (ver `getHousesAttachmentSettings`).
+      const chestAllowedByHouse = Object.fromEntries(
+        Array.from(
+          await getHousesAttachmentSettings(houses.map((house) => house.id))
+        ).map(([id, settings]) => [id, settings.chestAllowed])
+      )
+
       content = (
         <ChestAdmin
           key={user.id}
@@ -89,6 +103,7 @@ export default async function ChestPage() {
           houses={houses.map((house) => ({ id: house.id, name: house.name }))}
           activeHouseId={activeHouse?.id ?? houses[0].id}
           maxItems={maxItems}
+          chestAllowedByHouse={chestAllowedByHouse}
         />
       )
     }
@@ -108,10 +123,15 @@ export default async function ChestPage() {
         .eq('house_id', house.id)
         .order('created_at', { ascending: false })
 
+      // A casa desligou os anexos do baú? (ADR-0026) — o item continua listado,
+      // mas o arquivo não abre. Sai do mesmo mapa por casa das outras leituras.
+      const { chestAllowed } = await getHouseAttachmentSettings(house.id)
+
       content = (
         <ChestDependent
           key={house.id}
           houseId={house.id}
+          attachmentsAllowed={chestAllowed}
           initialItems={(items ?? []).map((item) => ({
             ...item,
             houseName: house.name,

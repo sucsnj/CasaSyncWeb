@@ -1,7 +1,7 @@
 import {
+  htmlAttachmentFailureResponse,
   htmlAttachmentHeaders,
   loadHtmlAttachment,
-  type HtmlAttachmentFailure,
 } from '@/utils/attachment-html'
 
 /**
@@ -29,7 +29,11 @@ export async function GET(
   const { itemId } = await context.params
 
   const result = await loadHtmlAttachment('chest', itemId)
-  if (!result.ok) return failureResponse(result.reason)
+  if (!result.ok) {
+    // Mapa de recusa compartilhado com a rota das tarefas — ver
+    // `htmlAttachmentFailureResponse`.
+    return htmlAttachmentFailureResponse(result.reason, 'Arquivo não encontrado')
+  }
 
   const file = await fetch(result.info.fileUrl, { cache: 'no-store' })
   if (!file.ok || !file.body) {
@@ -40,15 +44,4 @@ export async function GET(
     status: 200,
     headers: htmlAttachmentHeaders(result.info.fileName),
   })
-}
-
-/** 401 sem sessão, 403 sem membro da casa, 404 sem item (sem revelar existência). */
-function failureResponse(reason: HtmlAttachmentFailure): Response {
-  if (reason === 'no_session') {
-    return new Response('Não autorizado', { status: 401 })
-  }
-  if (reason === 'unauthorized') {
-    return new Response('Não autorizado', { status: 403 })
-  }
-  return new Response('Arquivo não encontrado', { status: 404 })
 }

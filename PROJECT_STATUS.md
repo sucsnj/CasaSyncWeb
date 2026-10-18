@@ -1,5 +1,97 @@
 # CasaSync Web — PROJECT STATUS
 
+## Anexos da casa ligáveis/desligáveis, com PIN do sistema (implementado — sem SQL)
+
+### O que foi implementado
+Card novo **"Anexos"** em `/dashboard/admin/settings` com **3 toggles** e **o PIN
+do sistema** — o único card de configuração que exige credencial:
+
+| Toggle | Efeito quando **desligado** |
+|---|---|
+| **Anexos em tarefas** | `createTask`/`updateTask` recusam anexo novo/trocado (arquivo **ou** link) e **ninguém** abre o que já está anexado |
+| **Anexos no baú** | idem para `createChestItem`/`updateChestItem`, por **casa** — e o baú fica **pausado**: os itens continuam listados e podem ser excluídos, mas não abrem nem recebem material novo (o arquivo é obrigatório no item) |
+| **Aviso antes de abrir uma página** | `/abrir-anexo` redireciona direto ao anexo. A **barreira continua intacta** (origem opaca + `CSP: sandbox`): o que some é a tela "não digite sua senha" e a contagem de 3s |
+
+- **Chave nova `attachments`** (`house_settings`, jsonb — **sem SQL**):
+  `{ tasksAllowed, chestAllowed, htmlWarning }`, com `DEFAULT_ATTACHMENTS` em
+  `src/utils/settings.ts`. **Os três defaults são `true`** — o oposto da convenção
+  dos tetres (`0` = desligado), porque aqui o default desligado *mudaria* o app de
+  toda casa que já anexa. A leitura é `readBoolean` fail-closed no tipo (valor não
+  booleano cai no default ligado, nunca vira `undefined` que libertaria o anexo).
+- **Escrita só por `updateAttachmentSettings`, que exige o `MASTER_PIN`** — mesma
+  credencial do cadastro de ADMIN, comparação **exata** (como `registerAdmin`),
+  **env ausente = recusa**, `console.warn` de tentativa errada **sem o valor do
+  PIN**, e o PIN **fora do estado React** (ADR-0003: input não controlado, lido do
+  `FormData` no submit, `reset()` depois de salvar). `updateHouseSettings`
+  **recusa a chave explicitamente** em `validateSettings` — sem isso, o `validate`
+  genérico cairia no validador do final e gravaria a chave protegida **sem PIN**.
+  O guard de ADMIN da casa (`assertActiveHouseAdmin`) foi extraído, para as duas
+  actions não terem duas cópias (cópia divergente é como uma passa a exigir e a
+  outra não).
+- **Bloqueio de escrita no servidor** nos 4 lugares (`createTask`, `updateTask`,
+  `createChestItem`, `updateChestItem`), com mensagem acionável ("Ligue a opção em
+  Configurações"). **Link conta como anexo** nos dois toggles. **Remover** anexo e
+  **renomear** item continuam permitidos — é a limpeza que faz sentido com a casa
+  desligada. No baú a checagem é pela **casa do item** (não a casa ativa).
+- **Bloqueio de leitura** dentro do núcleo `loadHtmlAttachment`: motivo novo
+  `attachments_disabled` → **403** nas duas rotas `/api/...`. O mapa
+  motivo→status subiu para `htmlAttachmentFailureResponse` (as 2 rotas tinham
+  cópias idênticas — divergir é como uma serviria anexo onde a outra recusa).
+  **Erro de leitura do `house_settings` recusa o anexo** (fail closed).
+- **UI**: `TaskAttachmentView` ganhou `blocked` → chip neutro com cadeado, **sem
+  `href`**, sem miniatura e **sem o domínio do link** (mostrar para onde o link ia
+  seria entregar o que o toggle esconde). Os inputs de upload **somem** inteiros
+  (não ficam desabilitados) e o baú mostra o motivo. No `/chest` do ADMIN a
+  decisão vem **por casa** (`chestAllowedByHouse`), lida com **uma** consulta
+  `.in()` (`getHousesAttachmentSettings`) — o custo não cresce com o número de
+  casas.
+- **Plumbing sem round-trip novo**: `/tasks` e o card de Configurações já liam
+  settings da casa, então o getter novo entra no mesmo `getHouseSettingsMap`.
+  `/chest` ganhou **+1** leitura (a multi-casa), que antes não lia settings.
+- **Ver ADR-0026** para as alternativas descartadas (revogação real com bucket
+  privado, 3 cards com 3 PINs, esconder a lista do baú) e o porquê de cada uma.
+
+### Limite honesto
+Imagem/vídeo/PDF/link vão pela **URL pública** do bucket (`casasync-media` é
+público, ADR-0005), então desligar **impede de oferecer**, não **revoga** uma URL
+já entregue ao dependente. Só o **HTML** passa pelo app, e é nele que o bloqueio de
+leitura é de verdade (403). Revogar de verdade exigiria bucket privado + URL
+assinada, o que mudaria **todas** as imagens do app.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. Regras puras conferidas executando o módulo real com
+`node --experimental-strip-types` (loader temporário para o alias `@/`, fora do
+repo): **16 casos** — os 3 defaults ligados, linha ausente/`undefined` caindo no
+default, linha gravada com os 3 campos, campo ausente herdando default, whitelist
+com exatamente 3 campos, `readBoolean` recusando `'true'`/`1`/`0`/`null`/
+`undefined`/`{}`/`[]` (todos → ligado) e aceitando `false`, e a independência dos
+toggles. Classes novas conferidas **no CSS gerado** (`.bg-rose-100`,
+`.text-rose-700`, `.bg-amber-50`, `.border-amber-200`, `.text-amber-900`,
+`.bg-slate-50/60`, `.border-dashed`, `.max-w-xs`), como manda o `AGENTS.md` §2.
+
+**O que não pôde ser verificado aqui:** `loadHtmlAttachment`, as actions e as rotas
+`/api/...` moram em módulos **server-only** (importam `next/headers` via
+`utils/house.ts`), então não rodam standalone — a validação deles é por
+`typecheck`/`build` e por **teste em tela autenticada**.
+
+### Pontos de atenção
+- **Nada pendente no banco.** `attachments` é só mais um valor jsonb em
+  `house_settings`; linha ausente cai no default (ligado).
+- **`htmlWarning` desligado não enfraquece o isolamento** — só remove a camada
+  humana. A proteção de sessão (origem opaca, ADR-0025) não muda.
+- **Desligar não apaga material** nem libera espaço no bucket (que é de 1 GB
+  compartilhado).
+- **Não reintroduzir o mapa motivo→status nas rotas de API**: ele mora no núcleo,
+  junto da autorização. E **não reintroduzir a escrita da chave `attachments` pelo
+  `updateHouseSettings`** — o refusal explícito em `validateSettings` é a
+  barreira do PIN, não um `if` redundante.
+- **`mult` da fórmula de conquistas segue aceitando fracionário**: com `mult < 1`
+  dois níveis consecutivos podem pagar o mesmo (arredondamento) — comportamento
+  aceito, e o `Math.round` sempre teve essa classe de empate.
+
+---
+
 ## Gravação de arquivos: nunca usar PowerShell
 
 **Regra dura:** nenhum arquivo deste projeto é escrito por PowerShell
@@ -739,6 +831,20 @@ puro.
 ---
 
 ## Estado atual (verificado — sem pendências)
+
+- **Anexos da casa ligáveis/desligáveis, com PIN do sistema:** card novo
+  **"Anexos"** em Configurações com 3 toggles — **anexos em tarefas**, **anexos no
+  baú** e **aviso antes de abrir uma página** — e, **exclusivamente** para alterar
+  essas opções, o **PIN do sistema** (`MASTER_PIN`, o do cadastro de ADMIN). Chave
+  jsonb `attachments`, **sem SQL**, com os 3 defaults **ligados** (preserva toda
+  casa que já anexa). Desligado recusa anexo **novo/trocado** no servidor e
+  **ninguém abre** o que já está (as 2 rotas `/api/...` devolvem 403; o mapa
+  motivo→status subiu para o núcleo). Link conta como anexo; **remover** anexo e
+  **renomear** item seguem permitidos. `htmlWarning` desligado faz `/abrir-anexo`
+  pular a tela — com a **barreira de origem opaca intacta**. Baú sem anexo = acervo
+  **pausado** (form bloqueado, itens listados, exclusão livre). **Limite honesto:**
+  imagem/vídeo/PDF/link vão pela URL pública do bucket, então desligar **impede de
+  oferecer**, não revoga URL já entregue. Ver a seção no topo e o **ADR-0026**.
 
 - **Retrato das brechas de segurança dos anexos (documentação, sem mudança de
   código):** `docs/seguranca-anexos.md` registra as **10 brechas abertas** dos

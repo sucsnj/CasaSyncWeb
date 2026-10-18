@@ -16,12 +16,14 @@ import {
   ListTodo,
   MessageSquare,
   Package,
+  Paperclip,
   Plus,
   Ruler,
   Save,
+  ShieldAlert,
   Trash2,
 } from 'lucide-react'
-import { updateHouseSettings } from '@/actions/settings'
+import { updateAttachmentSettings, updateHouseSettings } from '@/actions/settings'
 import type { ActionResult } from '@/actions/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -33,9 +35,12 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { CardColumns } from '@/components/ui/card-columns'
 import { cn } from '@/lib/utils'
 import type {
+  AttachmentSettingField,
+  AttachmentSettings,
   ChestRulesSettings,
   ExtensionRulesSettings,
   HouseTimezoneSettings,
@@ -69,7 +74,39 @@ type SettingsAdminProps = {
   houseTimezoneOffset: string
   /** Lista de fusos com o offset de cada um, calculada no servidor. */
   timezoneOptions: HouseTimezoneOption[]
+  /** Opções de anexo da casa (ADR-0026) — só este card grava, e exige o PIN. */
+  attachmentSettings: AttachmentSettings
 }
+
+/**
+ * Os 3 toggles de anexo, na ordem em que o tutor pensa neles: o que pode
+ * anexar, e depois a tela que protege a abertura.
+ *
+ * A lista é a **fonte da UI** dos campos (`AttachmentSettingField`), e a action
+ * valida pela whitelist `ATTACHMENT_SETTING_FIELDS` — os dois lados saem do mesmo
+ * conjunto, então um toggle novo não pode existir só na tela.
+ */
+const ATTACHMENT_TOGGLES: Array<{
+  key: AttachmentSettingField
+  label: string
+  hint: string
+}> = [
+  {
+    key: 'tasksAllowed',
+    label: 'Anexos em tarefas',
+    hint: 'Arquivo ou link em tarefa. Desligado: ninguém mais anexa nem abre o que já foi enviado.',
+  },
+  {
+    key: 'chestAllowed',
+    label: 'Anexos no baú',
+    hint: 'Como o arquivo é obrigatório no item, desligar pausa o baú: os itens ficam listados, mas sem poder abrir nem receber material novo.',
+  },
+  {
+    key: 'htmlWarning',
+    label: 'Aviso antes de abrir uma página',
+    hint: 'Tela que explica ao dependente que o material veio de fora e que ele não deve digitar a senha ali. Desligado, ele abre direto o anexo — que continua protegido pelo navegador do app.',
+  },
+]
 
 function Toggle({
   checked,
@@ -373,6 +410,7 @@ export function SettingsAdmin({
   houseTimezoneOffset,
   timezoneOptions,
   textLimits,
+  attachmentSettings,
 }: SettingsAdminProps) {
   const router = useRouter()
 
@@ -428,6 +466,19 @@ export function SettingsAdmin({
   const [limitsSuccess, setLimitsSuccess] = useState<string | null>(null)
 
   /**
+   * Anexos (ADR-0026): os 3 toggles + o PIN do sistema, num card só.
+   *
+   * O PIN **não** vai para o estado React (ADR-0003) — o input é não controlado e
+   * o valor é lido do `FormData` do card no submit, como o PIN da casa em
+   * `houses-manager.tsx`. O `formRef` existe para zerar o campo depois de salvar
+   * (`reset()`), então o PIN não fica na tela depois do uso.
+   */
+  const [attachments, setAttachments] = useState<AttachmentSettings>(attachmentSettings)
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
+  const [attachmentsSuccess, setAttachmentsSuccess] = useState<string | null>(null)
+  const attachmentsFormRef = useRef<HTMLFormElement>(null)
+
+  /**
    * Salvar é **por card**, com flag própria (AGENTS.md §3):
    *
    * - `startTransition(async …)` nunca marca `isPending` (o React não rastreia a
@@ -449,6 +500,7 @@ export function SettingsAdmin({
     | 'chestRules'
     | 'timezone'
     | 'limits'
+    | 'attachments'
 
   const [saving, setSaving] = useState<SaveKey[]>([])
   const isSaving = (key: SaveKey) => saving.includes(key)
@@ -463,7 +515,9 @@ export function SettingsAdmin({
     key: SaveKey,
     run: () => Promise<ActionResult>,
     setError: (value: string | null) => void,
-    setSuccess: (value: string | null) => void
+    setSuccess: (value: string | null) => void,
+    /** Form a resetar depois de salvar (o card de anexos, que tem o campo do PIN). */
+    resetForm?: HTMLFormElement | null
   ) {
     setError(null)
     setSuccess(null)
@@ -478,6 +532,9 @@ export function SettingsAdmin({
       const message = result.message ?? 'Configurações salvas.'
       setSuccess(message)
       toast.success(message)
+      // O PIN do sistema é descartado assim que a gravação passa — ele não fica
+      // preenchido no campo para o próximo clique (nem no estado do React).
+      resetForm?.reset()
       router.refresh()
     } catch {
       const message = 'Falha de rede ao salvar. Tente de novo.'
@@ -565,6 +622,25 @@ export function SettingsAdmin({
       () => updateHouseSettings('chest_rules', { ...chestRules }),
       setChestRulesError,
       setChestRulesSuccess
+    )
+  }
+
+  /**
+   * Anexos: o PIN do sistema sai do `FormData` **aqui**, no submit, e é
+   * descartado em seguida — nunca entra em `useState` (ADR-0003). Depois de
+   * salvar, o form é resetado para o PIN não ficar preenchido na tela.
+   */
+  function saveAttachments(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const masterPin = String(new FormData(form).get('masterPin') ?? '')
+
+    void runSave(
+      'attachments',
+      () => updateAttachmentSettings({ ...attachments }, masterPin),
+      setAttachmentsError,
+      setAttachmentsSuccess,
+      form
     )
   }
 
@@ -1314,6 +1390,111 @@ export function SettingsAdmin({
                 {isSaving('chestRules') ? 'Salvando…' : 'Salvar limite'}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/*
+          Anexos (ADR-0026) — **o único card que exige o PIN do sistema**.
+
+          Por que um card só com os 3 toggles: eles formam uma única decisão de
+          segurança ("o que a casa pode anexar"), compartilham a mesma credencial e
+          são gravados juntos por `updateAttachmentSettings`. Um toggle por card
+          exigiria 3 PINs e 3 idas ao banco para uma decisão que o tutor pensa como
+          uma coisa só.
+        */}
+        <Card>
+          <CardHeader>
+            <CardAction>
+              <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Paperclip className="size-5" />
+              </span>
+            </CardAction>
+            <CardTitle>Anexos</CardTitle>
+            <CardDescription>
+              Liga ou desliga o material que a casa pode anexar, e a tela de aviso
+              antes de abrir uma página. Desligar não apaga o que já foi enviado: o
+              material fica guardado, mas ninguém consegue mais abrir.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              ref={attachmentsFormRef}
+              onSubmit={saveAttachments}
+              className="flex flex-col gap-4"
+            >
+              <div className="flex flex-col gap-3">
+                {ATTACHMENT_TOGGLES.map(({ key, label, hint }) => (
+                  <div
+                    key={key}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">{label}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{hint}</p>
+                    </div>
+                    <Toggle
+                      checked={attachments[key]}
+                      onChange={(checked) =>
+                        setAttachments((prev) => ({ ...prev, [key]: checked }))
+                      }
+                      label={label}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Faixa de credencial: é a parte que diferencia este card dos
+                  outros 9 — e o texto diz por quê, para o ADMIN não achar que é
+                  burocracia aleatória. */}
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-700" />
+                <p className="text-xs text-amber-900">
+                  Estas 3 opções mudam o que o dependente consegue ver e abrir, por
+                  isso pedem o <strong className="font-semibold">PIN do sistema</strong> —
+                  o mesmo do cadastro de administrador, que não é o PIN da casa.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="attachments-master-pin">PIN do sistema</Label>
+                <Input
+                  id="attachments-master-pin"
+                  name="masterPin"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="PIN do sistema"
+                  className="max-w-xs"
+                  required
+                  suppressHydrationWarning
+                />
+                <p className="text-xs text-slate-500">
+                  Fica só no campo: não vai para o estado da tela e é apagado depois
+                  de salvar.
+                </p>
+              </div>
+
+              {attachmentsError ? (
+                <p role="alert" className="text-sm text-red-600">
+                  {attachmentsError}
+                </p>
+              ) : null}
+              {attachmentsSuccess ? (
+                <p role="status" className="text-sm text-emerald-700">
+                  {attachmentsSuccess}
+                </p>
+              ) : null}
+
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSaving('attachments')}
+                >
+                  <Save className="size-4" />
+                  {isSaving('attachments') ? 'Salvando…' : 'Salvar anexos'}
+                </Button>
+              </div>
+            </form>
           </CardContent>
         </Card>
 

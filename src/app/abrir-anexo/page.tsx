@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSessionProfile } from '@/utils/house'
+import { getHouseAttachmentSettings } from '@/utils/house-settings'
 import { loadHtmlAttachment, type HtmlAttachmentKind } from '@/utils/attachment-html'
 import { OpenHtmlAttachment } from '@/components/attachments/open-html-attachment'
 
@@ -58,16 +59,27 @@ export default async function AbrirAnexoPage({
   const backHref = parsedKind === 'chest' ? '/chest' : '/tasks'
 
   if (!result?.ok) {
+    // A casa desligou os anexos (ADR-0026) é um caso diferente de "arquivo
+    // removido": o material continua no banco, mas ninguém pode mais abri-lo. A
+    // tela diz isso em vez de mandar o usuário atrás de um arquivo que existe —
+    // e sem revelar se o anexo existe para quem não tem acesso (o `not_found`
+    // continua sendo a resposta genérica para o resto dos casos).
+    const desativado = result?.reason === 'attachments_disabled'
+
     return (
       <main className="flex min-h-svh flex-col bg-slate-900">
         <ExternalBanner />
         <div className="flex flex-1 items-center justify-center px-4 py-10">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-xl">
             <p className="text-lg font-bold text-slate-800">
-              Material não está mais disponível
+              {desativado
+                ? 'Os anexos estão desativados nesta casa'
+                : 'Material não está mais disponível'}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              O arquivo pode ter sido removido, ou você não tem acesso a ele.
+              {desativado
+                ? 'Peça para o seu tutor ligar os anexos de novo em Configurações.'
+                : 'O arquivo pode ter sido removido, ou você não tem acesso a ele.'}
             </p>
             <Link
               href={backHref}
@@ -82,6 +94,15 @@ export default async function AbrirAnexoPage({
   }
 
   const { info } = result
+
+  // A casa optou por pular o aviso: vai direto ao anexo. **A barreira continua
+  // intacta** — o destino é a rota `/api/...`, que segue servindo em origem opaca
+  // com a CSP; o que some é a tela de "não digite sua senha" e a contagem de 3s.
+  // Isto aqui também cobre link clicado antes do toggle mudar (o card do
+  // dependente apontava para `/abrir-anexo`).
+  const { htmlWarning } = await getHouseAttachmentSettings(info.houseId)
+  if (!htmlWarning) redirect(info.href)
+
   const sender = info.senderName ?? 'seu tutor'
 
   return (

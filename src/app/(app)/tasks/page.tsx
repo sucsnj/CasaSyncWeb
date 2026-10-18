@@ -14,6 +14,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskSlaSettings,
   getHouseTextLimitsSettings,
+  getHouseAttachmentSettings,
 } from '@/utils/house-settings'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
@@ -95,6 +96,12 @@ export default async function TasksPage() {
   const textLimitsSettings = isAdmin && houseIdForSettings
     ? await getHouseTextLimitsSettings(houseIdForSettings)
     : undefined
+  // A casa permite anexos em tarefa? (ADR-0026). Lido para os **dois** papéis: o
+  // ADMIN precisa saber se esconde o input, e o dependente se o anexo abre. Mesmo
+  // `getHouseSettingsMap` das leituras acima — zero round-trip extra.
+  const attachmentSettings = houseIdForSettings
+    ? await getHouseAttachmentSettings(houseIdForSettings)
+    : undefined
 
   let content: React.ReactNode
 
@@ -123,6 +130,7 @@ export default async function TasksPage() {
           maxExtensions={extensionRulesSettings?.maxExtensions}
           taskDecay={taskDecaySettings}
           textLimits={textLimitsSettings}
+          attachmentsAllowed={attachmentSettings?.tasksAllowed}
         />
       )
     }
@@ -153,6 +161,7 @@ export default async function TasksPage() {
           creatorNames={creatorNames}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           taskDecay={taskDecaySettings}
+          attachmentsAllowed={attachmentSettings?.tasksAllowed}
         />
       )
     }

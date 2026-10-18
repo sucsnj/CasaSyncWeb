@@ -10,7 +10,7 @@ import {
   validateChestItemTitle,
 } from '@/utils/chest-attachment'
 import { removeStorageFile } from '@/utils/storage'
-import { getHouseChestRulesSettings } from '@/utils/house-settings'
+import { getHouseAttachmentSettings, getHouseChestRulesSettings } from '@/utils/house-settings'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
 
@@ -156,6 +156,18 @@ export async function createChestItem(input: {
   const limitError = await checkChestItemLimit(admin, input.houseId, maxItems)
   if (limitError) return { ok: false, error: limitError }
 
+  // A casa desligou os anexos do baú? (chave `attachments`, ADR-0026). Custo zero
+  // de round-trip: o getter entra no mesmo `getHouseSettingsMap` do teto acima.
+  // No baú o arquivo é obrigatório, então desligar isto equivale a pausar o
+  // acervo — o ADMIN ainda abre o baú para **excluir** o que já existe.
+  const attachments = await getHouseAttachmentSettings(input.houseId)
+  if (!attachments.chestAllowed) {
+    return {
+      ok: false,
+      error: 'A casa desativou os anexos no baú. Ligue a opção em Configurações para adicionar material.',
+    }
+  }
+
   const title = input.title.trim()
   const titleError = validateChestItemTitle(title)
   if (titleError) return { ok: false, error: titleError }
@@ -226,6 +238,17 @@ export async function updateChestItem(
   // Ausente = manter o que já está.
   if (patch.fileUrl !== undefined) {
     if (patch.fileUrl) {
+      // A casa desligou os anexos do baú? (ADR-0026) — trocou/recriou material com
+      // a opção desligada é recusado; renomear o item continua liberado (não
+      // envolve anexo). Custo zero de round-trip (mesmo `getHouseSettingsMap`).
+      const attachments = await getHouseAttachmentSettings(item.house_id)
+      if (!attachments.chestAllowed) {
+        return {
+          ok: false,
+          error: 'A casa desativou os anexos no baú. Ligue a opção em Configurações para trocar o material.',
+        }
+      }
+
       const fileName = patch.fileName?.trim() || null
       const fileType =
         patch.fileType?.trim().toLowerCase() ||

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Package, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Lock, Package, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createChestItem, deleteChestItem, updateChestItem } from '@/actions/chest'
 import { TaskAttachmentInput } from '@/components/tasks/task-attachment-input'
@@ -46,6 +46,7 @@ export function ChestAdmin({
   houses,
   activeHouseId,
   maxItems,
+  chestAllowedByHouse,
 }: {
   initialItems: ChestItemView[]
   /** Casas que o ADMIN controla (`house_members.role = 'ADMIN'`). */
@@ -53,6 +54,14 @@ export function ChestAdmin({
   activeHouseId: string
   /** Teto de itens por casa (`chest_rules`, `0` = sem limite). */
   maxItems: number
+  /**
+   * `houseId -> anexos liberados no baú` (ADR-0026). É **por casa** porque o item
+   * do baú tem casa própria, escolhida no form: a decisão precisa ser da casa que
+   * o item vai morar, não da casa ativa. Vem de UMA consulta com `.in()` (ver
+   * `getHousesAttachmentSettings`), então o custo não cresce com o número de casas.
+   * Casa ausente do mapa = ligado (o default da configuração).
+   */
+  chestAllowedByHouse?: Record<string, boolean>
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
@@ -134,6 +143,12 @@ export function ChestAdmin({
     maxItems > 0 && itemsInSelectedHouse >= Math.floor(maxItems * 0.8)
   const limitReached = maxItems > 0 && itemsInSelectedHouse >= maxItems
   const limitBlocksCreate = limitReached && !editingId
+
+  // A casa **selecionada no form** desligou os anexos? (ADR-0026). Como o item do
+  // baú tem casa própria, é a casa escolhida que decide — daí o mapa por casa em
+  // vez de um booleano único. Casa fora do mapa = ligado (default da config).
+  const chestAllowed = chestAllowedByHouse?.[houseId] ?? true
+  const attachmentsBlocked = !chestAllowed
 
   function resetForm() {
     setEditingId(null)
@@ -350,15 +365,30 @@ export function ChestAdmin({
 
                 <div className="grid gap-2">
                   <Label>Arquivo</Label>
-                  <TaskAttachmentInput
-                    ownerId={houseId}
-                    folder={CHEST_ITEM_FOLDER}
-                    url={attachment.url}
-                    name={attachment.name}
-                    type={attachment.type}
-                    onChange={setAttachment}
-                    disabled={pending}
-                  />
+                  {attachmentsBlocked ? (
+                    // Item do baú é acervo de arquivo: sem anexo não há o que
+                    // abrir, então o form inteiro para aqui. A barreira real é o
+                    // `createChestItem` (que recusa com a mesma mensagem).
+                    <div className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5">
+                      <Lock className="mt-0.5 size-4 shrink-0 text-slate-400" />
+                      <p className="text-xs text-slate-500">
+                        Os anexos estão desativados nesta casa — não dá para adicionar
+                        nem trocar material. Para usar o baú de novo, ligue a opção em
+                        Configurações. Os itens que já estão aqui continuam listados e
+                        podem ser excluídos.
+                      </p>
+                    </div>
+                  ) : (
+                    <TaskAttachmentInput
+                      ownerId={houseId}
+                      folder={CHEST_ITEM_FOLDER}
+                      url={attachment.url}
+                      name={attachment.name}
+                      type={attachment.type}
+                      onChange={setAttachment}
+                      disabled={pending}
+                    />
+                  )}
                 </div>
 
                 {formError ? (
@@ -370,7 +400,7 @@ export function ChestAdmin({
                 <div className="flex flex-col gap-2">
                   <Button
                     type="submit"
-                    disabled={pending || limitBlocksCreate}
+                    disabled={pending || limitBlocksCreate || attachmentsBlocked}
                     className="w-full"
                   >
                     {pending
@@ -447,6 +477,9 @@ export function ChestAdmin({
                   name={item.file_name}
                   type={item.file_type}
                   htmlHref={`/api/chest-item/${item.id}`}
+                  // Por item, não pela casa selecionada no form: a lista mostra
+                  // itens de várias casas, e cada uma tem a sua opção (ADR-0026).
+                  blocked={chestAllowedByHouse?.[item.house_id] === false}
                 />
 
                 <div className="flex justify-end gap-2">

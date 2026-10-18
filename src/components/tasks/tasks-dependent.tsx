@@ -43,6 +43,7 @@ export function TasksDependent({
   creatorNames,
   dueSoonHours = 4,
   taskDecay,
+  attachmentsAllowed = true,
 }: {
   houseId: string
   initialTasks: Task[]
@@ -51,6 +52,12 @@ export function TasksDependent({
   dueSoonHours?: number
   /** Decaimento de pontos de tarefas — settings.casa. */
   taskDecay?: TaskDecaySettings
+  /**
+   * A casa permite anexos em tarefa? (ADR-0026). Default ligado, igual à
+   * configuração — o chip bloqueado é a consequência, não o bloqueio em si (a
+   * barreira está no servidor).
+   */
+  attachmentsAllowed?: boolean
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
@@ -309,6 +316,10 @@ export function TasksDependent({
                           // material. Imagem/vídeo/PDF seguem diretos.
                           htmlHref={`/abrir-anexo?kind=task&id=${task.id}`}
                           hideFileName
+                          // Com os anexos desligados na casa o chip vira um aviso
+                          // neutro (ADR-0026): o material continua existindo, mas
+                          // ninguém abre mais.
+                          blocked={!attachmentsAllowed}
                         />
                       ) : null}
                       <p className="font-semibold text-slate-800">{task.title}</p>

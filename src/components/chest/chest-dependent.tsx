@@ -26,10 +26,16 @@ import type { ChestItemView } from './chest-types'
 export function ChestDependent({
   initialItems,
   houseId,
+  attachmentsAllowed = true,
 }: {
   initialItems: ChestItemView[]
   /** Casa do dependente — é o filtro do Realtime. */
   houseId: string
+  /**
+   * A casa permite anexos no baú? (ADR-0026). Default ligado, igual à
+   * configuração da casa; o bloqueio real está no servidor e nas rotas `/api/...`.
+   */
+  attachmentsAllowed?: boolean
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
@@ -119,6 +125,9 @@ export function ChestDependent({
                   // é criança. Imagem/vídeo/PDF seguem diretos pela URL.
                   htmlHref={`/abrir-anexo?kind=chest&id=${item.id}`}
                   hideFileName
+                  // Com os anexos do baú desligados o item continua listado
+                  // (o acervo não some) mas o arquivo não abre — ADR-0026.
+                  blocked={!attachmentsAllowed}
                 />
               </CardContent>
             </Card>

@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
+  ATTACHMENT_SETTING_FIELDS,
+  DEFAULT_ATTACHMENTS,
   DEFAULT_CHEST_RULES,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
@@ -27,27 +29,30 @@ import {
   type TaskRulesSettings,
   type TaskSlaSettings,
   type TextLimitsSettings,
+  type AttachmentSettings,
 } from '@/utils/settings'
 import { TEXT_LIMIT_MAX, TEXT_LIMIT_MIN } from '@/utils/text-limits'
 import { isValidTimeZone } from '@/utils/timezone'
 import { MUTEABLE_CATEGORIES } from '@/types/notifications'
 import { POINTS_MAX } from './types'
 import type { ActionResult } from './types'
+import type { Json } from '@/types/database'
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+type AdminHouse = { ok: true; houseId: string; userId: string } | { ok: false; error: string }
+
 /**
- * ADMIN salva a configuração de uma chave da casa ativa. A autorização é
- * derivada da sessão + membresia ADMIN (nunca do cliente) — mesmo padrão de
- * `assertAdminCanManage`. A escrita é um upsert por `(house_id, key)` com
- * `value` jsonb.
+ * ADMIN da **casa ativa** — o mesmo guard que `updateHouseSettings` já fazia,
+ * extraído para que as duas actions de configuração não tenham duas cópias
+ * (cópia que diverge em silêncio: a uma acaba conferindo `role`, a outra não).
+ *
+ * A casa vem de `getActiveAdminHouse` (cookie da casa ativa) e o alvo do
+ * usuário vem da sessão — nada disso entra por parâmetro do cliente.
  */
-export async function updateHouseSettings(
-  key: HouseSettingsKey,
-  patch: Record<string, unknown>
-): Promise<ActionResult> {
+async function assertActiveHouseAdmin(): Promise<AdminHouse> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -57,7 +62,6 @@ export async function updateHouseSettings(
   }
 
   const admin = createAdminClient()
-
   const { data: membership } = await admin
     .from('house_members')
     .select('id')
@@ -70,15 +74,23 @@ export async function updateHouseSettings(
     return { ok: false, error: 'Casa não encontrada ou sem permissão.' }
   }
 
-  const value = validateSettings(key, patch)
-  if (!value.ok) return value
+  return { ok: true, houseId: activeHouse.id, userId: user.id }
+}
 
+/** Upsert `(house_id, key)` do jsonb de configuração da casa. */
+async function writeHouseSetting(
+  houseId: string,
+  userId: string,
+  key: HouseSettingsKey,
+  value: Json
+): Promise<ActionResult> {
+  const admin = createAdminClient()
   const { error } = await admin.from('house_settings').upsert(
     {
-      house_id: activeHouse.id,
+      house_id: houseId,
       key,
-      value: value.value,
-      updated_by: user.id,
+      value,
+      updated_by: userId,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'house_id,key' }
@@ -88,6 +100,28 @@ export async function updateHouseSettings(
     console.error('[SETTINGS] Falha ao salvar configuração:', error)
     return { ok: false, error: 'Falha ao salvar as configurações.' }
   }
+
+  return { ok: true }
+}
+
+/**
+ * ADMIN salva a configuração de uma chave da casa ativa. A autorização é
+ * derivada da sessão + membresia ADMIN (nunca do cliente) — mesmo padrão de
+ * `assertAdminCanManage`. A escrita é um upsert por `(house_id, key)` com
+ * `value` jsonb.
+ */
+export async function updateHouseSettings(
+  key: HouseSettingsKey,
+  patch: Record<string, unknown>
+): Promise<ActionResult> {
+  const guard = await assertActiveHouseAdmin()
+  if (!guard.ok) return guard
+
+  const value = validateSettings(key, patch)
+  if (!value.ok) return value
+
+  const written = await writeHouseSetting(guard.houseId, guard.userId, key, value.value)
+  if (!written.ok) return written
 
   revalidatePath('/dashboard/admin/settings')
   if (key === 'quick_message') {
@@ -131,6 +165,12 @@ function validateSettings(
   key: HouseSettingsKey,
   patch: Record<string, unknown>
 ): SettingsResult {
+  // `attachments` é escrita SÓ por `updateAttachmentSettings`, que exige o PIN do
+  // sistema (ADR-0026). Sem este refusal explícito a action genérica cairia no
+  // `validateNotificationRetention` do fim — e gravaria a chave protegida sem PIN.
+  if (key === 'attachments') {
+    return { ok: false, error: 'Use o card de anexos (exige o PIN do sistema).' }
+  }
   if (key === 'reward_pricing') return validateRewardPricing(patch)
   if (key === 'quick_message') return validateQuickMessage(patch)
   if (key === 'task_sla') return validateTaskSla(patch)
@@ -159,6 +199,7 @@ type SettingsResult =
     | ChestRulesSettings
     | HouseTimezoneSettings
     | TextLimitsSettings
+    | AttachmentSettings
   }
   | { ok: false; error: string }
 
@@ -451,4 +492,97 @@ function validateTextLimits(patch: Record<string, unknown>): SettingsResult {
   }
 
   return { ok: true, value: base }
+}
+
+/**
+ * Anexos da casa (ADR-0026). Só booleanos, e só os três campos da whitelist —
+ * a base é o default, então campo extra enviado pelo cliente não entra no jsonb.
+ *
+ * Um valor fora de `boolean` é recusado com mensagem explícita (em vez de gravar e
+ * mostrar erro depois) porque o efeito é de segurança: um jsonb com o shape
+ * errado cairia no default **ligado** na leitura, ou seja, a casa acreditaria ter
+ * desligado o anexo e o app continuaria liberando.
+ */
+function validateAttachments(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_ATTACHMENTS }
+
+  for (const campo of ATTACHMENT_SETTING_FIELDS) {
+    const value = patch[campo] ?? base[campo]
+    if (typeof value !== 'boolean') {
+      return { ok: false, error: `A opção "${campo}" deve ser ligada ou desligada.` }
+    }
+    base[campo] = value
+  }
+
+  return { ok: true, value: base }
+}
+
+/**
+ * ADMIN salva as opções de anexo da casa ativa — **exige o PIN do sistema**
+ * (`MASTER_PIN`), o mesmo que valida o cadastro de ADMIN.
+ *
+ * Por que uma action separada em vez de só mais uma chave no
+ * `updateHouseSettings`: `attachments` liga/desliga material e a tela de aviso,
+ * então é configuração de segurança — não deve dividir caminho com "aumento de
+ * preço da recompensa" ou "prazo padrão". Juntas, o PIN do sistema viraria um
+ * argumento de uma action que muda 11 outras configurações, e bastaria um `if` novo
+ * que não conferisse o PIN para abrir a porta. Aqui o **único** caminho de escrita
+ * da chave já é a barreira (`updateHouseSettings` recusa a chave explicitamente).
+ *
+ * `MASTER_PIN` é comparado de forma **exata** (como em `registerAdmin`) e falha
+ * fechada quando a env não está configurada — nunca "sem PIN, segue o save". O
+ * PIN nunca vai ao estado React (ADR-0003): entra por `FormData` no submit e é
+ * descartado. A action não deixa exceção vazar (o Next sobreporia o overlay de dev
+ * com os argumentos da requisição).
+ */
+export async function updateAttachmentSettings(
+  patch: Record<string, unknown>,
+  masterPin: string
+): Promise<ActionResult> {
+  try {
+    if (!process.env.MASTER_PIN) {
+      console.error('[SETTINGS] MASTER_PIN não configurado — anexos não podem ser alterados.')
+      return { ok: false, error: 'Configuração do servidor indisponível.' }
+    }
+
+    const guard = await assertActiveHouseAdmin()
+    if (!guard.ok) return guard
+
+    if (masterPin !== process.env.MASTER_PIN) {
+      // Log sem o PIN: tentativa com credencial errada é o sinal que o dono do
+      // app quer ver no log da Vercel.
+      console.warn(
+        `[SETTINGS] PIN do sistema inválido ao tentar alterar os anexos da casa ${guard.houseId} (usuário ${guard.userId}).`
+      )
+      return { ok: false, error: 'PIN do sistema inválido.' }
+    }
+
+    const value = validateAttachments(patch)
+    if (!value.ok) return value
+
+    const written = await writeHouseSetting(
+      guard.houseId,
+      guard.userId,
+      'attachments',
+      value.value
+    )
+    if (!written.ok) return written
+
+    revalidatePath('/dashboard/admin/settings')
+    // O toggle decide se o input de anexo aparece (form do ADMIN) e se o chip
+    // abre (cards dos dois papéis) — em `/tasks` e no `/chest`.
+    revalidatePath('/tasks')
+    revalidatePath('/chest')
+    // O aviso vive em `/abrir-anexo` e o bloqueio de leitura nas rotas `/api/...`
+    // do anexo. A tela é lida no request, mas invalidar mantém o mesmo
+    // comportamento das demais configurações da casa.
+    revalidatePath('/abrir-anexo')
+    revalidatePath('/dashboard/dependent')
+
+    return { ok: true, message: 'Configurações de anexos salvas.' }
+  } catch (err) {
+    // Action de credencial: nunca deixa a exceção vazar (ADR-0003).
+    console.error('[SETTINGS] Erro ao salvar configuração de anexos:', err)
+    return { ok: false, error: 'Falha ao salvar as configurações de anexos.' }
+  }
 }

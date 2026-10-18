@@ -25,6 +25,7 @@ export type HouseSettingsKey =
   | 'chest_rules'
   | 'house_timezone'
   | 'text_limits'
+  | 'attachments'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -231,6 +232,49 @@ export const DEFAULT_TEXT_LIMITS: TextLimitsSettings = {
   rewardDescription: 500,
   achievementDescription: 500,
 }
+
+/**
+ * Anexos da casa (ADR-0026): se a casa pode anexar material em tarefa/baú e se o
+ * dependente passa pela tela de aviso antes de abrir uma página HTML.
+ *
+ * **Os três defaults são `true`** — o oposto da convenção dos tetres (`0` =
+ * desligado, para não mudar o comportamento de quem já usa). Aqui o default
+ * "desligado" *mudaria* o app de toda casa existente: quem hoje anexa arquivo na
+ * tarefa perderia a feature sem ter pedido nada. O que se quer evitar não é
+ * "ninguém configurou", é o contrário — casa que já usa não pode ser surprise por
+ * um default.
+ *
+ * `htmlWarning` desligar **não** é o mesmo que anexar HTML sem barreira: a página
+ * continua servida em origem opaca (`CSP: sandbox`), então o que some é a tela de
+ * "não digite sua senha" e a contagem de 3s (ver `docs/adr/0025`).
+ */
+export type AttachmentSettings = {
+  /** A casa pode anexar arquivo ou link em tarefa. */
+  tasksAllowed: boolean
+  /** A casa pode anexar arquivo ou link no baú. */
+  chestAllowed: boolean
+  /** O dependente passa pela tela de aviso antes de abrir anexo HTML. */
+  htmlWarning: boolean
+}
+
+export const DEFAULT_ATTACHMENTS: AttachmentSettings = {
+  tasksAllowed: true,
+  chestAllowed: true,
+  htmlWarning: true,
+}
+
+/**
+ * Campos que a action aceita gravar — a whitelist manda, não o objeto recebido
+ * (mesmo padrão de `validateNotificationMute`): chave extra enviada pelo cliente
+ * entra no jsonb se ninguém filtra.
+ */
+export const ATTACHMENT_SETTING_FIELDS = [
+  'tasksAllowed',
+  'chestAllowed',
+  'htmlWarning',
+] as const
+
+export type AttachmentSettingField = (typeof ATTACHMENT_SETTING_FIELDS)[number]
 
 export function mergeSettings<T extends Record<string, unknown>>(
   value: Record<string, unknown> | T | null | undefined,

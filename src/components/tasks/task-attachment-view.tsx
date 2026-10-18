@@ -7,6 +7,7 @@ import {
   Globe,
   ImageIcon,
   Link2,
+  Lock,
   Paperclip,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -49,6 +50,7 @@ export function TaskAttachmentView({
   taskId,
   hideFileName = false,
   htmlHref,
+  blocked = false,
 }: {
   url: string
   name?: string | null
@@ -71,6 +73,16 @@ export function TaskAttachmentView({
    * mesmos, então só muda quem autoriza a leitura.
    */
   htmlHref?: string
+  /**
+   * A casa **desativou** os anexos deste módulo (chave `attachments`, ADR-0026).
+   *
+   * O anexo continua gravado (o material não é apagado), mas ninguém abre mais:
+   * o chip vira um bloco neutro, sem `href`, sem miniatura e sem revelar o
+   * domínio do link. Não é "esconder a UI e pronto" — a barreira de verdade está
+   * no servidor (as actions recusam gravar e as rotas `/api/...` recusam servir o
+   * HTML); isto aqui é para o card não convidar a um clique que vai dar erro.
+   */
+  blocked?: boolean,
 }) {
   const kind = attachmentKind(type)
   const kindLabel = attachmentKindLabel(kind)
@@ -92,6 +104,30 @@ export function TaskAttachmentView({
     target: '_blank',
     rel: 'noopener noreferrer',
   } as const
+
+  if (blocked) {
+    // Sem `href` e sem miniatura: um chip neutro que explica o porquê. O nome do
+    // arquivo continua visível (o material existe, o ADMIN pode querer removê-lo),
+    // mas o **domínio do link não aparece** — numa casa com links desligados,
+    // mostrar para onde o link ia seria entregar o que o toggle esconde.
+    return (
+      <div
+        className="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5"
+        title="A casa desativou os anexos — este material não pode mais ser aberto."
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-slate-500">
+          <Lock className="size-5" />
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium text-slate-500">{label}</span>
+          <span className="flex items-center gap-1 text-xs text-slate-400">
+            <Lock className="size-3" />
+            Anexos desativados nesta casa
+          </span>
+        </span>
+      </div>
+    )
+  }
 
   if (kind === 'image') {
     return (
