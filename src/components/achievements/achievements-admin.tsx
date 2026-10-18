@@ -614,7 +614,7 @@ export function AchievementsAdmin({
                   }
                 />
                 <p className="text-xs text-slate-500">
-                  Pontos por nível = recompensa × nível × multiplicador
+                  Pontos por nível = (recompensa + nível) × multiplicador
                 </p>
               </div>
             </div>
@@ -718,7 +718,7 @@ export function AchievementsAdmin({
         <div className="grid gap-4 xl:grid-cols-2">
           {achievements.map((achievement) => {
             const byProfile = progressMap.get(achievement.id)
-            // **Ganho atual** de cada dependente: pts base × nível × multiplicador
+            // **Ganho atual** de cada dependente: (pts base + nível) × multiplicador
             // (a mesma fórmula de `claimAchievementReward`), arredondado igual no
             // crédito — então o número aqui é o número que entra no saldo.
             //
@@ -851,11 +851,11 @@ export function AchievementsAdmin({
                                     ? `Nível ${entry.level}/${achievement.max_level}`
                                     : `Nível ${entry.level}`}
                                 </span>
-                                {/* Ganho atual: base × nível × multiplicador,
+                                {/* Ganho atual: (base + nível) × multiplicador,
                                     arredondado como o crédito. */}
                                 <span
                                   className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700"
-                                  title={`Ganho atual no nível ${entry.level}: ${achievement.reward_points} × ${entry.level} × ${achievement.level_multiplier} = ${rewardAtLevel(entry.level)} pts`}
+                                  title={`Ganho atual no nível ${entry.level}: (${achievement.reward_points} + ${entry.level}) × ${achievement.level_multiplier} = ${rewardAtLevel(entry.level)} pts`}
                                 >
                                   +{rewardAtLevel(entry.level)} pts
                                 </span>

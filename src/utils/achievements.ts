@@ -48,17 +48,26 @@ export const ACHIEVEMENT_ICONS = [
 ] as const
 
 /**
- * Recompensa da conquista no nível `level`: pts base × nível × multiplicador
- * por nível (configurável por conquista, default 1). Ex.: base 10, nível 3,
- * mult 1 → 30 pts; mult 2 → 60 pts. Usada no crédito (`claimAchievementReward`)
- * e na exibição dos cards (ADMIN/dependente). Função pura (isomórfica).
+ * Recompensa da conquista no nível `level`: **(pts base + nível) × multiplicador**
+ * por nível (configurável por conquista, default 1). Ex.: base 10, mult 1 →
+ * nível 1 = 11 pts, nível 3 = 13 pts, nível 10 = 20 pts; mult 2 dobra.
+ *
+ * **Por que a soma é aditiva no nível:** com `base × nível × mult` o prêmio
+ * crescia *multiplicativamente* — base 10 chegava a 100 pts no nível 10 e a 200 no
+ * nível 20, ou seja, um único resgate de nível alto valia mais do que a casa
+ * inteira gastava num mês. Com `(base + nível) × mult` o nível ainda paga mais
+ * (é justo), mas o crescimento é **linear e limitado**: subir o `max_level` não
+ * vira brecha de pontos.
+ *
+ * Função pura (usada no crédito de `claimAchievementReward` e na exibição dos
+ * cards de ADMIN e dependente).
  */
 export function achievementRewardAtLevel(
   basePoints: number,
   level: number,
   multiplier: number
 ): number {
-  return Math.round(basePoints * level * multiplier)
+  return Math.round((basePoints + level) * multiplier)
 }
 
 /**

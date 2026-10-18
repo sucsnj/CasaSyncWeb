@@ -164,7 +164,7 @@ Chaves e efeitos:
 | is_repeatable | bool | repetível sobe de nível até o cap; única resgata só no nível 1 |
 | is_secret | bool | card oculto "Conquista secreta" até desbloquear |
 | max_level | int | cap p/ repetíveis (1–1000, default 10; server clampa p/ 1 em únicas) |
-| level_multiplier | numeric | default 1; recompensa do nível N = `reward_points × N × mult` |
+| level_multiplier | numeric | default 1; recompensa do nível N = `(reward_points + N) × mult` |
 | created_by | uuid FK → profiles | `on delete set null` |
 | created_at / updated_at | timestamptz | |
 

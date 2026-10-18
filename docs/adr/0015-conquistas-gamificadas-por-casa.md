@@ -15,11 +15,17 @@
 >   nível máximo. Única = nível 1 (server clampa `max_level = 1` quando
 >   `is_repeatable = false`).
 > - **`level_multiplier`** (numeric, default 1) — **recompensa no nível N =
->   `reward_points × N × level_multiplier`** (`Math.round`, helper puro
->   `achievementRewardAtLevel` em `src/utils/achievements.ts`). O crédito do
->   resgate usa o valor do **nível atual**; a UI dependente mostra a recompensa
->   por nível. *Mantém a regra do ADR-0001/ajuste de `approveTask`: crédito direto
->   em `profiles.points` via service role, com rollback da linha em falha.*
+>   `(reward_points + N) × level_multiplier`** (`Math.round`, helper puro
+>   `achievementRewardAtLevel` em `src/utils/achievements.ts`). ~~`reward_points ×
+>   N × level_multiplier`~~ — **superado**: o crescimento era multiplicativo e
+>   no nível 10 uma conquista de 10 pts pagava 100 pts por ciclo (200 no
+>   nível 20), então subir o `max_level` virava brecha de pontos; com a soma
+>   **aditiva no nível** o prêmio ainda cresce com o nível, mas de forma linear
+>   e limitada (10 pts → 11 no nível 1, 13 no nível 3, 20 no nível 10). O
+> crédito do resgate usa o valor do **nível atual**; a UI dependente mostra a
+> recompensa por nível. *Mantém a regra do ADR-0001/ajuste de `approveTask`:
+> crédito direto em `profiles.points` via service role, com rollback da linha em
+> falha.*
 > Sem alteração em `dependent_achievements` (o cap fica só na leitura). Ver seção
 > no topo do `PROJECT_STATUS.md` para o SQL (registro histórico — já aplicado no banco).
 
@@ -60,7 +66,7 @@ Restrições herdadas do projeto:
   progresso trava no objetivo e o excedente é descartado.**
 - **Resgate (`claimAchievementReward`)** — só DEPENDENT da própria casa; credita
   **direto em `profiles.points`** (mesmo ajuste simples de `approveTask`, sem
-  serviço compartilhado) o valor **`reward_points × nível atual × level_multiplier`**
+  serviço compartilhado) o valor **`(reward_points + nível atual) × level_multiplier`**
   (`achievementRewardAtLevel`). Guard anti-race no `unlocked_at`
   lido (repetíveis) ou `level == 1` (não repetíveis); rollback da linha se o
   crédito falhar.

@@ -681,7 +681,7 @@ export async function claimAchievementReward(
     return { ok: false, error: 'Esta conquista já foi resgatada.' }
   }
 
-  // Recompensa do nível ATUAL do dependente: pts base × nível × multiplicador.
+  // Recompensa do nível ATUAL do dependente: (pts base + nível) × multiplicador.
   const points = achievementRewardAtLevel(
     achievement.reward_points,
     row.level,

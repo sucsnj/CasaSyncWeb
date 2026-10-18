@@ -59,7 +59,7 @@ em primeiro; siglas técnicas resolvidas no fim.
   `target_count`.
 - **Desbloqueio** — `current_progress ≥ target_count` marca `unlocked_at` e dá o
   botão de resgatar a recompensa ao dependente.
-- **Resgate de conquista** — creditar `reward_points × nível × multiplicador`
+- **Resgate de conquista** — creditar `(reward_points + nível) × multiplicador`
   direto em `profiles.points`; repetível reinicia o ciclo zerando o progresso
   (`level+1` até o cap, cada ciclo exige o objetivo inteiro de novo — ADR-0019),
   única encerra.
