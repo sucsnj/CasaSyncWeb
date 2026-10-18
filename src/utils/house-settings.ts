@@ -180,53 +180,6 @@ export const getHouseAttachmentSettings = cache(
 )
 
 /**
- * Anexos de **várias casas em UMA consulta** — existe para o form do baú, que
- * deixa o ADMIN escolher a casa do item (ADR-0026).
- *
- * Por que não `getHouseAttachmentSettings` em cima de cada casa: o getter é
- * memoizado por `(casa)`, então um ADMIN de 3 casas custaria **3 leituras** do
- * mesmo `house_settings`. Aqui é uma consulta só com `.in('house_id', …)`, e o
- * group-by sai no próprio JS — o número de round-trips não cresce com o número de
- * casas (regra do `AGENTS.md` §3: contar round-trips, não estimar).
- *
- * `houseIds` vazio → mapa vazio **sem** consulta.
- */
-export const getHousesAttachmentSettings = cache(
-  async (houseIds: string[]): Promise<Map<string, AttachmentSettings>> => {
-    const result = new Map<string, AttachmentSettings>()
-    if (houseIds.length === 0) return result
-
-    const admin = createAdminClient()
-    const { data } = await admin
-      .from('house_settings')
-      .select('house_id, value')
-      .eq('key', 'attachments')
-      .in('house_id', houseIds)
-
-    const byHouse = new Map<string, Record<string, unknown> | null>()
-    for (const row of (data ?? []) as Array<{ house_id: string; value: unknown }>) {
-      byHouse.set(
-        row.house_id,
-        (row.value ?? null) as Record<string, unknown> | null
-      )
-    }
-
-    // Casa sem linha (ou com linha suja) cai no default — **ligado**, que é o que
-    // preserva o comportamento de toda casa que não configurou nada.
-    for (const houseId of houseIds) {
-      const merged = mergeSettings(byHouse.get(houseId), DEFAULT_ATTACHMENTS)
-      result.set(houseId, {
-        tasksAllowed: readBoolean(merged.tasksAllowed, DEFAULT_ATTACHMENTS.tasksAllowed),
-        chestAllowed: readBoolean(merged.chestAllowed, DEFAULT_ATTACHMENTS.chestAllowed),
-        htmlWarning: readBoolean(merged.htmlWarning, DEFAULT_ATTACHMENTS.htmlWarning),
-      })
-    }
-
-    return result
-  }
-)
-
-/**
  * Fuso horário da casa. Lido pelos dois lugares que dependem de "que horas são
  * lá": o agendamento dos comunicados (`getDueComunicados`) e o dia-contagem da
  * Streak (`registerLoginDay`).

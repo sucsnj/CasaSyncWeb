@@ -62,10 +62,10 @@ Três fatos do terreno moldaram a decisão, e nenhum deles é óbvio:
 8. **UI**: `TaskAttachmentView` ganhou `blocked` — vira chip neutro com cadeado, sem
    `href`, sem miniatura e **sem mostrar o domínio do link** (mostrar para onde o
    link ia seria entregar o que o toggle esconde). Os inputs de upload somem
-   inteiros (nada de input desabilitado que convida a tentar). No baú a decisão é
-   **por casa** (`chestAllowedByHouse`), porque o item tem casa própria escolhida no
-   form — e vem de **uma** consulta com `.in()` (`getHousesAttachmentSettings`), para
-   o custo não crescer com o número de casas.
+   inteiros (nada de input desabilitado que convida a tentar). No baú a decisão é da
+   **casa ativa** — o item nasce nela (emenda "baú por casa" no ADR-0024), então
+   basta um booleano por tela, lido no mesmo `getHouseSettingsMap` das outras
+   chaves.
 
 ## Alternativas descartadas
 

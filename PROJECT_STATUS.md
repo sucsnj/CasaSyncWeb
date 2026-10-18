@@ -1,5 +1,60 @@
 # CasaSync Web — PROJECT STATUS
 
+## Baú da casa: o acervo é da casa selecionada, não do ADMIN (implementado — sem SQL)
+
+### O que mudou
+O baú deixou de ser um acervo **do ADMIN** (que mostrava os itens de todas as casas
+que ele controlava, com chip do nome da casa nos de outra e um select "Casa" no
+form) e passou a ser o acervo **da casa selecionada**, como `tasks` e `rewards`.
+
+- **A lista é da casa ativa:** `/chest` carrega `.eq('house_id', active.id)` em vez
+  de `.in(...)` sobre as casas do ADMIN. Trocar a casa ativa (que já revalida a rota
+  via `HOUSE_CONTEXT_ROUTES`) troca o acervo exibido.
+- **O form perdeu o select "Casa"**: o texto do form diz a casa de destino, com
+  atalho para `/dashboard/admin/houses`.
+- **`createChestItem` não recebe mais `houseId`** — a casa vem de
+  `getActiveAdminHouse()` e é conferida contra `house_members` com `role='ADMIN'`.
+  É o mesmo desenho de `applyPunishment`/`createDependent`: **menos parâmetro
+  público** é melhor do que conferir parâmetro público. `updateChestItem`/
+  `deleteChestItem` continuam autorizando pela **casa do próprio item** (o que
+  impede editar/excluir item de outra casa).
+- **O filtro do Realtime passou a `house_id=eq.<casa ativa>`** — antes, um item criado
+  por outra aba do mesmo ADMIN em outra casa entrava na lista mesmo fora da casa
+  exibida.
+- **O chip com o nome da casa saiu dos cards** e, com ele, o `houseName` do
+  `ChestItemView` (que voltou a ser a linha crua de `chest_items`) — todos os itens
+  da lista são da mesma casa, então o chip só fazia sentido entre casas.
+- **Contagem do teto simplificada**: `items.length` em vez de filtrar por casa
+  selecionada (a lista já é de uma casa só).
+- **Efeito colateral útil:** o `getHousesAttachmentSettings` (leitura multi-casa com
+  `.in()`, que existia para o form decidir por casa) ficou **sem uso e foi removido**
+  — o `/chest` voltou a ler só a casa ativa, no mesmo mapa das outras chaves.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. Nenhuma regra pura mudou (o `chest-attachment.ts` não foi
+tocado) e nenhuma classe CSS nova — o form trocou o `<select>` por um `<p>` com as
+mesmas cores já usadas no arquivo (`border-slate-200`/`bg-slate-50`/`text-xs`).
+
+**O que não pôde ser verificado aqui:** `createChestItem` e a rota são server-only,
+então a dedução da casa a partir da sessão é validada por `typecheck`/`build` e por
+**teste em tela autenticada** (criar item em cada uma de 2 casas, conferir que
+ficaram em casas diferentes e que a lista troca junto com a casa ativa).
+
+### Pontos de atenção
+- **A coluna `house_id` continua igual** — é ela que escopa o acervo; nada de SQL.
+- **`update`/`delete` seguem escopados pela casa do item**, e isso agora é o que
+  impede o ADMIN de editar material de outra casa pela telaerrada (antes ele podia,
+  porque viajava entre casas na mesma lista).
+- **Item já criado em outra casa não aparece mais** nesta tela — ele continua no
+  banco e visível para o dependente daquela casa. Para gerenciá-lo, o ADMIN troca a
+  casa ativa (que é exatamente a decisão de produto).
+- **Não reintroduzir o select "Casa" nem o chip do nome**: os dois só faziam sentido
+  com o acervo multi-casa, e o chip por item não pode voltar como "casa de origem"
+  — a lista já é de uma casa.
+
+---
+
 ## Anexos da casa ligáveis/desligáveis, com PIN do sistema (implementado — sem SQL)
 
 ### O que foi implementado
@@ -42,12 +97,10 @@ do sistema** — o único card de configuração que exige credencial:
   `href`**, sem miniatura e **sem o domínio do link** (mostrar para onde o link ia
   seria entregar o que o toggle esconde). Os inputs de upload **somem** inteiros
   (não ficam desabilitados) e o baú mostra o motivo. No `/chest` do ADMIN a
-  decisão vem **por casa** (`chestAllowedByHouse`), lida com **uma** consulta
-  `.in()` (`getHousesAttachmentSettings`) — o custo não cresce com o número de
-  casas.
-- **Plumbing sem round-trip novo**: `/tasks` e o card de Configurações já liam
-  settings da casa, então o getter novo entra no mesmo `getHouseSettingsMap`.
-  `/chest` ganhou **+1** leitura (a multi-casa), que antes não lia settings.
+  decisão é a da **casa ativa** (o item nasce nela), então é um booleano por tela.
+- **Plumbing sem round-trip novo**: `/tasks`, `/chest` e o card de Configurações já
+  liam settings da casa, então o getter novo entra no mesmo `getHouseSettingsMap` —
+  **zero leitura a mais** que antes.
 - **Ver ADR-0026** para as alternativas descartadas (revogação real com bucket
   privado, 3 cards com 3 PINs, esconder a lista do baú) e o porquê de cada uma.
 
@@ -603,18 +656,19 @@ Decisões e alternativas descartadas em **ADR-0024**.
   `alter publication supabase_realtime` — **com Realtime**, porque baú é catálogo
   (o mesmo argumento de `rewards`): item novo/edição/exclusão chegam sem F5.
   Escritas só por service-role a partir das actions.
-- **O ADMIN escolhe a casa** no form (entre as casas que ele controla, inclusive
+- ~~**O ADMIN escolhe a casa** no form (entre as casas que ele controla, inclusive
   co-geridas) e a **casa do item é fixa**. A lista mostra **todas as suas casas**,
-  com **chip do nome** nas que não são a casa ativa — sem isso o item recém-criado
-  em outra casa sumiria da tela até ele trocar de casa.
+  com **chip do nome** nas que não são a casa ativa~~ — **superado pela emenda
+  "baú por casa"** (ver a seção no topo): o acervo é **da casa selecionada**, o
+  item nasce na casa ativa e o select + chip saíram.
 - **Título e arquivo editáveis de forma independente** (trocar o arquivo mantém o
   título e apaga o antigo do storage; renomear mantém o arquivo). Excluir pede
   `Modal` de confirmação.
-- **Escopo derivado da sessão** em todas as actions: o `houseId` que o cliente
-  manda no `createChestItem` é conferido contra `house_members` com
-  `role='ADMIN'`; `update`/`delete` autorizam pela **casa do próprio item** (lida
-  do banco), não pela casa ativa — é o que permite gerenciar o baú de várias casas
-  sem trocar. Item inexistente e item de outra casa devolvem a **mesma** mensagem.
+- **Escopo derivado da sessão** em todas as actions: o `createChestItem` **não
+  recebe mais `houseId`** — a casa vem de `getActiveAdminHouse` (e é conferida
+  contra `house_members` com `role='ADMIN'`); `update`/`delete` autorizam pela
+  **casa do próprio item** (lida do banco), não pela casa ativa. Item inexistente e
+  item de outra casa devolvem a **mesma** mensagem.
 - **Aparência idêntica à da tarefa**, por reuso de propósito: `chest-attachment.ts`
   é uma **fachada** sobre `task-attachment.ts` (reexporta a lista fechada de
   tipos, o teto de 5 MB, `attachmentKind`, `resolveAttachmentType`, `accept`) e
@@ -832,6 +886,14 @@ puro.
 
 ## Estado atual (verificado — sem pendências)
 
+- **Baú da casa: o acervo é da casa selecionada, não do ADMIN:** o `/chest` do
+  ADMIN lista só os itens da **casa ativa** e o item novo nasce nela — o select
+  "Casa" do form e o chip com o nome da casa saíram, e `createChestItem` deixou de
+  receber `houseId` (a casa vem de `getActiveAdminHouse`, como
+  `applyPunishment`/`createDependent`). O filtro do Realtime passou a ser da casa
+  ativa, e `update`/`delete` seguem autorizando pela casa do próprio item. **Sem
+  SQL.** Ver a seção no topo e a emenda "baú por casa" no **ADR-0024**.
+
 - **Anexos da casa ligáveis/desligáveis, com PIN do sistema:** card novo
   **"Anexos"** em Configurações com 3 toggles — **anexos em tarefas**, **anexos no
   baú** e **aviso antes de abrir uma página** — e, **exclusivamente** para alterar
@@ -882,9 +944,9 @@ puro.
 - **Baú da casa (rota `/chest`):** acervo de arquivos por casa — **só um título**
   (1–100, pode repetir) + 1 arquivo, com **os mesmos tipos e o mesmo teto de 5 MB
   do anexo da tarefa** (reaproveitados por fachada, sem duplicar componente). O
-  ADMIN escolhe a casa, pode renomear/trocar o arquivo/excluir, e gerencia as
-  casas dele sem trocar a casa ativa (chip do nome nos itens de outra casa); o
-  dependente só consulta e abre, com busca por título dos dois lados. **Sem
+  ADMIN **não** escolhe a casa: o item nasce na **casa ativa** e a lista é o acervo
+  dela; pode renomear/trocar o arquivo/excluir. Trocar a casa ativa troca o acervo
+  exibido. O dependente só consulta e abre, com busca por título dos dois lados. **Sem
   pontos, sem resgate e sem notificação**; Realtime sim (é catálogo). **Sem item na
   nav** de nenhum papel (só o card, nas duas visões gerais). SQL da tabela
   `chest_items` em `docs/sql/chest_items.sql`, **a aplicar antes do deploy**.

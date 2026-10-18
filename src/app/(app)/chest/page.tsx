@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
-  getAdminHouses,
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
@@ -12,7 +11,6 @@ import { ChestDependent } from '@/components/chest/chest-dependent'
 import {
   getHouseAttachmentSettings,
   getHouseChestRulesSettings,
-  getHousesAttachmentSettings,
 } from '@/utils/house-settings'
 import type { ChestItemView } from '@/components/chest/chest-types'
 
@@ -28,9 +26,8 @@ export const dynamic = 'force-dynamic'
  * o conteúdo.
  *
  * Leitura por **service-role**, com escopo derivado da sessão (ADR-0006):
- *   - ADMIN: itens de **todas** as casas que ele controla (`house_members.role =
- *     'ADMIN'`, via `getAdminHouses`), não só da casa ativa — é o que permite
- *     criar na casa B e editar o item sem trocar de casa;
+ *   - ADMIN: itens da **casa ativa** (`.eq('house_id', activeHouse.id)`) — o acervo
+ *     é da casa, não do ADMIN (emenda "baú por casa"), e o item novo nasce nela;
  *   - DEPENDENT: itens da **própria** casa (`.eq('house_id', house.id)`).
  *
  * Mais recentes primeiro (`created_at desc`): o acervo só cresce, e o material
@@ -49,61 +46,42 @@ export default async function ChestPage() {
   let content: React.ReactNode
 
   if (isAdmin) {
-    const houses = await getAdminHouses(user.id)
+    // O baú é **da casa ativa** (emenda "baú por casa" no ADR-0024): o acervo
+    // exibido é o dela e o item novo nasce nela, então a tela não precisa — e não
+    // quer — a lista de casas que o ADMIN controla.
+    const activeHouse = await getActiveAdminHouse()
 
-    if (houses.length === 0) {
+    if (!activeHouse) {
       content = (
         <p className="text-sm text-muted-foreground">
-          Crie ou selecione uma casa em{' '}
+          Selecione uma casa para abrir o baú dela em{' '}
           <a href="/dashboard/admin/houses" className="text-primary underline">
             Casas
-          </a>{' '}
-          para popular o baú.
+          </a>
+          .
         </p>
       )
     } else {
-      const [activeHouse, { data: items }] = await Promise.all([
-        getActiveAdminHouse(),
+      // Itens + configuração da casa em paralelo; os getters saem do mesmo
+      // `getHouseSettingsMap` da casa ativa (2 leituras, não 3).
+      const [{ data: items }, chestRules, attachments] = await Promise.all([
         admin
           .from('chest_items')
           .select('*')
-          .in(
-            'house_id',
-            houses.map((house) => house.id)
-          )
+          .eq('house_id', activeHouse.id)
           .order('created_at', { ascending: false }),
+        getHouseChestRulesSettings(activeHouse.id),
+        getHouseAttachmentSettings(activeHouse.id),
       ])
-
-      // Teto de itens da **casa ativa** — o aviso de proximidade no form. As
-      // outras casas do ADMIN têm o próprio limite, que só a action conhece (ela
-      // recusa no `create`), então aqui só a ativa é exibida.
-      const { maxItems } = await getHouseChestRulesSettings(
-        activeHouse?.id ?? houses[0].id
-      )
-
-      const nameById = new Map(houses.map((house) => [house.id, house.name]))
-
-      // Anexos do baú, **por casa** (ADR-0026): o item tem casa própria e o form
-      // deixa o ADMIN escolher, então a decisão precisa ser da casa de destino.
-      // Uma consulta só com `.in()` — o custo não cresce com o número de casas
-      // (ver `getHousesAttachmentSettings`).
-      const chestAllowedByHouse = Object.fromEntries(
-        Array.from(
-          await getHousesAttachmentSettings(houses.map((house) => house.id))
-        ).map(([id, settings]) => [id, settings.chestAllowed])
-      )
 
       content = (
         <ChestAdmin
-          key={user.id}
-          initialItems={(items ?? []).map((item) => ({
-            ...item,
-            houseName: nameById.get(item.house_id) ?? null,
-          })) satisfies ChestItemView[]}
-          houses={houses.map((house) => ({ id: house.id, name: house.name }))}
-          activeHouseId={activeHouse?.id ?? houses[0].id}
-          maxItems={maxItems}
-          chestAllowedByHouse={chestAllowedByHouse}
+          key={activeHouse.id}
+          initialItems={(items ?? []) satisfies ChestItemView[]}
+          houseId={activeHouse.id}
+          houseName={activeHouse.name}
+          maxItems={chestRules.maxItems}
+          attachmentsAllowed={attachments.chestAllowed}
         />
       )
     }
@@ -132,10 +110,7 @@ export default async function ChestPage() {
           key={house.id}
           houseId={house.id}
           attachmentsAllowed={chestAllowed}
-          initialItems={(items ?? []).map((item) => ({
-            ...item,
-            houseName: house.name,
-          }))}
+          initialItems={items ?? []}
         />
       )
     }

@@ -1,14 +1,11 @@
 import type { Tables } from '@/types/database'
 
 /**
- * Item do baú como chega ao client: a linha de `chest_items` mais o **nome da
- * casa**, resolvido no servidor.
+ * Item do baú como chega ao client.
  *
- * O nome vem por prop (não por consulta do browser) pelo mesmo motivo das casas
- * do sino: o app lê `houses` por service-role (ADR-0006), e o chip de "outra
- * casa" precisa do nome antes do clique.
+ * É a **linha crua** de `chest_items`, sem nome de casa: o acervo passou a ser
+ * **da casa ativa** (emenda "baú por casa" no ADR-0024), então todos os itens da
+ * lista são da mesma casa e o chip de "outra casa" saiu junto com o select que
+ * permitia escolher para onde o item ia.
  */
-export type ChestItemView = Tables<'chest_items'> & {
-  /** `null` quando o nome não pôde ser resolvido (casa removida no meio do read). */
-  houseName: string | null
-}
+export type ChestItemView = Tables<'chest_items'>

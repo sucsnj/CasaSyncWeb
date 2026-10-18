@@ -37,13 +37,12 @@ deploy).
    saldo — ou seja, um segundo sistema de Recompensas; e o dependente não precisa
    de aviso: o baú é uma tela que ele abre para consultar. ADR-0020 (castigo) e
    ADR-0017 (comunicados) são o precedente de "conteúdo é leitura, não evento".
-4. **O ADMIN escolhe a casa na criação**, entre as casas que ele controla
+4. ~~**O ADMIN escolhe a casa na criação**, entre as casas que ele controla
    (inclusive as co-geridas). A lista da tela mostra **todos os itens de
    todas as casas dele**, com **chip do nome da casa** nos que não são da casa
    ativa — senão o item recém-criado em outra casa sumiria da tela até ele trocar
-   a casa. O chip é informativo, sem troca automática: aqui ele está **gerenciando**,
-   não navegando (ao contrário do sino, que precisa trocar a casa antes de
-   navegar).
+   a casa.~~ — **superado pela emenda "baú por casa" (2026)**: o acervo é **da casa
+   selecionada**, e o item nasce na casa ativa. Ver a emenda no fim do documento.
 5. **A casa do item é fixa.** Mover exigiria mexer no filtro de Realtime e no
    cache por casa sem ganho real; excluir e recriar é raro e barato.
 6. **Título apenas, 1–100 caracteres, pode repetir** (sem índice único). A busca é
@@ -168,6 +167,40 @@ upload para de funcionar no **app inteiro**, não só naquela casa.
   Um teto global exigiria somar bytes, e hoje **não guardamos o tamanho do
   arquivo** (sem coluna `file_size`) — isso exigiria migration. É a mitigação
   barata, não a dura.
+
+## Emenda (baú por casa — o acervo é da casa, não do ADMIN)
+
+**O que mudou:** o baú deixou de ser um acervo **do ADMIN** e virou o acervo
+**da casa selecionada**.
+
+- **A lista é da casa ativa** (`/chest` do ADMIN carrega `.eq('house_id', active.id)`
+  em vez de `.in(...)` sobre todas as casas que ele controla).
+- **O form perdeu o select "Casa"**: o item nasce na casa ativa, e o texto do form
+  diz qual é (com atalho para trocar a casa em `/dashboard/admin/houses`). A `casaId`
+  **saiu do payload** de `createChestItem` — a casa é derivada da sessão
+  (`getActiveAdminHouse`), como `applyPunishment`/`createDependent`. Menos parâmetro
+  público é melhor que conferir parâmetro público.
+- **O chip com o nome da casa saiu dos cards**: todos os itens da lista são da mesma
+  casa, então o chip só fazia sentido entre casas. Com ele saiu o `houseName` do
+  `ChestItemView` (que voltou a ser a linha crua de `chest_items`).
+- **O filtro do Realtime passou a ser `house_id=eq.<casa ativa>`** — antes, um item
+  criado por outra aba do mesmo ADMIN em outra casa entrava na lista sem o filtro.
+
+**Por quê:** com o select, o baú virava um acervo pessoal — o ADMIN via material de
+casas que não estava selecionada, podia material na casa errada, e a tela do
+acervo mudava de conteúdo conforme o histórico de uso. O baú é conceito de **casa**
+(o mesmo de `tasks`/`rewards`, ADR-0006), então a casa é a unidade do acervo.
+**Trocar a casa ativa** é o caminho para ver o baú de outra casa, como nas demais
+telas de casa.
+
+**Efeito colateral:** o `getHousesAttachmentSettings` (leitura multi-casa com
+`.in()`, que existia para o form decidir por casa) ficou **sem uso e foi removido** —
+a tela do ADMIN lê só a casa ativa, no mesmo mapa das outras chaves (zero round-trip
+novo, e o `/chest` voltou a não gastar leitura extra: os 2 getters saem do mesmo
+`getHouseSettingsMap`).
+
+**Sem SQL.** A coluna `chest_items.house_id` continua igual — ela é que escopa o
+acervo por casa, agora preenchida a partir da sessão.
 
 ## Consequências
 - **Ordem de deploy:** o SQL (`docs/sql/chest_items.sql` — tabela, índices, RLS,

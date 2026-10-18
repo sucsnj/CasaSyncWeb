@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { getSessionProfile } from '@/utils/house'
+import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   attachmentTypeFromName,
   CHEST_ITEM_FOLDER,
@@ -139,8 +139,16 @@ async function checkChestItemLimit(
   return null
 }
 
+/**
+ * Cria um item no baú **da casa ativa**.
+ *
+ * A casa **não** vem do cliente: ela é derivada da sessão (`getActiveAdminHouse`),
+ * igual a `applyPunishment`/`createDependent`. Isso é a consequência direta de o
+ * baú ter deixado de ser um acervo do ADMIN e virar o acervo **da casa** — não há
+ * mais "para qual casa" na tela, então também não há `houseId` no payload para
+ * confiar. Trocar a casa ativa e abrir o baú de novo já mostra o acervo dela.
+ */
 export async function createChestItem(input: {
-  houseId: string
   title: string
   fileUrl: string
   fileName: string | null
@@ -148,19 +156,24 @@ export async function createChestItem(input: {
 }): Promise<ActionResult<Tables<'chest_items'>>> {
   const admin = createAdminClient()
 
-  const auth = await assertAdminCanManage(admin, input.houseId)
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) {
+    return { ok: false, error: 'Selecione uma casa antes de adicionar item ao baú.' }
+  }
+
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
   if (!auth.ok) return auth
 
   // Teto de itens: barreira no servidor (a contagem na tela é só conveniência).
-  const { maxItems } = await getHouseChestRulesSettings(input.houseId)
-  const limitError = await checkChestItemLimit(admin, input.houseId, maxItems)
+  const { maxItems } = await getHouseChestRulesSettings(activeHouse.id)
+  const limitError = await checkChestItemLimit(admin, activeHouse.id, maxItems)
   if (limitError) return { ok: false, error: limitError }
 
   // A casa desligou os anexos do baú? (chave `attachments`, ADR-0026). Custo zero
   // de round-trip: o getter entra no mesmo `getHouseSettingsMap` do teto acima.
   // No baú o arquivo é obrigatório, então desligar isto equivale a pausar o
   // acervo — o ADMIN ainda abre o baú para **excluir** o que já existe.
-  const attachments = await getHouseAttachmentSettings(input.houseId)
+  const attachments = await getHouseAttachmentSettings(activeHouse.id)
   if (!attachments.chestAllowed) {
     return {
       ok: false,
@@ -187,7 +200,7 @@ export async function createChestItem(input: {
   const { data, error } = await admin
     .from('chest_items')
     .insert({
-      house_id: input.houseId,
+      house_id: activeHouse.id,
       title,
       file_url: input.fileUrl,
       file_name: fileName,

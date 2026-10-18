@@ -28,40 +28,44 @@ import {
   validateChestItemTitle,
 } from '@/utils/chest-attachment'
 import type { ChestItemView } from './chest-types'
+import type { Tables } from '@/types/database'
 
 /**
- * Tela do ADMIN no baú (ADR-0024): **acervo por casa**, com título apenas.
+ * Tela do ADMIN no baú (ADR-0024): **acervo da casa ativa**, com título apenas.
  *
  * Forma por cima, lista por baixo — o mesmo desenho de `achievements-admin.tsx`
  * e `rewards-admin.tsx`: o form nasce recolhido atrás de "Novo item" e o
  * "Editar" de um card reusa esse mesmo form (com `scrollIntoView` + foco no
  * título) em vez de um editor dentro de cada card.
  *
- * A lista mostra **todas as casas que o ADMIN controla**, com chip do nome nos
- * itens de outra casa: ele cria e edita onde o item estiver, sem trocar a casa
- * ativa. A casa do item é fixa (ADR-0024, item 5).
+ * **Emenda "baú por casa":** o acervo é **da casa selecionada**, não do ADMIN.
+ * Antes a lista mostrava os itens de todas as casas que ele controlava (com chip
+ * do nome nos de outra casa) e o form tinha um "Casa" para escolher — o que
+ * transformava o baú num acervo pessoal e ainda guardava item de casa que o
+ * ADMIN não está olhando. Agora não há select: o item nasce na casa ativa, a lista
+ * é dela e o chip do nome saiu (todos os itens são da mesma casa — o chip só faria
+ * sentido entre casas). Trocar a casa ativa já troca o acervo exibido.
  */
 export function ChestAdmin({
   initialItems,
-  houses,
-  activeHouseId,
+  houseId,
+  houseName,
   maxItems,
-  chestAllowedByHouse,
+  attachmentsAllowed = true,
 }: {
   initialItems: ChestItemView[]
-  /** Casas que o ADMIN controla (`house_members.role = 'ADMIN'`). */
-  houses: { id: string; name: string }[]
-  activeHouseId: string
+  /** Casa ativa — é dela o acervo e é nela que o item novo nasce. */
+  houseId: string
+  /** Nome da casa ativa, só para o texto do form. */
+  houseName: string
   /** Teto de itens por casa (`chest_rules`, `0` = sem limite). */
   maxItems: number
   /**
-   * `houseId -> anexos liberados no baú` (ADR-0026). É **por casa** porque o item
-   * do baú tem casa própria, escolhida no form: a decisão precisa ser da casa que
-   * o item vai morar, não da casa ativa. Vem de UMA consulta com `.in()` (ver
-   * `getHousesAttachmentSettings`), então o custo não cresce com o número de casas.
-   * Casa ausente do mapa = ligado (o default da configuração).
+   * A casa permite anexos no baú? (ADR-0026). Default ligado, igual à
+   * configuração da casa; o bloqueio real está no `createChestItem` e nas rotas
+   * `/api/...`.
    */
-  chestAllowedByHouse?: Record<string, boolean>
+  attachmentsAllowed?: boolean
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
@@ -71,7 +75,6 @@ export function ChestAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  const [houseId, setHouseId] = useState(activeHouseId)
   const [title, setTitle] = useState('')
   const [attachment, setAttachment] = useState<{
     url: string | null
@@ -104,21 +107,15 @@ export function ChestAdmin({
   }, [initialItems])
 
   // Realtime: o baú é catálogo (como a loja de recompensas), então item novo,
-  // edição e exclusão chegam sem F5.
-  usePostgresChanges<ChestItemView>({
+  // edição e exclusão chegam sem F5. O filtro é pela **casa ativa** — o acervo é
+  // dela, não do ADMIN (ver ADR-0024 e a emenda "baú por casa").
+  usePostgresChanges<Tables<'chest_items'>>({
     table: 'chest_items',
+    filter: `house_id=eq.${houseId}`,
     onUpsert: (row) => {
       setItems((current) => {
         const next = current.filter((item) => item.id !== row.id)
-        next.push({
-          ...row,
-          // Item que entrou pelo Realtime não traz o nome da casa (vem do
-          // select do servidor): procura na lista ou cai no que já se sabe.
-          houseName:
-            row.houseName ??
-            current.find((item) => item.house_id === row.house_id)?.houseName ??
-            null,
-        })
+        next.push(row)
         return next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
       })
     },
@@ -131,30 +128,24 @@ export function ChestAdmin({
     return items.filter((item) => item.title.toLowerCase().includes(term))
   }, [items, search])
 
-  // Contagem do baú da casa **selecionada no form**, derivada da lista que já
-  // está em memória — então o aviso de proximidade custa zero query. A barreira
-  // real continua sendo o `checkChestItemLimit` no servidor (esta contagem pode
-  // estar defasada se outra pessoa mexeu ao mesmo tempo).
-  const itemsInSelectedHouse = useMemo(
-    () => items.filter((item) => item.house_id === houseId).length,
-    [items, houseId]
-  )
-  const limitNear =
-    maxItems > 0 && itemsInSelectedHouse >= Math.floor(maxItems * 0.8)
-  const limitReached = maxItems > 0 && itemsInSelectedHouse >= maxItems
+  // Contagem do baú desta casa, derivada da lista que já está em memória — então o
+  // aviso de proximidade custa zero query. A barreira real continua sendo o
+  // `checkChestItemLimit` no servidor (esta contagem pode estar defasada se outra
+  // pessoa mexeu ao mesmo tempo).
+  const itemCount = items.length
+  const limitNear = maxItems > 0 && itemCount >= Math.floor(maxItems * 0.8)
+  const limitReached = maxItems > 0 && itemCount >= maxItems
   const limitBlocksCreate = limitReached && !editingId
 
-  // A casa **selecionada no form** desligou os anexos? (ADR-0026). Como o item do
-  // baú tem casa própria, é a casa escolhida que decide — daí o mapa por casa em
-  // vez de um booleano único. Casa fora do mapa = ligado (default da config).
-  const chestAllowed = chestAllowedByHouse?.[houseId] ?? true
-  const attachmentsBlocked = !chestAllowed
+  // A casa desligou os anexos do baú? (ADR-0026). Como o item nasce na casa
+  // ativa, é esta casa que decide — um booleano basta (o mapa por casa que existia
+  // foi junto com o select de casa).
+  const attachmentsBlocked = !attachmentsAllowed
 
   function resetForm() {
     setEditingId(null)
     setTitle('')
     setAttachment({ url: null, name: null, type: null })
-    setHouseId(activeHouseId)
     setFormError(null)
   }
 
@@ -166,8 +157,6 @@ export function ChestAdmin({
       name: item.file_name,
       type: item.file_type,
     })
-    // A casa do item é fixa — o select vem só para mostrar onde ele está.
-    setHouseId(item.house_id)
     setFormError(null)
     setShowForm(true)
     // O form fica no topo da lista, então editar um card lá embaixo abriria o
@@ -205,7 +194,6 @@ export function ChestAdmin({
             fileType: attachment.type ?? '',
           })
         : await createChestItem({
-            houseId,
             title,
             fileUrl: attachment.url,
             fileName: attachment.name,
@@ -223,14 +211,9 @@ export function ChestAdmin({
       if (result.data) {
         const row = result.data
         setItems((current) =>
-          [
-            ...current.filter((item) => item.id !== row.id),
-            {
-              ...row,
-              houseName:
-                houses.find((house) => house.id === row.house_id)?.name ?? null,
-            },
-          ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+          [...current.filter((item) => item.id !== row.id), row].sort((a, b) =>
+            a.created_at < b.created_at ? 1 : -1
+          )
         )
       }
 
@@ -300,51 +283,42 @@ export function ChestAdmin({
           {showForm ? (
             <CardContent>
               <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="chest-house">Casa</Label>
-                  <select
-                    id="chest-house"
-                    value={houseId}
-                    disabled={Boolean(editingId) || pending}
-                    onChange={(event) => setHouseId(event.target.value)}
-                    className="min-h-12 w-full rounded-xl border border-input bg-white px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
-                  >
-                    {houses.map((house) => (
-                      <option key={house.id} value={house.id}>
-                        {house.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Para qual casa o item fica disponível. A casa do item não muda
-                    depois de criado.
-                  </p>
-                  {/* Aviso de proximidade do teto de itens (`chest_rules`):
-                      aparece em 80% e trava o botão de adicionar no limite. A
-                      barreira real é o servidor. */}
-                  {maxItems > 0 && !editingId ? (
-                    <p
-                      role="status"
-                      className={cn(
-                        'rounded-xl border px-3 py-2 text-xs',
-                        limitReached
-                          ? 'border-red-200 bg-red-50 text-red-800'
-                          : limitNear
-                            ? 'border-amber-200 bg-amber-50 text-amber-800'
-                            : 'border-slate-200 bg-slate-50 text-slate-600'
-                      )}
-                    >
-                      <span className="font-medium">
-                        {itemsInSelectedHouse} de {maxItems} itens nesta casa.
-                      </span>{' '}
-                      {limitReached
-                        ? 'Exclua algum item ou aumente o limite em Configurações.'
+                {/* Sem select de casa: o item nasce na casa ativa. A informação
+                    continua visível — o texto diz qual é — mas não há escolha,
+                    que era o que transformava o baú num acervo do ADMIN. */}
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  O item vai para o baú da casa <strong className="font-semibold text-slate-800">{houseName}</strong> (a casa
+                  selecionada agora). Para trocar o acervo, mude a casa ativa em{' '}
+                  <a href="/dashboard/admin/houses" className="font-medium text-primary underline-offset-4 hover:underline">
+                    Casas
+                  </a>
+                  .
+                </p>
+                {/* Aviso de proximidade do teto de itens (`chest_rules`):
+                    aparece em 80% e trava o botão de adicionar no limite. A
+                    barreira real é o servidor. */}
+                {maxItems > 0 && !editingId ? (
+                  <p
+                    role="status"
+                    className={cn(
+                      'rounded-xl border px-3 py-2 text-xs',
+                      limitReached
+                        ? 'border-red-200 bg-red-50 text-red-800'
                         : limitNear
-                          ? 'Perto do limite do baú.'
-                          : ''}
-                    </p>
-                  ) : null}
-                </div>
+                          ? 'border-amber-200 bg-amber-50 text-amber-800'
+                          : 'border-slate-200 bg-slate-50 text-slate-600'
+                    )}
+                  >
+                    <span className="font-medium">
+                      {itemCount} de {maxItems} itens nesta casa.
+                    </span>{' '}
+                    {limitReached
+                      ? 'Exclua algum item ou aumente o limite em Configurações.'
+                      : limitNear
+                        ? 'Perto do limite do baú.'
+                        : ''}
+                  </p>
+                ) : null}
 
                 <div className="grid gap-2">
                   <Label htmlFor="chest-title">Título</Label>
@@ -463,23 +437,16 @@ export function ChestAdmin({
           {filtered.map((item) => (
             <Card key={item.id}>
               <CardContent className="flex flex-col gap-3 py-4">
-                <div className="flex flex-col gap-1">
-                  <p className="text-base font-bold text-slate-900">{item.title}</p>
-                  {item.house_id !== activeHouseId && item.houseName ? (
-                    <span className="inline-flex w-fit items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-                      {item.houseName}
-                    </span>
-                  ) : null}
-                </div>
+                <p className="text-base font-bold text-slate-900">{item.title}</p>
 
                 <TaskAttachmentView
                   url={item.file_url}
                   name={item.file_name}
                   type={item.file_type}
                   htmlHref={`/api/chest-item/${item.id}`}
-                  // Por item, não pela casa selecionada no form: a lista mostra
-                  // itens de várias casas, e cada uma tem a sua opção (ADR-0026).
-                  blocked={chestAllowedByHouse?.[item.house_id] === false}
+                  // A lista é da casa ativa, então o booleano da casa decide para
+                  // todos os itens (ADR-0026).
+                  blocked={attachmentsBlocked}
                 />
 
                 <div className="flex justify-end gap-2">
