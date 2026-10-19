@@ -1136,11 +1136,12 @@ export async function setTaskOnHold(
     if (
       task.status !== 'PENDING' &&
       task.status !== 'IN_PROGRESS' &&
-      task.status !== 'NOT_DELIVERED'
+      task.status !== 'NOT_DELIVERED' &&
+      task.status !== 'APPROVED'
     ) {
       return {
         ok: false,
-        error: 'Somente tarefas abertas ou não entregues podem ficar em espera.',
+        error: 'Somente tarefas abertas, não entregues ou aprovadas podem ficar em espera.',
       }
     }
 
@@ -1158,7 +1159,7 @@ export async function setTaskOnHold(
       })
       .eq('id', taskId)
       // guard: outra pessoa pode ter aprovado/concluído no meio do clique.
-      .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED'])
+      .in('status', ['PENDING', 'IN_PROGRESS', 'NOT_DELIVERED', 'APPROVED'])
       .select('*')
       .single()
 

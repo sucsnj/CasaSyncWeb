@@ -1732,6 +1732,17 @@ export function TasksAdmin({
                             ? 'Restaurando...'
                             : 'Restaurar'}
                         </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleSetOnHold(task, true)}
+                          disabled={pendingIds.has(task.id)}
+                          className="min-h-9 shrink-0 text-slate-600"
+                        >
+                          <PauseCircle className="size-4" />
+                          {pendingIds.has(task.id)
+                            ? 'Colocando...'
+                            : 'Em espera'}
+                        </Button>
                       </div>
                     </div>
                     {isExpanded ? (
