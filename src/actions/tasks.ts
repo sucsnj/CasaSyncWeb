@@ -25,6 +25,7 @@ import {
   getHouseTaskDecaySettings,
   getHouseTaskRulesSettings,
   getHouseTaskSlaSettings,
+  getHouseAttachmentBudgetSettings,
   getHouseAttachmentSettings,
   getHouseTextLimitsSettings,
 } from '@/utils/house-settings'
@@ -33,6 +34,11 @@ import {
   attachmentTypeFromName,
   validateTaskAttachment,
 } from '@/utils/task-attachment'
+import {
+  checkAttachmentBudget,
+  checkAttachmentFile,
+  storageObjectBytes,
+} from '@/utils/attachment-usage'
 import { removeStorageFile } from '@/utils/storage'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
@@ -307,6 +313,25 @@ export async function createTask(
       )
     : null
   if (attachment) return { ok: false, error: attachment }
+
+  if (input.imageUrl) {
+    // Teto de 5 MB por anexo + "o objeto existe no storage?" — **fail closed**
+    // (ADR-0027). O `accept` e o `file.size` do browser são conveniência; quem
+    // barra a gravação é a leitura do objeto, porque a URL chega do cliente.
+    const sizeError = await checkAttachmentFile(
+      admin,
+      input.imageUrl,
+      input.attachmentType
+    )
+    if (sizeError) return { ok: false, error: sizeError }
+
+    // Peso da casa (`attachment_budget`): o arquivo já foi enviado pelo browser
+    // (upload client-side), então **já está** na contagem — não há `pendingBytes`
+    // aqui, e a troca que libera bytes é tratada no `updateTask`.
+    const { maxMb } = await getHouseAttachmentBudgetSettings(activeHouse.id)
+    const budgetError = await checkAttachmentBudget(admin, activeHouse.id, maxMb)
+    if (budgetError) return { ok: false, error: budgetError }
+  }
 
   const { data: assignee } = await admin
     .from('house_members')
@@ -607,6 +632,30 @@ export async function updateTask(
         patch.attachment_type?.trim().toLowerCase() ||
         attachmentTypeFromName(patch.attachment_name ?? '') ||
         null
+
+      // Teto de 5 MB por anexo + existência do objeto — fail closed (ADR-0027),
+      // mesmo caminho do `createTask`.
+      const sizeError = await checkAttachmentFile(
+        admin,
+        nextUrl,
+        patch.attachment_type
+      )
+      if (sizeError) return { ok: false, error: sizeError }
+
+      // Peso da casa (`attachment_budget`, ADR-0027): o arquivo novo **já** está
+      // no storage (upload client-side) e entra sozinho na contagem; o que a troca
+      // libera é o arquivo antigo, que some logo abaixo. Sem `freedBytes`, uma
+      // casa no teto não conseguiria trocar um material grande por um menor — e
+      // essa é justamente a operação que o tutor precisa fazer para destravar.
+      const { maxMb } = await getHouseAttachmentBudgetSettings(activeHouse.id)
+      const freedBytes =
+        nextUrl !== task.image_url
+          ? (await storageObjectBytes(admin, task.image_url)) ?? 0
+          : 0
+      const budgetError = await checkAttachmentBudget(admin, activeHouse.id, maxMb, {
+        freedBytes,
+      })
+      if (budgetError) return { ok: false, error: budgetError }
 
       // Trocar o arquivo não pode deixar o antigo ocupando o bucket (1 GB no
       // plano Hobby) — só quando a URL realmente mudou.

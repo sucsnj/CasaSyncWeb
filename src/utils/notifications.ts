@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { MEDIA_BUCKET } from '@/utils/media'
+import { storagePathFromUrl } from '@/utils/storage'
 import {
   getHouseNotificationMuteSettings,
   getHouseNotificationRetentionSettings,
@@ -341,19 +342,15 @@ export async function getMyNotifications(
 
 /**
  * Extrai o caminho de um arquivo dentro do bucket a partir da URL pública.
- * Retorna `null` se a URL não parece ser do bucket ou for inválida.
+ *
+ * Era a cópia local que **funcionava** (aqui o corte vinha depois do prefixo
+ * inteiro) — as outras duas cópias do app cortavam com `slice(at + 1)` e
+ * carregavam o nome do bucket para dentro do caminho, o que fazia o `info()`
+ * dizer "Object not found" e o `remove()` apagar nada. Agora é o parser **único**
+ * do app (`utils/storage.ts`); a pasta esperada é conferida pelo chamador.
  */
 function storagePathFromPublicUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url)
-    const prefix = `/storage/v1/object/public/${MEDIA_BUCKET}/`
-    const start = parsed.pathname.indexOf(prefix)
-    if (start < 0) return null
-    const path = parsed.pathname.slice(start + prefix.length)
-    return path || null
-  } catch {
-    return null
-  }
+  return storagePathFromUrl(url)
 }
 
 /**
@@ -431,8 +428,10 @@ export async function cleanupQuickMessages(
       .eq('message_id', messageId)
 
     if (info.image_url) {
+      // Guarda de pasta: a imagem da mensagem rápida vive em `messages/`, e uma
+      // URL apontada para outra pasta não pode ser removida por aqui.
       const path = storagePathFromPublicUrl(info.image_url)
-      if (path) {
+      if (path && path.startsWith('messages/')) {
         try {
           await admin.storage.from(MEDIA_BUCKET).remove([path])
         } catch {

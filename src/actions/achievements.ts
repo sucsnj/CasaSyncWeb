@@ -17,6 +17,7 @@ import {
 } from '@/utils/achievements'
 import { syncAchievementProgress } from '@/utils/achievement-progress'
 import { getHouseTextLimitsSettings } from '@/utils/house-settings'
+import { storagePathFromUrl } from '@/utils/storage'
 import { checkTextLimit } from '@/utils/text-limits'
 import { incrementDependentStat } from './stats'
 
@@ -285,15 +286,19 @@ export async function updateAchievement(
 /**
  * Remove (best-effort) a imagem da conquista do bucket `casasync-media`
  * (pasta `achievements/`). Falha nunca derruba a exclusão da conquista.
+ *
+ * Usa o **parser único** (`storagePathFromUrl`, `utils/storage.ts`) com a guarda de
+ * pasta: antes o caminho era cortado com `slice(at + 1)`, o que mantinha o nome do
+ * bucket dentro do caminho — e o `remove()` recebia um caminho inexistente, ou
+ * seja, a imagem da conquista **nunca foi apagada** do bucket.
  */
 async function removeAchievementImage(
   admin: ReturnType<typeof createAdminClient>,
   imageUrl: string | null
 ): Promise<void> {
-  if (!imageUrl) return
-  const at = imageUrl.indexOf('/casasync-media/')
-  if (at === -1) return
-  const path = imageUrl.slice(at + 1).split('?')[0]
+  const path = storagePathFromUrl(imageUrl)
+  if (!path || !path.startsWith('achievements/')) return
+
   try {
     const { error } = await admin.storage.from('casasync-media').remove([path])
     if (error) console.error('[ACHIEVEMENTS] Falha ao remover imagem:', error.message)

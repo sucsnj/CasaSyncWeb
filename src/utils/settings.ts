@@ -12,6 +12,7 @@ import {
   QUICK_MESSAGE_READ_RETENTION_DAYS,
 } from '@/utils/quick-message'
 import { DEFAULT_HOUSE_TIMEZONE } from '@/utils/timezone'
+import { ATTACHMENT_BUDGET_DEFAULT_MB } from '@/utils/attachment-budget'
 
 export type HouseSettingsKey =
   | 'reward_pricing'
@@ -22,7 +23,7 @@ export type HouseSettingsKey =
   | 'notification_mute'
   | 'task_decay'
   | 'task_rules'
-  | 'chest_rules'
+  | 'attachment_budget'
   | 'house_timezone'
   | 'text_limits'
   | 'attachments'
@@ -203,24 +204,34 @@ export const DEFAULT_TASK_RULES: TaskRulesSettings = {
 }
 
 /**
- * Limite do baú da casa (ADR-0024).
+ * Orçamento de anexos da casa, **por peso** (ADR-0027).
  *
  * Existe por **disponibilidade**, não por regra de negócio: o bucket do storage é
  * do plano Hobby (**1 GB no total, compartilhado entre todas as casas**) e cada
- * anexo pode ter 5 MB. Sem teto, uma casa só (ou uma conta de ADMIN comprometida)
- * enche o bucket e o upload para de funcionar no app inteiro.
+ * anexo pode ter 5 MB. Sem teto, uma casa só (ou uma conta de ADMIN
+ * comprometida) enche o bucket e o upload para de funcionar no app inteiro.
+ *
+ * **Por que bytes e não quantidade:** o que acaba com o storage é o volume.
+ * O teto anterior (`chest_rules.maxItems`, 50 itens) era um proxy que não
+ * falava a mesma língua do problema — 50 itens de 5 MB são 250 MB, e 500 itens de
+ * 20 KB são 10 MB. Além disso o teto era só do baú, enquanto anexos existem
+ * também nas tarefas; agora é **da casa inteira** (`tasks/` + `chest/`).
  *
  * O default **não é 0**: os outros tetres nascem desligados para não mudar o
- * comportamento de quem já usa, mas aqui o que se quer evitar é justamente o
- * cenário de nenhum-teto — então o padrão é 50 (≈250 MB por casa no pior caso).
+ * comportamento de quem já usa, mas aqui o risco é justamente o cenário de
+ * nenhum teto — então o padrão é 100 MB (≈ 20 anexos cheios).
+ *
+ * A chave antiga `chest_rules` fica **inerte** (jsonb sem migration): o que
+ * importa é que nada mais lê-la. Quem quiser limpar, o `docs/sql/` traz o
+ * `DELETE` opcional.
  */
-export type ChestRulesSettings = {
-  /** Máximo de itens no baú da casa (0 = sem limite). */
-  maxItems: number
+export type AttachmentBudgetSettings = {
+  /** Teto de peso dos anexos da casa, em MB (0 = sem teto). */
+  maxMb: number
 }
 
-export const DEFAULT_CHEST_RULES: ChestRulesSettings = {
-  maxItems: 50,
+export const DEFAULT_ATTACHMENT_BUDGET: AttachmentBudgetSettings = {
+  maxMb: ATTACHMENT_BUDGET_DEFAULT_MB,
 }
 
 export const DEFAULT_HOUSE_TIMEZONE_SETTINGS: HouseTimezoneSettings = {

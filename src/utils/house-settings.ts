@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   DEFAULT_ATTACHMENTS,
-  DEFAULT_CHEST_RULES,
+  DEFAULT_ATTACHMENT_BUDGET,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
@@ -15,7 +15,7 @@ import {
   DEFAULT_TEXT_LIMITS,
   mergeSettings,
   type AttachmentSettings,
-  type ChestRulesSettings,
+  type AttachmentBudgetSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type HouseTimezoneSettings,
@@ -146,14 +146,17 @@ export const getHouseTaskRulesSettings = cache(
 )
 
 /**
- * Limite de itens do baú da casa (ADR-0024). Lido pelo `createChestItem` (que
- * recusa o item acima do teto) e pelo card de Configurações, que mostra
- * "N de M itens".
+ * Orçamento de anexos da casa, **por peso** (ADR-0027). Lido pelas actions de
+ * tarefa e de baú (que recusam anexo acima do teto) e pelas telas do baú e de
+ * Configurações, que mostram o "N de M".
+ *
+ * Sai da **mesma** leitura por casa das outras chaves (`getHouseSettingsMap`) —
+ * o teto não cria round-trip novo.
  */
-export const getHouseChestRulesSettings = cache(
-  async (houseId: string): Promise<ChestRulesSettings> => {
-    const value = await getHouseSettingsValue(houseId, 'chest_rules')
-    return mergeSettings(value, DEFAULT_CHEST_RULES)
+export const getHouseAttachmentBudgetSettings = cache(
+  async (houseId: string): Promise<AttachmentBudgetSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'attachment_budget')
+    return mergeSettings(value, DEFAULT_ATTACHMENT_BUDGET)
   }
 )
 

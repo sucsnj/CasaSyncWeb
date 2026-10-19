@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
-  getHouseChestRulesSettings,
+  getHouseAttachmentBudgetSettings,
   getHouseExtensionRulesSettings,
   getHouseNotificationMuteSettings,
   getHouseNotificationRetentionSettings,
@@ -16,6 +16,7 @@ import {
   getHouseAttachmentSettings,
 } from '@/utils/house-settings'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { houseAttachmentBytes } from '@/utils/attachment-usage'
 import { SettingsAdmin } from '@/components/settings/settings-admin'
 import { formatZonedOffset, houseTimezoneOptions } from '@/utils/timezone'
 import {
@@ -73,16 +74,16 @@ export default async function AdminSettingsPage() {
     notificationMute,
     taskDecay,
     taskRules,
-    chestRules,
+    attachmentBudget,
     houseTimezone,
     textLimits,
     // Opções de anexo (ADR-0026) — mais um getter no mesmo mapa por casa, então
     // **zero round-trip novo** nesta tela.
     attachmentSettings,
-    // Contagem de itens do baú **da casa ativa**: o card "Limite do baú" mostra
-    // "N de M". É 1 query extra só nesta tela (de ADMIN, rara) — os getters acima
-    // saem de graça do mesmo mapa por casa.
-    chestItemCount,
+    // Peso dos anexos da casa (ADR-0027): o card "Limite de anexos" mostra
+    // "N de M MB". São 1–2 leituras de storage **só nesta tela** (de ADMIN, rara)
+    // — os getters acima saem de graça do mesmo mapa por casa.
+    attachmentUsageBytes,
   ] = await Promise.all([
     getHouseRewardPricingSettings(activeHouse.id),
     getHouseQuickMessageSettings(activeHouse.id),
@@ -92,15 +93,11 @@ export default async function AdminSettingsPage() {
     getHouseNotificationMuteSettings(activeHouse.id),
     getHouseTaskDecaySettings(activeHouse.id),
     getHouseTaskRulesSettings(activeHouse.id),
-    getHouseChestRulesSettings(activeHouse.id),
+    getHouseAttachmentBudgetSettings(activeHouse.id),
     getHouseTimezoneSettings(activeHouse.id),
     getHouseTextLimitsSettings(activeHouse.id),
     getHouseAttachmentSettings(activeHouse.id),
-    createAdminClient()
-      .from('chest_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('house_id', activeHouse.id)
-      .then(({ count }) => count ?? 0),
+    houseAttachmentBytes(createAdminClient(), activeHouse.id).catch(() => 0),
   ])
 
   // Offset do fuso da casa, calculado NO SERVIDOR e repassado como texto: o
@@ -123,8 +120,8 @@ export default async function AdminSettingsPage() {
         notificationMute={notificationMute}
         taskDecay={taskDecay}
         taskRules={taskRules}
-        chestRulesProp={chestRules}
-        chestItemCount={chestItemCount}
+        attachmentBudgetProp={attachmentBudget}
+        attachmentUsageBytes={attachmentUsageBytes}
         houseTimezone={houseTimezone}
         houseTimezoneOffset={houseTimezoneOffset}
         timezoneOptions={timezoneOptions}

@@ -141,7 +141,14 @@ mesmo validador.
   anexo atual, para quem edita um item com link abrir já no modo link), e o chip
   do `TaskAttachmentView` ganha o ícone `Link2` e o texto "link da web".
 
-## Emenda (limite de itens por casa)
+## Emenda (limite de itens por casa) — ~~superado~~ pelo ADR-0027
+
+> **Superado pelo [ADR-0027](0027-anexos-por-peso-replica-do-bau-e-teto-de-5mb.md)**:
+> o teto passou a ser **por peso** (`attachment_budget.maxMb`, 100 MB por casa,
+> contando `tasks/` + `chest/`) e o "5 MB por anexo" ganhou teto no bucket +
+> validação no servidor. `chest_rules.maxItems` virou chave inerte e o
+> `checkChestItemLimit` saiu. O texto abaixo fica como registro do que foi
+> decidido na época.
 
 O baú não tinha teto, e o storage não perdoa: o bucket é do plano **Hobby, 1 GB
 no total e compartilhado entre todas as casas**, com até **5 MB** por item. Sem

@@ -27,6 +27,8 @@ import {
   CHEST_ITEM_TITLE_MAX,
   validateChestItemTitle,
 } from '@/utils/chest-attachment'
+import { attachmentBudgetState, formatMb } from '@/utils/attachment-budget'
+import { formatAttachmentSize, TASK_ATTACHMENT_MAX_MB } from '@/utils/task-attachment'
 import type { ChestItemView } from './chest-types'
 import type { Tables } from '@/types/database'
 
@@ -50,7 +52,8 @@ export function ChestAdmin({
   initialItems,
   houseId,
   houseName,
-  maxItems,
+  maxMb,
+  usageBytes,
   attachmentsAllowed = true,
 }: {
   initialItems: ChestItemView[]
@@ -58,8 +61,14 @@ export function ChestAdmin({
   houseId: string
   /** Nome da casa ativa, só para o texto do form. */
   houseName: string
-  /** Teto de itens por casa (`chest_rules`, `0` = sem limite). */
-  maxItems: number
+  /** Teto de peso dos anexos da casa, em MB (`attachment_budget`, 0 = sem teto). */
+  maxMb: number
+  /**
+   * Peso já usado pela casa em anexos (`tasks/` + `chest/`), em bytes — medido
+   * no servidor a partir dos objetos do storage (ADR-0027). O componente só
+   * aplica o **predicado** (`attachmentBudgetState`), que é o mesmo do servidor.
+   */
+  usageBytes: number
   /**
    * A casa permite anexos no baú? (ADR-0026). Default ligado, igual à
    * configuração da casa; o bloqueio real está no `createChestItem` e nas rotas
@@ -128,14 +137,16 @@ export function ChestAdmin({
     return items.filter((item) => item.title.toLowerCase().includes(term))
   }, [items, search])
 
-  // Contagem do baú desta casa, derivada da lista que já está em memória — então o
-  // aviso de proximidade custa zero query. A barreira real continua sendo o
-  // `checkChestItemLimit` no servidor (esta contagem pode estar defasada se outra
-  // pessoa mexeu ao mesmo tempo).
-  const itemCount = items.length
-  const limitNear = maxItems > 0 && itemCount >= Math.floor(maxItems * 0.8)
-  const limitReached = maxItems > 0 && itemCount >= maxItems
-  const limitBlocksCreate = limitReached && !editingId
+  // Limite da casa **por peso** (ADR-0027). Os bytes vêm do servidor e o
+  // predicado é o mesmo (`attachmentBudgetState`), então a cor daqui não pode
+  // divergir da recusa do `createChestItem`.
+  //
+  // A barreira continua sendo o servidor, e aqui **não** desligamos o botão: o
+  // tamanho do arquivo que está por vir só é conhecido depois que o browser o
+  // envia, então uma casa em 99,9 MB ainda cabe um material pequeno — desligar o
+  // botão aqui seria recusar algo que cabe. O aviso vermelho + a recusa no
+  // servidor é o par certo.
+  const budget = attachmentBudgetState(usageBytes, maxMb)
 
   // A casa desligou os anexos do baú? (ADR-0026). Como o item nasce na casa
   // ativa, é esta casa que decide — um booleano basta (o mapa por casa que existia
@@ -294,29 +305,30 @@ export function ChestAdmin({
                   </a>
                   .
                 </p>
-                {/* Aviso de proximidade do teto de itens (`chest_rules`):
-                    aparece em 80% e trava o botão de adicionar no limite. A
-                    barreira real é o servidor. */}
-                {maxItems > 0 && !editingId ? (
+                {/* Aviso de proximidade do teto de peso (`attachment_budget`): o número é do
+                    storage (medido no servidor), o tom é o mesmo predicado da
+                    barreira. Em 80% vira aviso, no limite vira bloqueio real. */}
+                {maxMb > 0 && !editingId ? (
                   <p
                     role="status"
                     className={cn(
                       'rounded-xl border px-3 py-2 text-xs',
-                      limitReached
+                      budget.reached
                         ? 'border-red-200 bg-red-50 text-red-800'
-                        : limitNear
+                        : budget.near
                           ? 'border-amber-200 bg-amber-50 text-amber-800'
                           : 'border-slate-200 bg-slate-50 text-slate-600'
                     )}
                   >
                     <span className="font-medium">
-                      {itemCount} de {maxItems} itens nesta casa.
+                      {formatAttachmentSize(budget.countedBytes)} de{' '}
+                      {formatMb(maxMb)} nesta casa.
                     </span>{' '}
-                    {limitReached
-                      ? 'Exclua algum item ou aumente o limite em Configurações.'
-                      : limitNear
-                        ? 'Perto do limite do baú.'
-                        : ''}
+                    {budget.reached
+                      ? 'O limite foi atingido — exclua algum anexo, troque um material por um menor ou aumente o limite em Configurações.'
+                      : budget.near
+                        ? `Perto do limite. Sobram ${formatAttachmentSize(budget.freeBytes)}.`
+                        : `Anexos da casa (baú e tarefas) até ${TASK_ATTACHMENT_MAX_MB} MB cada.`}
                   </p>
                 ) : null}
 
@@ -374,16 +386,14 @@ export function ChestAdmin({
                 <div className="flex flex-col gap-2">
                   <Button
                     type="submit"
-                    disabled={pending || limitBlocksCreate || attachmentsBlocked}
+                    disabled={pending || attachmentsBlocked}
                     className="w-full"
                   >
                     {pending
                       ? 'Salvando...'
                       : editingId
                         ? 'Salvar item'
-                        : limitBlocksCreate
-                          ? 'Limite de itens atingido'
-                          : 'Adicionar ao baú'}
+                        : 'Adicionar ao baú'}
                   </Button>
                   {editingId ? (
                     <Button

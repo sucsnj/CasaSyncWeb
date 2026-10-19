@@ -9,10 +9,15 @@
  *
  * Por que o teto de 5 MB: o bucket é o `casasync-media`, do plano Hobby (1 GB no
  * total) — e o upload em tarefa tinha sido desligado justamente para não inflar
- * o storage. 5 MB é o mesmo teto da mensagem rápida.
+ * o storage. O número vem de {@link MEDIA_FILE_MAX_MB} porque ele é o **mesmo
+ * teto de todo arquivo do bucket** (`storage.buckets.file_size_limit`), não uma
+ * escolha só do anexo: dois tetos diferentes para o mesmo bucket é como a conta
+ * do storage deixa de fechar (ADR-0027).
  */
-export const TASK_ATTACHMENT_MAX_MB = 5
-export const TASK_ATTACHMENT_MAX_BYTES = TASK_ATTACHMENT_MAX_MB * 1024 * 1024
+import { MEDIA_FILE_MAX_MB } from '@/utils/media'
+
+export const TASK_ATTACHMENT_MAX_MB = MEDIA_FILE_MAX_MB
+export const TASK_ATTACHMENT_MAX_BYTES = MEDIA_FILE_MAX_MB * 1024 * 1024
 
 /**
  * Tipos aceitos, pelo MIME. A lista é fechada e o servidor **valida contra ela**

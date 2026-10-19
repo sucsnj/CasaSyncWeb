@@ -2,6 +2,24 @@ import { createClient } from '@/utils/supabase/client'
 
 export const MEDIA_BUCKET = 'casasync-media'
 
+/**
+ * Teto de **um arquivo** no bucket — vale para todas as pastas (`avatars`,
+ * `houses`, `rewards`, `tasks`, `suggestions`, `messages`, `achievements`,
+ * `chest`).
+ *
+ * Tem três camadas, e as três precisam existir porque cada uma cobre um buraco
+ * da outra (ADR-0027):
+ * 1. **aqui** (client, antes de enviar): não gastar banda com arquivo recusado —
+ *    é a única que dá mensagem boa, porque é a única que conhece o `file.size`;
+ * 2. **no bucket** (`storage.buckets.file_size_limit`, `docs/sql/`): rede de
+ *    segurança para uploads que não vêm deste app (ou que contornam o (1));
+ * 3. **no servidor** (`checkAttachmentFile`): o que **grava** a referência —
+ *    porque `file.size` e o bucket Protect o arquivo, não a URL que o cliente
+ *    manda para o banco.
+ */
+export const MEDIA_FILE_MAX_MB = 5
+export const MEDIA_FILE_MAX_BYTES = MEDIA_FILE_MAX_MB * 1024 * 1024
+
 export type MediaFolder =
   | 'avatars'
   | 'houses'

@@ -1,5 +1,161 @@
 # CasaSync Web — PROJECT STATUS
 
+## Anexos por peso: orçamento de 100 MB por casa, réplica do baú na tarefa e teto de 5 MB no bucket (implementado — **1 SQL a aplicar**)
+
+### O que mudou (3 entregas na mesma rodada)
+1. **O anexo da tarefa pode ser pego do baú** — botão "Usar do baú" no
+   `TaskAttachmentInput`, que abre um seletor com o acervo da casa e **copia**
+   o arquivo (`chest/` → `tasks/`) para virar o anexo da tarefa.
+2. **O limite de 50 itens virou limite de 100 MB por casa, contado por peso** —
+   chave nova `attachment_budget.maxMb` (a antiga `chest_rules.maxItems` saiu) e o
+   consumo sai do **storage**, sem coluna nova.
+3. **O teto de 5 MB ganhou as duas camadas que faltavam**: limite no **bucket**
+   (`file_size_limit`) e **validação no servidor** antes de gravar a referência.
+
+### 1. Réplica do baú na tarefa (`copyChestItemToTask`)
+- **Cópia, não apontamento:** a troca de anexo da tarefa **apaga o arquivo antigo**
+  (`removeStorageFile`), então um objeto compartilhado apagaria material do baú —
+  que é de outra superfície e de outro público. O servidor usa `storage.copy`
+  (server-side, sem baixar bytes para a função).
+- **O input não muda de forma:** a action devolve os mesmos 3 campos (`url`,
+  `name`, `type`) que um upload devolveria, então daqui em diante é o mesmo
+  anexo — nem o form nem `createTask`/`updateTask` ganharam nada.
+- **Catálogo sob demanda:** `listChestAttachmentsForTask()` é chamada **quando o
+  seletor abre**, não no render de `/tasks` (é 1 leitura a mais numa tela quente, e
+  só interessa depois que o ADMIN decidiu usar).
+- **Escopo derivado da sessão:** ADMIN da casa **ativa** + item **dela**; item de
+  outra casa devolve a mesma resposta de "não encontrado" (não revela existência).
+  Os **dois toggles** da casa (ADR-0026) precisam estar ligados — com o baú
+  desligado, levar o material dele para uma tarefa seria reexibi-lo a quem o tutor
+  tinha acabado de trancar.
+- **Link não tem o que copiar:** a réplica de um `text/url` é o próprio endereço.
+- UI: `ChestAttachmentPicker` (`src/components/tasks/chest-attachment-picker.tsx`,
+  `Modal` + lista com título/tipo/tamanho real) acionado pela prop **`chestSource`**
+  do `TaskAttachmentInput` — que **só a tarefa** passa (o baú reusa o mesmo
+  componente; buscar item dele para ele seria absurdo).
+
+### 2. Orçamento por peso — chave `attachment_budget`
+- **`{ maxMb }`, default 100, `0` = sem teto**, validado em 0–1024 MB inteiro
+  (`validateAttachmentBudget`). **Substitui** `chest_rules.maxItems`: o teto não é
+  mais "do baú", é **da casa** (tarefa + baú), então a chave antiga ficou **inerte**
+  (jsonb, sem migration; `DELETE` opcional no `docs/sql/`).
+- **Bytes vêm do storage** (`src/utils/attachment-usage.ts`, server-only, Storage
+  API com service-role): `folderObjectSizes`/`houseAttachmentBytes`. Autoritativo
+  (o tamanho do arquivo que existe), não diverge (troca, órfão de upload cancelado
+  e réplica entram sozinhos) e **não exige migração**. **Não criar coluna
+  `file_size`** — foi o que o ADR-0024 registrou como "exigiria migration", e a
+  leitura do storage resolve.
+- **Fórmula com 3 termos:** `counted = used − freed + pending`. `used` já inclui o
+  arquivo enviado pelo browser (o upload é client-side), então
+  `createTask`/`updateTask`/`createChestItem`/`updateChestItem` passam
+  `pendingBytes: 0` — **só** a réplica usa `pending` (é checada antes de o objeto
+  existir). `freed` = o arquivo que a escrita apaga: **sem ele uma casa no teto
+  nunca conseguiria trocar um material grande por um menor**, que é exatamente a
+  operação que destrava a casa.
+- **Um predicado só** (`attachmentBudgetExceeded`, `>= limitBytes`) para o servidor
+  recusar e para a tela pintar; `0` não gera leitura nenhuma.
+- **Falha:** teto por arquivo **fail closed** (URL vem do cliente); orçamento
+  **fail open** (falha de storage não pode impedir o tutor de trabalhar) — é
+  disponibilidade, não segurança, como `checkActiveTaskLimit`.
+- **Limite honesto:** contam só `tasks/` e `chest/`. Foto de perfil/casa/recompensa,
+  sugestão, mensagem rápida e imagem de conquista ficam de fora (cada módulo com sua
+  regra) — incluí-los tornaria o "N de M" um número que o ADMIN não consegue
+  explicar. O consumo total da casa no bucket é **maior** que o mostrado.
+
+### 3. Teto de 5 MB em 3 camadas
+| Camada | Onde | Cobre |
+|---|---|---|
+| client | `MEDIA_FILE_MAX_MB` (`utils/media.ts`), `TaskAttachmentInput`, `ImageUpload` | não gastar banda com arquivo recusado; única camada que conhece o `file.size`, então é a única com mensagem boa |
+| bucket | `storage.buckets.file_size_limit = 5242880` | upload que não vem deste app (ou que contorna o client) — vale para **todas** as pastas |
+| servidor | `checkAttachmentFile` | a **gravação**: o `file_size_limit` protege o upload, não o `image_url` que o cliente manda para o banco; recusa > 5 MB **e** URL sem objeto correspondente |
+
+`TASK_ATTACHMENT_MAX_MB` passou a **derivar** de `MEDIA_FILE_MAX_MB` (fonte única) e
+o `ImageUpload` ganhou o mesmo aviso de tamanho — porque o limite do bucket é
+**global**, ele também vale para foto de perfil/casa/recompensa/sugestão/conquista.
+
+### SQL a aplicar no Supabase
+`docs/sql/bucket_file_size_limit.sql` — `file_size_limit` do bucket + (comentado)
+o `DELETE` da chave `chest_rules` inerte. Seguro antes ou depois do deploy: sem
+ele o app continua funcionando (o teto por arquivo também é conferido no servidor e
+no client).
+
+### Bug corrigido na 1ª rodada — "Object not found" em todo anexo
+O primeiro teste em tela recusou **todo** anexo com *"Não foi possível ler o tamanho
+do objeto: Object not found"*. Causa: o app tinha **três cópias** do cálculo
+"URL pública → caminho do objeto" e **duas estavam erradas** — faziam
+`indexOf('/casasync-media/')` e depois `slice(at + 1)`, que corta a barra mas
+**mantém o nome do bucket dentro do caminho**. O `info()` recebia um caminho que
+não existe.
+
+O mesmo off-by-one já quebrava, em silêncio, a limpeza do arquivo antigo:
+`removeStorageFile` comparava o caminho com `tasks/`/`chest/`, a comparação nunca
+casava e **trocar/excluir anexo nunca apagou nada do bucket** (mesmo defeito na
+`removeAchievementImage`, que nunca apagou a imagem da conquista). Isso passa a
+importar mais agora, porque o peso do storage conta para o orçamento: cada anexo
+trocado deixava um órfão ocupando os 100 MB.
+
+**Correção:** `storagePathFromUrl` em **`src/utils/storage.ts`** é o **parser
+único** (corta depois do marcador inteiro) e serve às 4 chamadas — conferir o
+tamanho do anexo, apagar o anexo antigo, apagar a imagem da conquista e a da
+mensagem rápida (esta tinha a única cópia correta, agora sem duplicata). Cada
+chamada mantém a **guarda de pasta** (`tasks/`, `chest/`, `achievements/`,
+`messages/`), que é o que impede apagar arquivo de outro módulo.
+`storageObjectBytes` aceita `size` ou `metadata.size` e **loga** quando nenhum vem
+(um "0 bytes" silencioso desligaria o teto de 5 MB sem ninguém perceber).
+
+**Consequência de comportamento:** a partir daqui o arquivo antigo **é** apagado
+quando o anexo é trocado/removido (era o que a documentação sempre disse) — e o
+`remove` é o que segura o orçamento de 100 MB.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓
+(18 rotas) · `npm run check:encoding` ✓. Regras puras executadas com
+`node --experimental-strip-types` (loader temporário para o alias `@/`, fora do
+repo): **59 casos** — teto do bucket como fonte única (5 MB nos 3 lugares),
+`mbToBytes`/`formatMb`/min/max/default, predicado de estouro (atinge no limite
+exato, não estoura 1 byte abaixo, `0` nunca estoura), a fórmula com `freed`/`pending`
+(inclusive `freed > used` sem ficar negativo e `NaN`), estado de tela (10% folgado
+/ 85% perto / 100% no limite / sem teto nunca avisa), mensagem de recusa (cita o
+teto, some sem teto, **trocar 30 MB por 5 MB em casa cheia cabe** e trocar por
+arquivo maior não cabe), o **parser de caminho** (nome do bucket não vaza para o
+caminho, query descartada, URL externa/inválida/só-bucket ⇒ `null`, host que
+contém o nome do bucket não engana) e a **guarda de pasta** do `removeStorageFile`
+(remove na própria pasta, não remove de outra nem URL externa) com um cliente
+falso de storage, mais a regressão da validação de anexo/fachada do baú.
+Classes novas conferidas **no CSS gerado** (`.max-h-80`, `.size-9`,
+`.active\:scale-\[0\.98\]`, `.border-dashed`, `.bg-blue-50`, `.overflow-y-auto`,
+`.text-destructive`), como manda o `AGENTS.md` §2.
+
+**O que não pôde ser verificado aqui:** `attachment-usage.ts`, as actions e as duas
+actions novas moram em módulos **server-only** (importam `next/headers` via
+`utils/house.ts`), então não rodam standalone — a validação é por
+`typecheck`/`build` e por **teste em tela autenticada**.
+
+### Pontos de atenção
+- **Não reintroduzir `maxItems`/`checkChestItemLimit`**; `chest_rules` está inerte.
+- **`used` sempre inclui o arquivo recém-enviado.** Só a réplica usa `pendingBytes`;
+  passar `pendingBytes` junto do upload real contaria o mesmo arquivo duas vezes.
+- **O botão do baú não desliga no limite** (o antigo "Limite de itens atingido"): o
+  tamanho do que está por vir só é conhecido depois do upload, e uma casa em 99,9 MB
+  ainda cabe um material pequeno. O par certo é aviso vermelho + recusa no servidor.
+- **O botão "Usar do baú" aparece mesmo com o baú desligado** e a recusa chega por
+  modal com a ação; o componente não conhece os toggles da casa.
+- **A réplica consome orçamento dos dois lados** (baú + tarefa) — são dois arquivos
+  de verdade, e a conta mostra os dois.
+- **Cópia é o mesmo caminho do upload quanto a órfã:** se o ADMIN copiar e
+  cancelar o form, o arquivo fica no bucket (e na conta). É o comportamento que o
+  upload já tinha; a alternativa (copiar no `createTask`) mudaria a assinatura das
+  actions e o estado do input para um ganho pequeno.
+- **`allowed_mime_types` continua nulo no bucket** de propósito: as pastas têm MIME
+  diferentes e uma lista fechada quebraria upload que hoje funciona.
+- **URL pública → caminho do objeto é `storagePathFromUrl`, em `src/utils/storage.ts`,
+  e só ele** — slicing local está proibido (foi o bug da 1ª rodada). Quem apaga
+  confere a **guarda de pasta** (`tasks/`, `chest/`, `achievements/`, `messages/`).
+- Ver **ADR-0027** (decisão e alternativas) e a emenda do limite de itens no
+  **ADR-0024** (marcada como superada).
+
+---
+
 ## Baú da casa: o acervo é da casa selecionada, não do ADMIN (implementado — sem SQL)
 
 ### O que mudou
@@ -902,7 +1058,19 @@ puro.
 
 ---
 
-## Estado atual (verificado — sem pendências)
+## Estado atual (verificado — sem pendências de código)
+
+- **Anexos por peso (100 MB por casa), réplica do baú na tarefa e teto de 5 MB no
+  bucket:** o anexo da tarefa tem o botão **"Usar do baú"** — o servidor **copia**
+  o objeto `chest/` → `tasks/` (cópia, e não apontamento, porque a troca de anexo
+  apaga o arquivo antigo) e devolve os mesmos 3 campos de um upload. O limite de
+  **50 itens** virou **`attachment_budget.maxMb`** (default 100, `0` = sem teto),
+  **por peso** e **da casa inteira** (`tasks/` + `chest/`), com os bytes lidos do
+  **storage** (sem coluna `file_size`, sem migration) e a troca de arquivo
+  descontando o que sai. O teto de 5 MB ganhou as 2 camadas que faltavam:
+  **`file_size_limit` no bucket** e **conferência do objeto no servidor** (fail
+  closed) antes de gravar a referência. SQL do bucket em
+  `docs/sql/bucket_file_size_limit.sql`. Ver a seção no topo e o **ADR-0027**.
 
 - **Baú da casa: o acervo é da casa selecionada, não do ADMIN:** o `/chest` do
   ADMIN lista só os itens da **casa ativa** e o item novo nasce nela — o select
@@ -1021,7 +1189,10 @@ puro.
   `tasks.extension_count` responde (com `0` nas tarefas existentes),
   `dependent_punishments` responde, e `house_settings` já tem as chaves novas
   gravadas (`task_rules`, `notification_mute`, `house_timezone`, `extension_rules`).
-  **Nada pendente no banco** — o item em `AGENTS.md` §3 voltou a ser "nada pendente".
+  **Uma pendência nova:** o **teto de 5 MB no bucket**
+  (`storage.buckets.file_size_limit`, `docs/sql/bucket_file_size_limit.sql` —
+  ADR-0027). Não bloqueia nada: sem ele o app continua funcionando porque o teto
+  também é conferido no servidor e no client.
 - **Features:** castigo do dependente, silenciamento de notificações, limites de
   tarefas, limite de adiamentos e fuso horário por casa — todas testadas, sem bug
   ou inconsistência visual conhecida até o momento.
@@ -1031,7 +1202,9 @@ puro.
   para que não voltem como "pendência técnica" no futuro.
 - **Deploy:** o SQL do baú (`chest_items`) já foi aplicado pelo usuário e o
   `dependent_punishments.level` também; **falta subir o código** para o aviso, a
-  CSP do anexo HTML, o link da web e o limite de itens irem ao ar.
+  CSP do anexo HTML, o link da web, o limite de itens irem ao ar **e falta aplicar
+  o `file_size_limit` do bucket** (opcional: o teto já é conferido no client e no
+  servidor).
 - **Latência da navegação — Tier 1 entregue e Tier 2 parcial entregue.** O
   diagnóstico mediu que **cada round-trip ao banco custa ~86ms** (mediana de
   `settings/leitura`, uma query trivial de 4 colunas) — o custo é **latência de

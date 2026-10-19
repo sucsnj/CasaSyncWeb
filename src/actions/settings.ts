@@ -6,7 +6,7 @@ import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
 import {
   ATTACHMENT_SETTING_FIELDS,
   DEFAULT_ATTACHMENTS,
-  DEFAULT_CHEST_RULES,
+  DEFAULT_ATTACHMENT_BUDGET,
   DEFAULT_EXTENSION_RULES,
   DEFAULT_HOUSE_TIMEZONE_SETTINGS,
   DEFAULT_NOTIFICATION_MUTE,
@@ -17,7 +17,7 @@ import {
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
-  type ChestRulesSettings,
+  type AttachmentBudgetSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
   type HouseTimezoneSettings,
@@ -31,6 +31,10 @@ import {
   type TextLimitsSettings,
   type AttachmentSettings,
 } from '@/utils/settings'
+import {
+  ATTACHMENT_BUDGET_MAX_MB,
+  ATTACHMENT_BUDGET_MIN_MB,
+} from '@/utils/attachment-budget'
 import { TEXT_LIMIT_MAX, TEXT_LIMIT_MIN } from '@/utils/text-limits'
 import { isValidTimeZone } from '@/utils/timezone'
 import { MUTEABLE_CATEGORIES } from '@/types/notifications'
@@ -132,9 +136,11 @@ export async function updateHouseSettings(
   if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay' || key === 'task_rules') {
     revalidatePath('/tasks')
   }
-  if (key === 'chest_rules') {
-    // O limite aparece no form do baú ("N de M") e no botão de adicionar.
+  if (key === 'attachment_budget') {
+    // O limite aparece no form do baú ("N de M") e na barra do seletor de anexo
+    // da tarefa, então as duas telas leem o número.
     revalidatePath('/chest')
+    revalidatePath('/tasks')
   }
   // `notification_mute` e `notification_retention` só afetam notificações
   // futuras, então não invalidam nenhuma tela.
@@ -178,7 +184,7 @@ function validateSettings(
   if (key === 'task_decay') return validateTaskDecay(patch)
   if (key === 'notification_mute') return validateNotificationMute(patch)
   if (key === 'task_rules') return validateTaskRules(patch)
-  if (key === 'chest_rules') return validateChestRules(patch)
+  if (key === 'attachment_budget') return validateAttachmentBudget(patch)
   if (key === 'house_timezone') return validateHouseTimezone(patch)
   if (key === 'text_limits') return validateTextLimits(patch)
   return validateNotificationRetention(patch)
@@ -196,7 +202,7 @@ type SettingsResult =
     | NotificationMuteSettings
     | TaskDecaySettings
     | TaskRulesSettings
-    | ChestRulesSettings
+    | AttachmentBudgetSettings
     | HouseTimezoneSettings
     | TextLimitsSettings
     | AttachmentSettings
@@ -420,24 +426,31 @@ function validateTaskRules(patch: Record<string, unknown>): SettingsResult {
 }
 
 /**
- * Limite de itens do baú da casa (`0` = sem limite).
+ * Orçamento de anexos da casa, em **MB** (`0` = sem teto).
  *
- * Teto de 999 como o de tarefas ativas: mais que isso é cenário de bucket
- * inundado, não uso legítimo — e o número redondo deixa a arquitetura óbvia
- * (o que o `POINTS_MAX` faz pelo lado dos pontos).
+ * Inteiro de 0 a {@link ATTACHMENT_BUDGET_MAX_MB} (1 GB = o bucket inteiro):
+ * acima disso o número deixa de descrever o problema, e fracionário não faz
+ * sentido para o que se está medindo — megabytes de arquivo, não precisão
+ * científica. Campo a mais enviado pelo cliente não entra no jsonb (a base é o
+ * default, como nas outras chaves).
  */
-function validateChestRules(patch: Record<string, unknown>): SettingsResult {
-  const base = { ...DEFAULT_CHEST_RULES }
+function validateAttachmentBudget(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_ATTACHMENT_BUDGET }
 
-  const maxItems = patch.maxItems ?? base.maxItems
-  if (!isFiniteNumber(maxItems) || !Number.isInteger(maxItems) || maxItems < 0 || maxItems > 999) {
+  const maxMb = patch.maxMb ?? base.maxMb
+  if (
+    !isFiniteNumber(maxMb) ||
+    !Number.isInteger(maxMb) ||
+    maxMb < ATTACHMENT_BUDGET_MIN_MB ||
+    maxMb > ATTACHMENT_BUDGET_MAX_MB
+  ) {
     return {
       ok: false,
-      error: 'O limite de itens do baú deve ser um inteiro de 0 (sem limite) até 999.',
+      error: `O limite de anexos deve ser um inteiro de ${ATTACHMENT_BUDGET_MIN_MB} (sem limite) até ${ATTACHMENT_BUDGET_MAX_MB} MB.`,
     }
   }
 
-  base.maxItems = maxItems
+  base.maxMb = maxMb
 
   return { ok: true, value: base }
 }

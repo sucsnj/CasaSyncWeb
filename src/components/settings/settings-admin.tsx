@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils'
 import type {
   AttachmentSettingField,
   AttachmentSettings,
-  ChestRulesSettings,
+  AttachmentBudgetSettings,
   ExtensionRulesSettings,
   HouseTimezoneSettings,
   NotificationMuteSettings,
@@ -53,6 +53,13 @@ import type {
   TaskSlaSettings,
   TextLimitsSettings,
 } from '@/utils/settings'
+import {
+  ATTACHMENT_BUDGET_MAX_MB,
+  ATTACHMENT_BUDGET_MIN_MB,
+  attachmentBudgetState,
+  formatMb,
+} from '@/utils/attachment-budget'
+import { formatAttachmentSize, TASK_ATTACHMENT_MAX_MB } from '@/utils/task-attachment'
 import type { HouseTimezoneOption } from '@/utils/timezone'
 import { TEXT_LIMIT_MAX, TEXT_LIMIT_MIN } from '@/utils/text-limits'
 
@@ -65,9 +72,12 @@ type SettingsAdminProps = {
   notificationMute: NotificationMuteSettings
   taskDecay: TaskDecaySettings
   taskRules: TaskRulesSettings
-  chestRulesProp: ChestRulesSettings
-  /** Quantos itens a casa ativa tem no baú agora (contagem do servidor). */
-  chestItemCount: number
+  attachmentBudgetProp: AttachmentBudgetSettings
+  /**
+   * Peso já usado pela casa em anexos, em bytes — medido no servidor a partir dos
+   * objetos do storage (ADR-0027). A tela só aplica o predicado compartilhado.
+   */
+  attachmentUsageBytes: number
   houseTimezone: HouseTimezoneSettings
   textLimits: TextLimitsSettings
   /** Offset do fuso já formatado no servidor (ex.: `UTC-03:00`) — texto estável. */
@@ -404,8 +414,8 @@ export function SettingsAdmin({
   notificationMute,
   taskDecay,
   taskRules,
-  chestRulesProp,
-  chestItemCount,
+  attachmentBudgetProp,
+  attachmentUsageBytes,
   houseTimezone,
   houseTimezoneOffset,
   timezoneOptions,
@@ -445,17 +455,16 @@ export function SettingsAdmin({
   const [rules, setRules] = useState<TaskRulesSettings>(taskRules)
   const [rulesError, setRulesError] = useState<string | null>(null)
   const [rulesSuccess, setRulesSuccess] = useState<string | null>(null)
-  const [chestRules, setChestRules] = useState<ChestRulesSettings>(chestRulesProp)
-  const [chestRulesError, setChestRulesError] = useState<string | null>(null)
-  const [chestRulesSuccess, setChestRulesSuccess] = useState<string | null>(null)
+  const [attachmentBudget, setAttachmentBudget] =
+    useState<AttachmentBudgetSettings>(attachmentBudgetProp)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
+  const [budgetSuccess, setBudgetSuccess] = useState<string | null>(null)
 
-  // Aviso de proximidade do limite do baú: 80% é o gatilho (mesma ideia do
-  // `maxItems` — o ADMIN precisa ver o número antes de bater no teto, não só
-  // quando já bateu).
-  const chestLimitNear =
-    chestRules.maxItems > 0 && chestItemCount >= Math.floor(chestRules.maxItems * 0.8)
-  const chestLimitReached =
-    chestRules.maxItems > 0 && chestItemCount >= chestRules.maxItems
+  // Aviso de proximidade do limite de anexos (ADR-0027): 80% é o gatilho — o ADMIN
+  // precisa ver o número **antes** de bater no teto, não só quando já bateu. Os
+  // bytes vêm do servidor e o predicado é o mesmo da barreira, então o tom
+  // daqui não pode divergir da recusa no `createTask`/`createChestItem`.
+  const budget = attachmentBudgetState(attachmentUsageBytes, attachmentBudget.maxMb)
 
   const [timezone, setTimezone] = useState<string>(houseTimezone.timezone)
   const [timezoneError, setTimezoneError] = useState<string | null>(null)
@@ -497,7 +506,7 @@ export function SettingsAdmin({
     | 'retention'
     | 'decay'
     | 'rules'
-    | 'chestRules'
+    | 'attachmentBudget'
     | 'timezone'
     | 'limits'
     | 'attachments'
@@ -616,12 +625,12 @@ export function SettingsAdmin({
     )
   }
 
-  function saveChestRules() {
+  function saveAttachmentBudget() {
     void runSave(
-      'chestRules',
-      () => updateHouseSettings('chest_rules', { ...chestRules }),
-      setChestRulesError,
-      setChestRulesSuccess
+      'attachmentBudget',
+      () => updateHouseSettings('attachment_budget', { ...attachmentBudget }),
+      setBudgetError,
+      setBudgetSuccess
     )
   }
 
@@ -1308,6 +1317,9 @@ export function SettingsAdmin({
           </CardContent>
         </Card>
 
+        {/* Orçamento de anexos (ADR-0027) — **por peso**, e da casa inteira. O
+            card anterior ("Limite do baú", 50 itens) virou este: o que acaba com
+            o bucket é volume, e anexo existe em tarefa e no baú. */}
         <Card>
           <CardHeader>
             <CardAction>
@@ -1315,67 +1327,70 @@ export function SettingsAdmin({
                 <Package className="size-5" />
               </span>
             </CardAction>
-            <CardTitle>Limite do baú</CardTitle>
+            <CardTitle>Limite de anexos</CardTitle>
             <CardDescription>
-              Teto de itens que a casa pode ter no baú. Existe para o storage não
-              estourar: o bucket é de 1 GB e compartilhado entre todas as casas.
-              Zero desliga o limite.
+              Teto de espaço que a casa pode ocupar com anexos de tarefa e do baú.
+              Existe para o storage não estourar: o bucket é de 1 GB e compartilhado
+              entre todas as casas. Zero desliga o limite.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
-                label="Itens no baú"
-                value={chestRules.maxItems}
-                onChange={(maxItems) =>
-                  setChestRules((prev) => ({ ...prev, maxItems }))
+                label="Anexos da casa"
+                value={attachmentBudget.maxMb}
+                onChange={(maxMb) =>
+                  setAttachmentBudget((prev) => ({ ...prev, maxMb }))
                 }
-                min={0}
-                max={999}
+                min={ATTACHMENT_BUDGET_MIN_MB}
+                max={ATTACHMENT_BUDGET_MAX_MB}
                 step={1}
-                suffix="por casa"
-                hint="0 = sem limite. No pior caso cada item ocupa 5 MB, então 50 itens são ~250 MB desta casa."
+                suffix="MB por casa"
+                hint={`0 = sem limite. Cada anexo tem teto de ${TASK_ATTACHMENT_MAX_MB} MB, então 100 MB ≈ ${Math.floor(100 / TASK_ATTACHMENT_MAX_MB)} anexos cheios. Conta tarefa e baú; não conta foto de perfil, recompensa, mensagem rápida nem imagem de conquista.`}
               />
-              {/* "N de M" com tom de aviso: o número é do render do servidor e
-                  já vem na prop, então não há query no client. */}
+              {/* "N de M" com tom de aviso: os bytes vêm do render do servidor
+                  (storage), então não há query no client — e o tom sai do mesmo
+                  predicado que recusa no servidor. */}
               <div className="flex flex-col justify-end">
                 <p
                   role="status"
                   className={cn(
                     'rounded-xl border px-3 py-2 text-sm',
-                    chestLimitReached
+                    budget.reached
                       ? 'border-red-200 bg-red-50 text-red-800'
-                      : chestLimitNear
+                      : budget.near
                         ? 'border-amber-200 bg-amber-50 text-amber-800'
                         : 'border-slate-200 bg-slate-50 text-slate-600'
                   )}
                 >
                   <span className="font-medium">
-                    {chestItemCount}
-                    {chestRules.maxItems > 0 ? ` de ${chestRules.maxItems}` : ''}{' '}
-                    itens neste baú
+                    {formatAttachmentSize(budget.countedBytes)}
+                    {attachmentBudget.maxMb > 0
+                      ? ` de ${formatMb(attachmentBudget.maxMb)}`
+                      : ''}{' '}
+                    em anexos nesta casa
                   </span>
                   <span className="block text-xs">
-                    {chestLimitReached
-                      ? 'O limite foi atingido — exclua algum item ou aumente o limite acima.'
-                      : chestLimitNear
-                        ? 'Perto do limite. Vale conferir o que ainda está no baú.'
-                        : chestRules.maxItems > 0
-                          ? 'Cada item pode ter até 5 MB.'
+                    {budget.reached
+                      ? 'O limite foi atingido — exclua algum anexo ou aumente o limite acima.'
+                      : budget.near
+                        ? `Perto do limite. Sobram ${formatAttachmentSize(budget.freeBytes)}.`
+                        : attachmentBudget.maxMb > 0
+                          ? `Medido no storage: tarefa + baú. Cada anexo tem teto de ${TASK_ATTACHMENT_MAX_MB} MB.`
                           : 'Sem limite configurado.'}
                   </span>
                 </p>
               </div>
             </div>
 
-            {chestRulesError ? (
+            {budgetError ? (
               <p role="alert" className="text-sm text-red-600">
-                {chestRulesError}
+                {budgetError}
               </p>
             ) : null}
-            {chestRulesSuccess ? (
+            {budgetSuccess ? (
               <p role="status" className="text-sm text-emerald-700">
-                {chestRulesSuccess}
+                {budgetSuccess}
               </p>
             ) : null}
 
@@ -1383,11 +1398,11 @@ export function SettingsAdmin({
               <Button
                 type="button"
                 size="sm"
-                onClick={() => void saveChestRules()}
-                disabled={isSaving('chestRules')}
+                onClick={() => void saveAttachmentBudget()}
+                disabled={isSaving('attachmentBudget')}
               >
                 <Save className="size-4" />
-                {isSaving('chestRules') ? 'Salvando…' : 'Salvar limite'}
+                {isSaving('attachmentBudget') ? 'Salvando…' : 'Salvar limite'}
               </Button>
             </div>
           </CardContent>

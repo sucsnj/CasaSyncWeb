@@ -9,9 +9,10 @@ import {
 import { ChestAdmin } from '@/components/chest/chest-admin'
 import { ChestDependent } from '@/components/chest/chest-dependent'
 import {
+  getHouseAttachmentBudgetSettings,
   getHouseAttachmentSettings,
-  getHouseChestRulesSettings,
 } from '@/utils/house-settings'
+import { houseAttachmentBytes } from '@/utils/attachment-usage'
 import type { ChestItemView } from '@/components/chest/chest-types'
 
 export const metadata: Metadata = {
@@ -62,17 +63,22 @@ export default async function ChestPage() {
         </p>
       )
     } else {
-      // Itens + configuração da casa em paralelo; os getters saem do mesmo
-      // `getHouseSettingsMap` da casa ativa (2 leituras, não 3).
-      const [{ data: items }, chestRules, attachments] = await Promise.all([
-        admin
-          .from('chest_items')
-          .select('*')
-          .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: false }),
-        getHouseChestRulesSettings(activeHouse.id),
-        getHouseAttachmentSettings(activeHouse.id),
-      ])
+      // Itens + configuração da casa + **peso** dos anexos da casa, em paralelo;
+      // os getters saem do mesmo `getHouseSettingsMap` da casa ativa (2 leituras,
+      // não 3). O peso é 1 leitura de storage a mais nesta tela — o número que o
+      // form mostra é do arquivo real, não de uma coluna que o app não tem
+      // (ADR-0027). Já `/tasks` e `/dashboard/dependent` não pagam nada disso.
+      const [{ data: items }, attachmentBudget, attachments, usageBytes] =
+        await Promise.all([
+          admin
+            .from('chest_items')
+            .select('*')
+            .eq('house_id', activeHouse.id)
+            .order('created_at', { ascending: false }),
+          getHouseAttachmentBudgetSettings(activeHouse.id),
+          getHouseAttachmentSettings(activeHouse.id),
+          houseAttachmentBytes(admin, activeHouse.id).catch(() => 0),
+        ])
 
       content = (
         <ChestAdmin
@@ -80,7 +86,8 @@ export default async function ChestPage() {
           initialItems={(items ?? []) satisfies ChestItemView[]}
           houseId={activeHouse.id}
           houseName={activeHouse.name}
-          maxItems={chestRules.maxItems}
+          maxMb={attachmentBudget.maxMb}
+          usageBytes={usageBytes}
           attachmentsAllowed={attachments.chestAllowed}
         />
       )

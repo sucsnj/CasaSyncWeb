@@ -956,6 +956,7 @@ export function TasksAdmin({
                     <Label>Anexo (opcional)</Label>
                     <TaskAttachmentInput
                       ownerId={houseId}
+                      chestSource
                       url={taskAttachment.url}
                       name={taskAttachment.name}
                       type={taskAttachment.type}
@@ -1178,6 +1179,7 @@ export function TasksAdmin({
                             <span className="text-xs text-slate-500">Anexo</span>
                             <TaskAttachmentInput
                               ownerId={houseId}
+                              chestSource
                               url={task.image_url}
                               name={task.attachment_name}
                               type={task.attachment_type}
@@ -1468,6 +1470,7 @@ export function TasksAdmin({
                             <span className="text-xs text-slate-500">Anexo</span>
                             <TaskAttachmentInput
                               ownerId={houseId}
+                              chestSource
                               url={task.image_url}
                               name={task.attachment_name}
                               type={task.attachment_type}

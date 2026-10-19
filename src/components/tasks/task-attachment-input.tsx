@@ -6,11 +6,13 @@ import {
   Film,
   Link2,
   LoaderCircle,
+  Package,
   Paperclip,
   TriangleAlert,
   X,
 } from 'lucide-react'
 import { uploadMedia } from '@/utils/media'
+import { ChestAttachmentPicker } from '@/components/tasks/chest-attachment-picker'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -43,6 +45,10 @@ import { cn } from '@/lib/utils'
  * **`folder` é opcional** (ADR-0024): o baú reusa este componente com a pasta
  * `chest/` e o mesmo teto/lista de tipos. O default mantém o comportamento da
  * tarefa idêntico — quem não passa a prop nem percebe a mudança.
+ *
+ * **`chestSource` é opcional** (ADR-0027): a **tarefa** pode "usar do baú" — o
+ * servidor copia um material do acervo da casa para o anexo. O baú, que também
+ * usa este componente, não passa a prop (seria buscar item dele mesmo para ele).
  */
 export function TaskAttachmentInput({
   ownerId,
@@ -52,6 +58,7 @@ export function TaskAttachmentInput({
   onChange,
   disabled,
   folder = TASK_ATTACHMENT_FOLDER,
+  chestSource = false,
 }: {
   ownerId: string
   url?: string | null
@@ -70,6 +77,11 @@ export function TaskAttachmentInput({
    * da escrita.
    */
   folder?: string
+  /**
+   * Oferece "**Usar do baú**" (ADR-0027) — só a tarefa passa. Default desligado
+   * mantém o baú exatamente como está.
+   */
+  chestSource?: boolean
 }) {
   const kind = attachmentKind(type)
   const isLink = kind === 'link'
@@ -88,6 +100,7 @@ export function TaskAttachmentInput({
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [linkDraft, setLinkDraft] = useState('')
+  const [chestOpen, setChestOpen] = useState(false)
 
   async function handleFile(file: File | undefined) {
     if (!file || uploading || disabled) return
@@ -284,35 +297,53 @@ export function TaskAttachmentInput({
             </p>
           </div>
         ) : (
-          <label
-            className={cn(
-              'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200',
-              'hover:bg-slate-50 active:scale-95',
-              (disabled || uploading) &&
-                'pointer-events-none opacity-50'
-            )}
-          >
-            {uploading ? (
-              <LoaderCircle className="size-4 animate-spin" />
-            ) : (
-              <Paperclip className="size-4" />
-            )}
-            {uploading
-              ? 'Enviando…'
-              : url
-                ? 'Trocar arquivo'
-                : 'Anexar arquivo'}
-            <input
-              type="file"
-              accept={TASK_ATTACHMENT_ACCEPT}
-              className="sr-only"
-              disabled={disabled || uploading}
-              onChange={(event) => {
-                handleFile(event.target.files?.[0])
-                event.target.value = ''
-              }}
-            />
-          </label>
+          <>
+            <label
+              className={cn(
+                'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200',
+                'hover:bg-slate-50 active:scale-95',
+                (disabled || uploading) &&
+                  'pointer-events-none opacity-50'
+              )}
+            >
+              {uploading ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Paperclip className="size-4" />
+              )}
+              {uploading
+                ? 'Enviando…'
+                : url
+                  ? 'Trocar arquivo'
+                  : 'Anexar arquivo'}
+              <input
+                type="file"
+                accept={TASK_ATTACHMENT_ACCEPT}
+                className="sr-only"
+                disabled={disabled || uploading}
+                onChange={(event) => {
+                  handleFile(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
+            </label>
+
+            {/* Terceira porta de entrada do anexo (ADR-0027): em vez de reenviar o
+                arquivo, o ADMIN replica um material que já está no baú da casa. O
+                servidor faz a cópia e devolve os 3 campos — o mesmo formato do
+                upload, então daqui em diante é o mesmo anexo. */}
+            {chestSource ? (
+              <button
+                type="button"
+                onClick={() => setChestOpen(true)}
+                disabled={disabled || uploading}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-all duration-200 hover:bg-slate-50 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Package className="size-4" />
+                Usar do baú
+              </button>
+            ) : null}
+          </>
         )}
       </div>
 
@@ -331,6 +362,20 @@ export function TaskAttachmentInput({
           <TriangleAlert className="size-3.5 shrink-0" />
           {error}
         </p>
+      ) : null}
+
+      {/* Montado só enquanto aberto (o estado nasce limpo a cada vez) e só na
+          tarefa — o catálogo do baú é buscado aqui, ao abrir. */}
+      {chestSource && chestOpen ? (
+        <ChestAttachmentPicker
+          open
+          onClose={() => setChestOpen(false)}
+          onPick={(next) => {
+            setError(null)
+            onChange(next)
+          }}
+          disabled={disabled}
+        />
       ) : null}
     </div>
   )
