@@ -102,12 +102,12 @@ export function RewardsAdmin({
     [rewards]
   )
   const filteredRewards = useMemo(() => {
-    const term = search.trim().toLowerCase()
+    const term = search.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     if (!term) return rewards
     return rewards.filter(
       (reward) =>
-        reward.title.toLowerCase().includes(term) ||
-        (reward.description ?? '').toLowerCase().includes(term)
+        reward.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term) ||
+        (reward.description ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term)
     )
   }, [rewards, search])
   const dependentNameById = useMemo(

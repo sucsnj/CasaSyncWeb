@@ -67,9 +67,11 @@ export function ChestDependent({
   })
 
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase()
+    const term = search.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     if (!term) return items
-    return items.filter((item) => item.title.toLowerCase().includes(term))
+    return items.filter((item) =>
+      item.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term)
+    )
   }, [items, search])
 
   return (
