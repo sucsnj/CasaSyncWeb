@@ -15,6 +15,7 @@ import {
   COMUNICADO_TIME_PATTERN,
   comunicadoSchedule,
   firstComunicadoOccurrence,
+  isComunicadoUnlimited,
   nextComunicadoOccurrence,
   toDueComunicado,
   type Comunicado,
@@ -77,10 +78,10 @@ function validateComunicadoFields(input: {
   }
   if (
     !Number.isInteger(input.repeatsTotal) ||
-    input.repeatsTotal < 1 ||
+    input.repeatsTotal < 0 ||
     input.repeatsTotal > COMUNICADO_MAX_REPEATS
   ) {
-    return `Quantas vezes cada dependente deve receber varia de 1 a ${COMUNICADO_MAX_REPEATS}.`
+    return `Quantas vezes cada dependente deve receber varia de 0 (sem limite) a ${COMUNICADO_MAX_REPEATS}.`
   }
   if (
     !Number.isInteger(input.repeatIntervalDays) ||
@@ -378,7 +379,8 @@ export async function resetComunicadoConfirmations(
  *
  * - sem linha de entrega → devido quando `now >= firstComunicadoOccurrence`
  *   (slot de hoje ou próximo; intervalo ignorado na 1ª exibição);
- * - `delivered_count >= repeats_total` → encerrado para este dependente;
+ * - `repeats_total = 0` → sem limite: nunca encerra para o dependente;
+ * - senão, `delivered_count >= repeats_total` → encerrado para este dependente;
  * - senão, devido quando `now >= próxima ocorrência` a partir da última
  *   confirmação (`last_confirmed_at`, somando o intervalo).
  */
@@ -425,7 +427,8 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
     const delivery = deliveriesByComunicado.get(comunicado.id)
     const deliveredCount = delivery?.delivered_count ?? 0
 
-    if (deliveredCount >= comunicado.repeats_total) continue
+    // Sem limite (`repeats_total = 0`): nunca encerra para o dependente.
+    if (!isComunicadoUnlimited(comunicado.repeats_total) && deliveredCount >= comunicado.repeats_total) continue
 
     const schedule = comunicadoSchedule(comunicado)
 
@@ -453,8 +456,9 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
 
 /**
  * DEPENDENTE confirma a exibição de um comunicado da própria casa. A frequência
- * é POR dependente: a contagem sobe até `repeats_total` (o servidor nunca deixa
- * ultrapassar, mesmo com a fila desatualizada) e cada confirmação vira o
+ * é POR dependente: com limite, a contagem sobe até `repeats_total` (o servidor
+ * nunca deixa ultrapassar, mesmo com a fila desatualizada); com `repeats_total
+ * = 0` a contagem é livre e nunca encerra. Cada confirmação vira o
  * `last_confirmed_at` que agenda a próxima repetição.
  *
  * `typedPhrase` é a **confirmação de leitura** (regra do usuário): o dependente
@@ -527,12 +531,13 @@ export async function confirmComunicadoDelivery(
     return { ok: true, message: 'Comunicado confirmado.' }
   }
 
-  if (row.delivered_count >= comunicado.repeats_total) {
+  // Sem limite (`repeats_total = 0`): nunca é "concluído".
+  if (!isComunicadoUnlimited(comunicado.repeats_total) && row.delivered_count >= comunicado.repeats_total) {
     return { ok: false, error: 'Este comunicado já foi concluído.' }
   }
 
   // Update com guard no valor lido (+ 1 retry relendo): duas janelas não
-  // perdem confirmação nem passam do `repeats_total`.
+  // perdem confirmação nem passam do `repeats_total` (quando há limite).
   for (let attempt = 0; attempt < 2; attempt++) {
     const { data: fresh } = await admin
       .from('comunicado_deliveries')
@@ -542,7 +547,9 @@ export async function confirmComunicadoDelivery(
 
     if (!fresh) break
 
-    const count = Math.min(fresh.delivered_count + 1, comunicado.repeats_total)
+    const count = isComunicadoUnlimited(comunicado.repeats_total)
+      ? fresh.delivered_count + 1
+      : Math.min(fresh.delivered_count + 1, comunicado.repeats_total)
     const { data: updated } = await admin
       .from('comunicado_deliveries')
       .update({ delivered_count: count, last_confirmed_at: now, updated_at: now })

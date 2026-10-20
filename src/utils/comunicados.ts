@@ -13,6 +13,8 @@
  * - Repetição é POR DEPENDENTE: cada confirmação agenda a próxima exibição
  *   conforme o período (dias), os dias da semana e o horário configurados;
  *   quando o dependente completa `repeats_total` confirmações, para de receber.
+ *   `repeats_total = 0` = sem limite (recebe para sempre, até despublicar/
+ *   excluir) — ver `COMUNICADO_UNLIMITED_REPEATS`/`isComunicadoUnlimited`.
  * - Para confirmar, o dependente digita ao menos 3 palavras do aviso (regra de
  *   leitura conferida — helper em `utils/alert-queue.ts`, revalidado no servidor).
  * - O "disparo" agendado é calculado no servidor (próxima abertura) — o app
@@ -28,7 +30,19 @@ import { zonedOffsetMs, zonedWallClockToInstant, zonedWeekday } from '@/utils/ti
 import type { Tables } from '@/types/database'
 
 export const COMUNICADO_MAX_REPEATS = 100
+/**
+ * `repeats_total = 0` = **sem limite** de confirmações: o dependente recebe o
+ * aviso para sempre (nas repetições agendadas) até o ADMIN despublicar/excluir.
+ * O banco aceita 0–100 (`docs/sql/comunicados_repeats_zero.sql`); a UI mostra
+ * "0 = sem limite".
+ */
+export const COMUNICADO_UNLIMITED_REPEATS = 0
 export const COMUNICADO_MAX_INTERVAL_DAYS = 365
+
+/** Comunicado sem limite de confirmações (`repeats_total === 0`). */
+export function isComunicadoUnlimited(repeatsTotal: number): boolean {
+  return repeatsTotal === COMUNICADO_UNLIMITED_REPEATS
+}
 
 /**
  * Descrição é o texto que o dependente lê antes de confirmar: mínimo de 30
@@ -89,7 +103,11 @@ export function toDueComunicado(
     description: comunicado.description,
     repeatsTotal: comunicado.repeats_total,
     deliveredCount,
-    remaining: Math.max(0, comunicado.repeats_total - deliveredCount),
+    // Sem limite (`repeats_total = 0`): `Infinity` para o consumidor não exibir
+    // "0 vezes" (o trecho de exibição está comentado no overlay).
+    remaining: isComunicadoUnlimited(comunicado.repeats_total)
+      ? Infinity
+      : Math.max(0, comunicado.repeats_total - deliveredCount),
   }
 }
 

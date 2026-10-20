@@ -24,6 +24,7 @@ import {
   COMUNICADO_MIN_DESCRIPTION,
   COMUNICADO_SHORT_DAY_LABELS,
   formatComunicadoTime,
+  isComunicadoUnlimited,
   type Comunicado,
 } from '@/utils/comunicados'
 
@@ -50,7 +51,9 @@ function scheduleSummary(comunicado: Comunicado): {
   intervalLabel: string
 } {
   return {
-    repeatsLabel: `${comunicado.repeats_total}× por dependente`,
+    repeatsLabel: isComunicadoUnlimited(comunicado.repeats_total)
+      ? 'sem limite por dependente'
+      : `${comunicado.repeats_total}× por dependente`,
     intervalLabel:
       comunicado.repeat_interval_days > 0
         ? `a cada ${comunicado.repeat_interval_days} dia${comunicado.repeat_interval_days > 1 ? 's' : ''}`
@@ -350,12 +353,12 @@ export function ComunicadosAdmin({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-repeats">
-                    Vezes por dependente (1–{COMUNICADO_MAX_REPEATS})
+                    Vezes por dependente (0 = sem limite)
                   </label>
                   <Input
                     id="comunicado-repeats"
                     type="number"
-                    min={1}
+                    min={0}
                     max={COMUNICADO_MAX_REPEATS}
                     value={form.repeatsTotal}
                     onChange={(event) =>
@@ -367,7 +370,8 @@ export function ComunicadosAdmin({
                     required
                   />
                   <p className="text-xs text-slate-400">
-                    Quantas confirmações o dependente precisa dar.
+                    Quantas confirmações o dependente precisa dar — 0 = sem
+                    limite (o aviso aparece para sempre).
                   </p>
                 </div>
 

@@ -1,5 +1,48 @@
 # CasaSync Web — PROJECT STATUS
 
+## Comunicados: `repeats_total = 0` = sem limite + zerar confirmações (implementado — **1 SQL a aplicar**)
+
+### O que mudou
+1. **`repeats_total = 0` = SEM LIMITE de confirmações** — o campo "Vezes por
+   dependente" do form passou a aceitar **0**, que significa que o dependente
+   recebe o aviso para sempre (nas repetições agendadas), até o ADMIN
+   despublicar/excluir. Antes o mínimo era 1 (`CHECK between 1 and 100`).
+2. **Botão "Zerar confirmações"** no card do comunicado (ADMIN) — volta o
+   `delivered_count` a `0` e limpa `last_confirmed_at` de **todas** as entregas
+   daquele comunicado, então os dependentes recebem o aviso de novo. Só aparece
+   quando há confirmações, com `Modal` de confirmação.
+
+### Onde mudou
+- **`docs/sql/comunicados_repeats_zero.sql`** (**a aplicar no Supabase**): troca o
+  `CHECK` de `repeats_total between 1 and 100` para `between 0 and 100`.
+- **`src/utils/comunicados.ts`**: `COMUNICADO_UNLIMITED_REPEATS = 0` +
+  `isComunicadoUnlimited(repeatsTotal)`; `toDueComunicado` devolve
+  `remaining: Infinity` quando sem limite.
+- **`src/actions/comunicados.ts`**: `validateComunicadoFields` aceita 0
+  (fail-closed 0–100); `getDueComunicado` não encerra quando sem limite;
+  `confirmComunicadoDelivery` não trata como "concluído" e soma sem teto; nova
+  action `resetComunicadoConfirmations(comunicadoId)` (ADMIN da casa ativa,
+  escopo pela casa do comunicado).
+- **`src/components/comunicados/comunicados-admin.tsx`**: botão "Zerar
+  confirmações" (`RotateCcw`) no card, `Modal` de confirmação, contagem total
+  volta a 0 na hora, label "sem limite por dependente" e campo do form
+  `min={0}` com a dica "0 = sem limite".
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓.
+
+### Pontos de atenção
+- **Ordem obrigatória: SQL antes do deploy** — o app lê `repeats_total = 0`; sem
+  o `CHECK` novo o banco recusa o 0 e a criação/edição falha.
+- **`repeats_total = 0` é a única forma de "sem limite"** — não existe outro
+  valor especial; o default continua `1`.
+- **Zerar não exclui o comunicado** nem despublica: só zera as entregas. Um
+  comunicado sem limite que for zerado volta a ser devido na próxima repetição.
+- **`remaining: Infinity`** em `toDueComunicado` — o único consumidor
+  (`alert-queue-overlay.tsx`) está comentado; é o valor que evita "0 vezes".
+
+---
+
 ## Anexos por peso: orçamento de 100 MB por casa, réplica do baú na tarefa e teto de 5 MB no bucket (implementado — **1 SQL a aplicar**)
 
 ### O que mudou (3 entregas na mesma rodada)
