@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Megaphone, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Megaphone, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import {
   createComunicado,
   deleteComunicado,
+  resetComunicadoConfirmations,
   setComunicadoPublished,
   updateComunicado,
 } from '@/actions/comunicados'
@@ -75,6 +76,8 @@ export function ComunicadosAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Comunicado | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [resetTarget, setResetTarget] = useState<Comunicado | null>(null)
+  const [resetBusy, setResetBusy] = useState(false)
 
   // O form fica ACIMA da lista: ao tocar em "Editar" num card lá embaixo, abrir
   // o form não ajudava em nada se ele continuasse fora da tela. A rolagem suave
@@ -210,6 +213,29 @@ export function ComunicadosAdmin({
     } catch (err) {
       console.error('[COMUNICADOS] Falha ao publicar:', err)
       toast.error('Falha ao alternar a publicação.')
+    }
+  }
+
+  async function handleReset() {
+    if (!resetTarget || resetBusy) return
+    setResetBusy(true)
+    try {
+      const res = await resetComunicadoConfirmations(resetTarget.id)
+      if (!res.ok) {
+        toast.error(res.error)
+        setResetTarget(null)
+        return
+      }
+      // A contagem total do card volta a zero na hora; as entregas ficam em 0
+      // para todos os dependentes (o comunicado em si não muda).
+      setConfirmations((prev) => ({ ...prev, [resetTarget.id]: 0 }))
+      toast.success(res.message)
+      setResetTarget(null)
+    } catch (err) {
+      console.error('[COMUNICADOS] Falha ao zerar confirmações:', err)
+      toast.error('Falha ao zerar as confirmações.')
+    } finally {
+      setResetBusy(false)
     }
   }
 
@@ -500,6 +526,16 @@ export function ComunicadosAdmin({
                         <Pencil className="size-4" />
                         Editar
                       </Button>
+                      {(confirmations[comunicado.id] ?? 0) > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setResetTarget(comunicado)}
+                        >
+                          <RotateCcw className="size-4" />
+                          Zerar confirmações
+                        </Button>
+                      ) : null}
                       <Button
                         variant="destructive"
                         size="sm"
@@ -540,6 +576,37 @@ export function ComunicadosAdmin({
           })
         )}
       </div>
+
+      <Modal
+        open={resetTarget !== null}
+        onClose={() => setResetTarget(null)}
+        title="Zerar confirmações"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            Zerar as confirmações de “{resetTarget?.title}” faz todos os
+            dependentes receberem o aviso de novo (como se fosse a primeira
+            vez). O comunicado não é excluído.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="destructive"
+              disabled={resetBusy}
+              onClick={handleReset}
+              className="sm:flex-1"
+            >
+              {resetBusy ? 'Zerando…' : 'Zerar confirmações'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setResetTarget(null)}
+              disabled={resetBusy}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={deleteTarget !== null}

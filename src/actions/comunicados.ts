@@ -322,6 +322,50 @@ export async function deleteComunicado(
 }
 
 /**
+ * ADMIN zera o contador de confirmações de um comunicado da casa ativa. Todas as
+ * entregas (`comunicado_deliveries`) voltam a `delivered_count = 0` com
+ * `last_confirmed_at = null`, então os dependentes voltam a receber o aviso (se
+ * publicado) como se fosse a primeira vez. O comunicado em si não é alterado.
+ */
+export async function resetComunicadoConfirmations(
+  comunicadoId: string
+): Promise<ActionResult> {
+  const activeHouse = await getActiveAdminHouse()
+  if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
+
+  const admin = createAdminClient()
+  const auth = await assertAdminCanManage(admin, activeHouse.id)
+  if (!auth.ok) return auth
+
+  const { data: comunicado } = await admin
+    .from('comunicados')
+    .select('house_id, title')
+    .eq('id', comunicadoId)
+    .maybeSingle()
+
+  if (!comunicado || comunicado.house_id !== activeHouse.id) {
+    return { ok: false, error: 'Comunicado não encontrado nesta casa.' }
+  }
+
+  const { error } = await admin
+    .from('comunicado_deliveries')
+    .update({
+      delivered_count: 0,
+      last_confirmed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('comunicado_id', comunicadoId)
+
+  if (error) return { ok: false, error: 'Falha ao zerar as confirmações.' }
+
+  revalidatePath('/dashboard/admin/comunicados')
+  return {
+    ok: true,
+    message: `Confirmações de "${comunicado.title}" zeradas — os dependentes vão receber o aviso de novo.`,
+  }
+}
+
+/**
  * Comunicados "devidos" do DEPENDENTE da própria casa (papel e casa derivados
  * da sessão — nunca de input público). SEM tempo real (decisão de produto):
  * usado no render server-side das telas do dependente — a fila só muda em
