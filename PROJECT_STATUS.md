@@ -81,7 +81,10 @@ convenção das outras chaves de `house_settings`). Os dois são informáveis na
   2/dia · 3/mês" no card.
 - **`src/components/rewards/rewards-dependent.tsx`**: mostra o limite no card,
   desabilita o botão com "Limite atingido" e avisa "Limite diário/mensal
-  atingido" quando o teto do período é alcançado.
+  atingido" quando o teto do período é alcançado. **O que ainda resta é
+  explícito**, uma linha por período: "Hoje: 1 resgate disponível (limite 2)" /
+  "Mês: 2 resgates disponíveis (limite 3)" (helpers puros
+  `rewardRemaining`/`rewardRemainingLabel` em `src/utils/reward-limits.ts`).
 - **`src/types/database.ts`**: as 2 colunas novas espelhadas em `rewards`.
 
 ### Verificação
@@ -97,6 +100,8 @@ e as fronteiras no fuso da casa (Recife: dia 20 começa às 03:00Z, mês em
 ### Pontos de atenção
 - **Ordem obrigatória: SQL antes do deploy** — a *criação/edição* de recompensa
   grava as 2 colunas, então sem o SQL o banco recusa (`column does not exist`).
+  *(o SQL já foi aplicado: as colunas `daily_limit`/`monthly_limit` existem em
+  `public.rewards` — confirmado por probe.)*
 - **A LEITURA degrada em vez de quebrar**: `requestRedemption` lê a recompensa
   com os limitadores e, se a coluna ainda não existir (SQL pendente), relê sem
   eles e segue **sem limite** — a loja continua funcionando. `isRewardUnlimited`

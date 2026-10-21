@@ -20,7 +20,7 @@ import {
   countRewardRedemptionsSince,
   isRewardLimitReached,
   isRewardUnlimited,
-  rewardLimitLabel,
+  rewardRemainingLabel,
 } from '@/utils/reward-limits'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
@@ -410,10 +410,27 @@ export function RewardsDependent({
                 reward.monthly_limit
               )
               const limitReached = dailyReached || monthlyReached
-              const limitLabel = rewardLimitLabel(
-                reward.daily_limit,
-                reward.monthly_limit
-              )
+              // O que ainda resta, por período — explícito para o dependente
+              // ("Hoje: 1 resgate disponível (limite 2)").
+              const limitDetails: string[] = []
+              if (!isRewardUnlimited(reward.daily_limit)) {
+                limitDetails.push(
+                  rewardRemainingLabel(
+                    'dia',
+                    usage?.daily ?? 0,
+                    reward.daily_limit
+                  )
+                )
+              }
+              if (!isRewardUnlimited(reward.monthly_limit)) {
+                limitDetails.push(
+                  rewardRemainingLabel(
+                    'mês',
+                    usage?.monthly ?? 0,
+                    reward.monthly_limit
+                  )
+                )
+              }
               const disabled =
                 inactive ||
                 pendingId === reward.id ||
@@ -455,14 +472,12 @@ export function RewardsDependent({
                         {reward.description}
                       </p>
                     ) : null}
-                    {limitLabel ? (
-                      <p className="text-xs text-slate-500">
-                        Limite: {limitLabel}
-                        {dailyReached ? ' · já usou o limite de hoje' : ''}
-                        {!dailyReached && monthlyReached
-                          ? ' · já usou o limite do mês'
-                          : ''}
-                      </p>
+                    {limitDetails.length > 0 ? (
+                      <div className="flex flex-col gap-0.5 text-xs text-slate-500">
+                        {limitDetails.map((detail) => (
+                          <span key={detail}>{detail}</span>
+                        ))}
+                      </div>
                     ) : null}
                     <div className="mt-1 flex items-center justify-between gap-2">
                       {inactive ? (

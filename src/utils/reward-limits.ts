@@ -124,3 +124,35 @@ export function isRewardLimitReached(
   if (isRewardUnlimited(limit)) return false
   return used >= (limit as number)
 }
+
+/**
+ * Quantos resgates ainda restam ao dependente. `null` = ilimitado (sem teto).
+ */
+export function rewardRemaining(
+  used: number,
+  limit: number | undefined | null
+): number | null {
+  if (isRewardUnlimited(limit)) return null
+  return Math.max(0, (limit as number) - used)
+}
+
+/**
+ * Texto **explícito** do que ainda resta, por período — é o que o dependente
+ * lê no card: "Hoje: 1 resgate disponível (limite 2)".
+ *
+ * O número é o que **resta** (não o usado), e o teto aparece junto para o
+ * limite ficar claro. Período 'dia' → "Hoje"; 'mês' → "Mês".
+ */
+export function rewardRemainingLabel(
+  period: RewardLimitPeriod,
+  used: number,
+  limit: number | undefined | null
+): string {
+  const remaining = rewardRemaining(used, limit)
+  if (remaining === null) return ''
+  const noun = remaining === 1 ? 'resgate' : 'resgates'
+  const prefix = period === 'dia' ? 'Hoje' : 'Mês'
+  return `${prefix}: ${remaining} ${noun} ${
+    remaining === 1 ? 'disponível' : 'disponíveis'
+  } (limite ${limit})`
+}
