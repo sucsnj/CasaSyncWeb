@@ -432,18 +432,30 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
 
     const schedule = comunicadoSchedule(comunicado)
 
-    if (delivery) {
-      // Repetição: próxima ocorrência a partir da última confirmação
-      // (`last_confirmed_at`; as escritas sempre preenchem — fallback o agora).
-      const lastConfirmed = delivery.last_confirmed_at
-        ? new Date(delivery.last_confirmed_at)
-        : new Date()
+    // A **repetição** só vale para quem JÁ CONFIRMOU — o `last_confirmed_at` é
+    // gravado junto com a confirmação e é o que agenda a próxima ocorrência.
+    // Uma entrega SEM confirmação (por exemplo depois do "Zerar confirmações",
+    // que zera `delivered_count` e `last_confirmed_at`) é a 1ª exibição do
+    // dependente: vale a regra "slot de hoje ou próximo" e o aviso aparece
+    // assim que o horário do dia passa (ou no próximo dia agendado).
+    //
+    // O bug: decidir pelo critério da EXISTÊNCIA da entrega caía no ramo de
+    // repetição, e o fallback "agora" fingia uma confirmação recém-feita —
+    // empurrando a próxima ocorrência para o dia seguinte e fazendo o aviso
+    // sumir.
+    const lastConfirmed = delivery?.last_confirmed_at
+      ? new Date(delivery.last_confirmed_at)
+      : null
+
+    if (lastConfirmed) {
+      // Repetição: próxima ocorrência a partir da última confirmação.
       const next = nextComunicadoOccurrence(lastConfirmed, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
         due.push(toDueComunicado(comunicado, deliveredCount))
       }
     } else {
-      // 1ª exibição: "slot de hoje ou próximo" (regra do usuário).
+      // 1ª exibição (ou entrega zerada): "slot de hoje ou próximo" (regra do
+      // usuário).
       const first = firstComunicadoOccurrence(now, schedule, timezone)
       if (now.getTime() >= first.getTime()) {
         due.push(toDueComunicado(comunicado, deliveredCount))

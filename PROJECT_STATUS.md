@@ -1,5 +1,51 @@
 # CasaSync Web — PROJECT STATUS
 
+## Bug: comunicado zerado sumia da tela do dependente (corrigido)
+
+### O sintoma
+Depois de **"Zerar confirmações"**, o comunicado **não era exibido** ao
+dependente — nem no mesmo dia, mesmo com o horário agendado já passado. A
+casa reportou "os comunicados não estão sendo exibidos".
+
+### A causa-raiz
+`getDueComunicados` (`src/actions/comunicados.ts`) decidia entre **1ª
+exibição** e **repetição** pela **EXISTÊNCIA** da linha em
+`comunicado_deliveries`. O botão "Zerar confirmações" zera `delivered_count` e
+`last_confirmed_at` mas **mantém** a linha — então o dependente caía no ramo de
+repetição com `last_confirmed_at = null`, e o fallback (`new Date()`) fingia
+uma confirmação "agora": a próxima ocorrência era calculada a partir de agora
+e caía no **dia seguinte**. O aviso sumia da tela até lá.
+
+Isso só era possível depois do "Zerar" — antes, uma entrega sempre tinha
+`delivered_count >= 1` **e** `last_confirmed_at` gravado (os dois iam juntos no
+`confirmComunicadoDelivery`).
+
+### A correção
+A repetição passa a valer só para quem **já confirmou** — o critério é o
+`last_confirmed_at` (é ele que agenda a próxima ocorrência), não a existência
+da linha. Entrega **sem** confirmação é a 1ª exibição do dependente e vale a
+regra "slot de hoje ou próximo" (aparece assim que o horário do dia passa, ou
+no próximo dia agendado). O fallback `new Date()` saiu — ele era o que
+empurrava o aviso para o dia seguinte.
+
+### Verificação
+`npm run lint` ✓ · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. **Probe no banco de produção** (service role,
+read-only) com a lógica antiga e a nova lado a lado, nos comunicados reais:
+antes **0 de 4** comunicados publicados apareciam ("Regras" 08:30, "Dica"
+08:00, "Castigos" 08:00, "teste" 19:09 — todos com entrega zerada); depois
+**4 de 4** aparecem.
+
+### Pontos de atenção
+- **A regra "slot de hoje ou próximo" continua valendo**: um comunicado
+  zerado cujo horário do dia **ainda não chegou** espera o horário (não aparece
+  antes). O que foi corrigido é o caso em que o horário **já tinha passado** —
+  ele aparecia só no dia seguinte.
+- **O "Zerar" agora tem o efeito esperado**: o dependente volta a receber o
+  aviso no mesmo dia, sem esperar a virada.
+
+---
+
 ## Recompensas: limitadores de resgate (diário e mensal) (implementado — **1 SQL a aplicar**)
 
 ### O que mudou
