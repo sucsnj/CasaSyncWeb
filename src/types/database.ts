@@ -263,6 +263,10 @@ export interface Database {
           points_cost: number
           emoji: string | null
           image_url: string | null
+          /** Limite de resgates por dia (0 = ilimitado) - ver ADR-0028. */
+          daily_limit: number
+          /** Limite de resgates por mês (0 = ilimitado) - ver ADR-0028. */
+          monthly_limit: number
           created_by: string
           created_at: string
           updated_at: string
@@ -276,6 +280,8 @@ export interface Database {
           points_cost: number
           emoji?: string | null
           image_url?: string | null
+          daily_limit?: number
+          monthly_limit?: number
           created_by: string
           created_at?: string
           updated_at?: string
@@ -289,6 +295,8 @@ export interface Database {
           points_cost?: number
           emoji?: string | null
           image_url?: string | null
+          daily_limit?: number
+          monthly_limit?: number
           created_by?: string
           created_at?: string
           updated_at?: string

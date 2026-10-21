@@ -17,8 +17,16 @@ import {
 import {
   getHouseRewardPricingSettings,
   getHouseTextLimitsSettings,
+  getHouseTimezoneSettings,
 } from '@/utils/house-settings'
 import { checkTextLimit } from '@/utils/text-limits'
+import {
+  countRewardRedemptionsSince,
+  isRewardUnlimited,
+  validateRewardLimit,
+  type RedemptionForLimit,
+} from '@/utils/reward-limits'
+import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import type { RewardPricingSettings } from '@/utils/settings'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
@@ -30,6 +38,10 @@ type CreateRewardInput = {
   pointsCost: number
   emoji: string | null
   imageUrl: string | null
+  /** Limite de resgates por dia (0 = ilimitado). */
+  dailyLimit?: number
+  /** Limite de resgates por mês (0 = ilimitado). */
+  monthlyLimit?: number
 }
 
 export type RewardPatch = {
@@ -38,6 +50,10 @@ export type RewardPatch = {
   points_cost?: number
   emoji?: string | null
   image_url?: string | null
+  /** Limite de resgates por dia (0 = ilimitado). */
+  daily_limit?: number
+  /** Limite de resgates por mês (0 = ilimitado). */
+  monthly_limit?: number
 }
 
 async function assertAdminCanManage(
@@ -79,6 +95,14 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     return { ok: false, error: 'O custo deve ser maior que zero.' }
   }
 
+  // Limitadores de resgate (0 = ilimitado) — fail closed, antes de gravar.
+  const dailyLimit = Number(input.dailyLimit ?? 0)
+  const monthlyLimit = Number(input.monthlyLimit ?? 0)
+  const dailyLimitError = validateRewardLimit(dailyLimit, 'diário')
+  if (dailyLimitError) return { ok: false, error: dailyLimitError }
+  const monthlyLimitError = validateRewardLimit(monthlyLimit, 'mensal')
+  if (monthlyLimitError) return { ok: false, error: monthlyLimitError }
+
   // Limite de caracteres da descrição (chave `text_limits`, 0 = sem limite).
   const limits = await getHouseTextLimitsSettings(activeHouse.id)
   const descriptionError = checkTextLimit(
@@ -95,6 +119,8 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     points_cost: input.pointsCost,
     emoji: input.emoji?.trim() ? input.emoji.trim().slice(0, 8) : null,
     image_url: input.imageUrl?.trim() ? input.imageUrl.trim() : null,
+    daily_limit: dailyLimit,
+    monthly_limit: monthlyLimit,
     created_by: auth.adminId,
   })
 
@@ -115,9 +141,53 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
 }
 
 /**
+ * Lê a recompensa **com** os limitadores de resgate.
+ *
+ * Se as colunas `daily_limit`/`monthly_limit` ainda não existirem no banco
+ * (SQL `rewards_redemption_limits.sql` pendente), o app segue **sem limite**
+ * em vez de derrubar a loja: é degradação de disponibilidade, não uma barreira
+ * de segurança (o teto é uma regra de uso, não uma trava de autorização).
+ */
+async function readRewardWithLimits(
+  admin: ReturnType<typeof createAdminClient>,
+  rewardId: string
+): Promise<{
+  id: string
+  house_id: string
+  title: string
+  points_cost: number
+  active: boolean
+  daily_limit: number
+  monthly_limit: number
+} | null> {
+  const { data, error } = await admin
+    .from('rewards')
+    .select('id, house_id, title, points_cost, active, daily_limit, monthly_limit')
+    .eq('id', rewardId)
+    .maybeSingle()
+
+  if (!error && data) return data
+
+  const { data: fallback } = await admin
+    .from('rewards')
+    .select('id, house_id, title, points_cost, active')
+    .eq('id', rewardId)
+    .maybeSingle()
+
+  if (!fallback) return null
+  return { ...fallback, daily_limit: 0, monthly_limit: 0 }
+}
+
+/**
  * DEPENDENTE solicita o resgate. A validação de saldo acontece aqui (no
  * momento do pedido) e é revalidada de novo na aprovação — dois checagens
  * porque o saldo pode mudar entre o pedido e a aprovação.
+ *
+ * Os **limitadores de resgate** (`daily_limit`/`monthly_limit`, 0 = ilimitado)
+ * são checados aqui: a contagem é do próprio dependente, para aquela
+ * recompensa, dentro da janela (dia/mês corrente no **fuso da casa**), e
+ * considera só os resgates que ocupam a vaga (pendente/aprovado) — um
+ * resgate recusado pelo ADMIN não consome o limite.
  */
 export async function requestRedemption(rewardId: string): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
@@ -130,11 +200,7 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
 
   const admin = createAdminClient()
 
-  const { data: reward } = await admin
-    .from('rewards')
-    .select('id, house_id, title, points_cost, active')
-    .eq('id', rewardId)
-    .maybeSingle()
+  const reward = await readRewardWithLimits(admin, rewardId)
 
   if (!reward || reward.house_id !== house.id) {
     return { ok: false, error: 'Recompensa não encontrada na sua casa.' }
@@ -153,15 +219,108 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
     return { ok: false, error: 'Saldo de pontos insuficiente.' }
   }
 
-  const { error } = await admin.from('reward_redemptions').insert({
-    house_id: house.id,
-    reward_id: reward.id,
-    profile_id: user.id,
-    points_cost: reward.points_cost,
-    status: 'PENDING',
-  })
+  // Limitadores: 0 = ilimitado (sem query). A janela é a do fuso da CASA.
+  const needsDaily = !isRewardUnlimited(reward.daily_limit)
+  const needsMonthly = !isRewardUnlimited(reward.monthly_limit)
 
-  if (error) return { ok: false, error: 'Falha ao solicitar o resgate.' }
+  let dailyUsed = 0
+  let monthlyUsed = 0
+  let dayStartIso: string | undefined
+  let monthStartIso: string | undefined
+  let sinceIso: string | undefined
+  let atBoundary = false
+
+  if (needsDaily || needsMonthly) {
+    const { timezone } = await getHouseTimezoneSettings(house.id)
+    const now = new Date()
+    if (needsDaily) dayStartIso = zonedDayStart(timezone, now).toISOString()
+    if (needsMonthly) monthStartIso = zonedMonthStart(timezone, now).toISOString()
+    // A janela do mês é a mais larga e cobre a do dia — uma query só.
+    sinceIso = monthStartIso ?? dayStartIso
+
+    const { data: used } = await admin
+      .from('reward_redemptions')
+      .select('reward_id, status, created_at')
+      .eq('house_id', house.id)
+      .eq('profile_id', user.id)
+      .eq('reward_id', reward.id)
+      .gte('created_at', sinceIso)
+
+    const rows = (used ?? []) as RedemptionForLimit[]
+    if (dayStartIso) {
+      dailyUsed = countRewardRedemptionsSince(rows, reward.id, dayStartIso)
+    }
+    if (monthStartIso) {
+      monthlyUsed = countRewardRedemptionsSince(rows, reward.id, monthStartIso)
+    }
+    // Só a inserção que ocupa a ÚLTIMA vaga do limite precisa reler a contagem
+    // (no caso comum não há round-trip extra).
+    atBoundary =
+      (needsDaily && dailyUsed === reward.daily_limit - 1) ||
+      (needsMonthly && monthlyUsed === reward.monthly_limit - 1)
+  }
+
+  const dailyLimitError =
+    needsDaily && dailyUsed >= reward.daily_limit
+      ? `Limite diário atingido: "${reward.title}" pode ser resgatada no máximo ${reward.daily_limit}x por dia.`
+      : null
+  const monthlyLimitError =
+    needsMonthly && monthlyUsed >= reward.monthly_limit
+      ? `Limite mensal atingido: "${reward.title}" pode ser resgatada no máximo ${reward.monthly_limit}x por mês.`
+      : null
+  if (dailyLimitError) return { ok: false, error: dailyLimitError }
+  if (monthlyLimitError) return { ok: false, error: monthlyLimitError }
+
+  const { data: inserted, error } = await admin
+    .from('reward_redemptions')
+    .insert({
+      house_id: house.id,
+      reward_id: reward.id,
+      profile_id: user.id,
+      points_cost: reward.points_cost,
+      status: 'PENDING',
+    })
+    .select('id')
+    .single()
+
+  if (error || !inserted) {
+    return { ok: false, error: 'Falha ao solicitar o resgate.' }
+  }
+
+  // Fecha a corrida: dois pedidos simultâneos podem passar a contagem ao mesmo
+  // tempo. Quando a inserção ocupa a última vaga, a contagem é relida e, se
+  // estourou o limite, o pedido é desfeito (a corrida perde para quem chegou
+  // primeiro) — fail closed, sem passar do teto.
+  if (atBoundary && sinceIso) {
+    const { data: after } = await admin
+      .from('reward_redemptions')
+      .select('reward_id, status, created_at')
+      .eq('house_id', house.id)
+      .eq('profile_id', user.id)
+      .eq('reward_id', reward.id)
+      .gte('created_at', sinceIso)
+
+    const rows = (after ?? []) as RedemptionForLimit[]
+    const dailyAfter = dayStartIso
+      ? countRewardRedemptionsSince(rows, reward.id, dayStartIso)
+      : 0
+    const monthlyAfter = monthStartIso
+      ? countRewardRedemptionsSince(rows, reward.id, monthStartIso)
+      : 0
+
+    const overDaily = needsDaily && dailyAfter > reward.daily_limit
+    const overMonthly = needsMonthly && monthlyAfter > reward.monthly_limit
+
+    if (overDaily || overMonthly) {
+      await admin.from('reward_redemptions').delete().eq('id', inserted.id)
+      return {
+        ok: false,
+        error: overDaily
+          ? `Limite diário atingido: "${reward.title}" pode ser resgatada no máximo ${reward.daily_limit}x por dia.`
+          : `Limite mensal atingido: "${reward.title}" pode ser resgatada no máximo ${reward.monthly_limit}x por mês.`,
+      }
+    }
+  }
 
   const notifInput: NotifyHouseInput = {
     houseId: house.id,
@@ -446,6 +605,18 @@ export async function updateReward(
   }
   if ('image_url' in patch) {
     updates.image_url = patch.image_url?.trim() || null
+  }
+  if ('daily_limit' in patch) {
+    const limit = Number(patch.daily_limit ?? 0)
+    const limitError = validateRewardLimit(limit, 'diário')
+    if (limitError) return { ok: false, error: limitError }
+    updates.daily_limit = limit
+  }
+  if ('monthly_limit' in patch) {
+    const limit = Number(patch.monthly_limit ?? 0)
+    const limitError = validateRewardLimit(limit, 'mensal')
+    if (limitError) return { ok: false, error: limitError }
+    updates.monthly_limit = limit
   }
 
   if (Object.keys(updates).length === 0) return { ok: true }

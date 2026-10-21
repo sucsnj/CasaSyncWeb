@@ -6,7 +6,8 @@ import {
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
-import { getHouseTextLimitsSettings } from '@/utils/house-settings'
+import { getHouseTextLimitsSettings, getHouseTimezoneSettings } from '@/utils/house-settings'
+import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
 import type { Tables } from '@/types/database'
@@ -180,9 +181,17 @@ export default async function RewardsPage() {
           status: redemption.status,
           points_cost: redemption.points_cost,
           created_at: redemption.created_at,
+          reward_id: redemption.reward_id,
           rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
         })
       )
+
+      // Fronteiras das janelas do limitador de resgate (dia/mês corrente no fuso
+      // da CASA) — calculadas no servidor para o client só comparar instantes.
+      const { timezone } = await getHouseTimezoneSettings(dependentHouse.id)
+      const now = new Date()
+      const dayStartIso = zonedDayStart(timezone, now).toISOString()
+      const monthStartIso = zonedMonthStart(timezone, now).toISOString()
 
       content = (
         <RewardsDependent
@@ -192,6 +201,8 @@ export default async function RewardsPage() {
           initialPoints={profile.points}
           initialRewards={rewards ?? []}
           initialRedemptions={redemptionViews}
+          dayStartIso={dayStartIso}
+          monthStartIso={monthStartIso}
           initialSuggestions={(suggestions ?? []).map((suggestion) => ({
             id: suggestion.id,
             title: suggestion.title,

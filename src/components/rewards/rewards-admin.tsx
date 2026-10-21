@@ -29,6 +29,7 @@ import {
   DEFAULT_TEXT_LIMITS,
   type TextLimitsSettings,
 } from '@/utils/settings'
+import { rewardLimitLabel } from '@/utils/reward-limits'
 import {
   Card,
   CardAction,
@@ -201,6 +202,8 @@ export function RewardsAdmin({
         pointsCost: Number(formData.get('points_cost')),
         emoji: String(formData.get('emoji') ?? ''),
         imageUrl: String(formData.get('image_url') ?? ''),
+        dailyLimit: Number(formData.get('daily_limit') ?? 0) || 0,
+        monthlyLimit: Number(formData.get('monthly_limit') ?? 0) || 0,
       })
 
       if (!result.ok) {
@@ -232,6 +235,8 @@ export function RewardsAdmin({
         points_cost: Number(formData.get('points_cost')),
         emoji: String(formData.get('emoji') ?? ''),
         image_url: String(formData.get('image_url') ?? '') || null,
+        daily_limit: Number(formData.get('daily_limit') ?? 0) || 0,
+        monthly_limit: Number(formData.get('monthly_limit') ?? 0) || 0,
       })
 
       if (!result.ok) {
@@ -408,6 +413,43 @@ export function RewardsAdmin({
                     />
                   </div>
 
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="reward-daily-limit">
+                        Limite diário de resgates
+                      </Label>
+                      <Input
+                        id="reward-daily-limit"
+                        name="daily_limit"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="0 = ilimitado"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Quantos resgates o dependente pode fazer por dia. Em
+                        branco ou 0 = ilimitado.
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="reward-monthly-limit">
+                        Limite mensal de resgates
+                      </Label>
+                      <Input
+                        id="reward-monthly-limit"
+                        name="monthly_limit"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="0 = ilimitado"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Quantos resgates o dependente pode fazer por mês. Em
+                        branco ou 0 = ilimitado.
+                      </p>
+                    </div>
+                  </div>
+
                   <div className="flex flex-col gap-2">
                     <Label>Imagem (opcional)</Label>
                     <ImageUpload
@@ -472,7 +514,12 @@ export function RewardsAdmin({
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {filteredRewards.map((reward) => (
+                {filteredRewards.map((reward) => {
+                  const limitLabel = rewardLimitLabel(
+                    reward.daily_limit,
+                    reward.monthly_limit
+                  )
+                  return (
                   <li
                     key={reward.id}
                     className={cn(
@@ -505,6 +552,11 @@ export function RewardsAdmin({
                       <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                         {reward.points_cost} pts
                       </span>
+                      {limitLabel ? (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                          máx. {limitLabel}
+                        </span>
+                      ) : null}
                       {!reward.active ? (
                         <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
                           Inativa
@@ -535,7 +587,8 @@ export function RewardsAdmin({
                       </Button>
                     </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </CardContent>
@@ -785,6 +838,40 @@ export function RewardsAdmin({
                 defaultValue={editingReward.description ?? ''}
                 className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-reward-daily-limit">
+                  Limite diário de resgates
+                </Label>
+                <Input
+                  id="edit-reward-daily-limit"
+                  name="daily_limit"
+                  type="number"
+                  min={0}
+                  step={1}
+                  defaultValue={editingReward.daily_limit ?? 0}
+                />
+                <p className="text-xs text-slate-500">
+                  Por dia. 0 = ilimitado.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-reward-monthly-limit">
+                  Limite mensal de resgates
+                </Label>
+                <Input
+                  id="edit-reward-monthly-limit"
+                  name="monthly_limit"
+                  type="number"
+                  min={0}
+                  step={1}
+                  defaultValue={editingReward.monthly_limit ?? 0}
+                />
+                <p className="text-xs text-slate-500">
+                  Por mês. 0 = ilimitado.
+                </p>
+              </div>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Imagem</Label>

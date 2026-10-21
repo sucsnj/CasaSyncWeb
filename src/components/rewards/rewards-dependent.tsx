@@ -16,6 +16,12 @@ import {
   DEFAULT_TEXT_LIMITS,
   type TextLimitsSettings,
 } from '@/utils/settings'
+import {
+  countRewardRedemptionsSince,
+  isRewardLimitReached,
+  isRewardUnlimited,
+  rewardLimitLabel,
+} from '@/utils/reward-limits'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -38,6 +44,8 @@ type RedemptionView = {
   status: Redemption['status']
   points_cost: number
   created_at: string
+  /** Recompensa do resgate — necessário para contar o uso dos limitadores. */
+  reward_id: string
   rewardTitle: string
 }
 
@@ -56,6 +64,8 @@ export function RewardsDependent({
   initialPoints,
   initialRewards,
   initialRedemptions,
+  dayStartIso,
+  monthStartIso,
   initialSuggestions,
   textLimits,
 }: {
@@ -64,6 +74,13 @@ export function RewardsDependent({
   initialPoints: number
   initialRewards: Reward[]
   initialRedemptions: RedemptionView[]
+  /**
+   * Fronteira do dia/mês corrente no **fuso da casa** (calculada no servidor) —
+   * é o que define a janela do limitador de resgate. O client só compara
+   * instantes; quem decide é o servidor (`requestRedemption` rechecka).
+   */
+  dayStartIso?: string
+  monthStartIso?: string
   initialSuggestions: SuggestionView[]
   /**
    * Teto de caracteres da descrição da sugestão (0 = sem limite) - settings.casa.
@@ -107,6 +124,30 @@ export function RewardsDependent({
   // `profiles.points` muda e este listener atualiza o contador na hora.
   useProfilePoints(myId, setPoints)
 
+  // Uso dos limitadores de resgate: quantos resgates o dependente já fez desta
+  // recompensa dentro da janela (dia/mês). Só entra em conta quem **ocupa** a
+  // vaga (pendente/aprovado) — o recusado não consome o limite.
+  const usageByReward = useMemo(() => {
+    const map = new Map<string, { daily: number; monthly: number }>()
+    for (const reward of rewards) {
+      if (
+        isRewardUnlimited(reward.daily_limit) &&
+        isRewardUnlimited(reward.monthly_limit)
+      ) {
+        continue
+      }
+      map.set(reward.id, {
+        daily: countRewardRedemptionsSince(redemptions, reward.id, dayStartIso),
+        monthly: countRewardRedemptionsSince(
+          redemptions,
+          reward.id,
+          monthStartIso
+        ),
+      })
+    }
+    return map
+  }, [rewards, redemptions, dayStartIso, monthStartIso])
+
   usePostgresChanges<Redemption>({
     table: 'reward_redemptions',
     filter: `house_id=eq.${houseId}`,
@@ -118,6 +159,7 @@ export function RewardsDependent({
           status: row.status,
           points_cost: row.points_cost,
           created_at: row.created_at,
+          reward_id: row.reward_id,
           rewardTitle: rewardById.get(row.reward_id)?.title ?? 'Recompensa',
         }
         const exists = prev.some((item) => item.id === row.id)
@@ -358,8 +400,25 @@ export function RewardsDependent({
           <CardColumns className="gap-x-3 sm:columns-2 xl:columns-3 [&>*]:mb-3">
             {filteredRewards.map((reward) => {
               const inactive = !reward.active
+              const usage = usageByReward.get(reward.id)
+              const dailyReached = isRewardLimitReached(
+                usage?.daily ?? 0,
+                reward.daily_limit
+              )
+              const monthlyReached = isRewardLimitReached(
+                usage?.monthly ?? 0,
+                reward.monthly_limit
+              )
+              const limitReached = dailyReached || monthlyReached
+              const limitLabel = rewardLimitLabel(
+                reward.daily_limit,
+                reward.monthly_limit
+              )
               const disabled =
-                inactive || pendingId === reward.id || points < reward.points_cost
+                inactive ||
+                pendingId === reward.id ||
+                points < reward.points_cost ||
+                limitReached
               return (
                 <Card
                   key={reward.id}
@@ -396,10 +455,27 @@ export function RewardsDependent({
                         {reward.description}
                       </p>
                     ) : null}
+                    {limitLabel ? (
+                      <p className="text-xs text-slate-500">
+                        Limite: {limitLabel}
+                        {dailyReached ? ' · já usou o limite de hoje' : ''}
+                        {!dailyReached && monthlyReached
+                          ? ' · já usou o limite do mês'
+                          : ''}
+                      </p>
+                    ) : null}
                     <div className="mt-1 flex items-center justify-between gap-2">
                       {inactive ? (
                         <span className="text-xs font-medium text-slate-500">
                           Indisponível
+                        </span>
+                      ) : dailyReached ? (
+                        <span className="text-xs font-medium text-amber-600">
+                          Limite diário atingido
+                        </span>
+                      ) : monthlyReached ? (
+                        <span className="text-xs font-medium text-amber-600">
+                          Limite mensal atingido
                         </span>
                       ) : points < reward.points_cost ? (
                         <span className="text-xs font-medium text-rose-600">
@@ -420,7 +496,9 @@ export function RewardsDependent({
                           ? 'Indisponível'
                           : pendingId === reward.id
                             ? 'Resgatando...'
-                            : 'Resgatar'}
+                            : limitReached
+                              ? 'Limite atingido'
+                              : 'Resgatar'}
                       </Button>
                     </div>
                   </CardContent>

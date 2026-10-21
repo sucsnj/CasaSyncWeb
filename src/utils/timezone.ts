@@ -212,3 +212,29 @@ export function zonedDay(
     day: '2-digit',
   }).format(target)
 }
+
+/**
+ * Instante do **início do dia** (00:00:00) no fuso da casa.
+ *
+ * É a fronteira da janela "dia" usada pelo limitador diário de resgates: uma
+ * casa em Lisboa fecha o dia antes do Recife, e o que vale é o dia *dela*.
+ */
+export function zonedDayStart(
+  timeZone: string,
+  now: Date = new Date()
+): Date {
+  const p = zonedParts(now, timeZone)
+  return zonedWallClockToInstant(p.year, p.month, p.day, 0, 0, timeZone)
+}
+
+/**
+ * Instante do **início do mês** (dia 1, 00:00:00) no fuso da casa — a
+ * fronteira da janela "mês" do limitador mensal de resgates.
+ */
+export function zonedMonthStart(
+  timeZone: string,
+  now: Date = new Date()
+): Date {
+  const p = zonedParts(now, timeZone)
+  return zonedWallClockToInstant(p.year, p.month, 1, 0, 0, timeZone)
+}

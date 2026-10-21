@@ -1,5 +1,75 @@
 # CasaSync Web — PROJECT STATUS
 
+## Recompensas: limitadores de resgate (diário e mensal) (implementado — **1 SQL a aplicar**)
+
+### O que mudou
+Cada recompensa tem **dois limitadores de resgate**, ambos **por dependente**:
+- `daily_limit` — quantos resgates no **dia** corrente;
+- `monthly_limit` — quantos resgates no **mês** corrente.
+
+**Regra única para os dois campos: em branco ou 0 = resgates ilimitados** (mesma
+convenção das outras chaves de `house_settings`). Os dois são informáveis na
+**criação** e na **edição** da recompensa.
+
+### Onde mudou
+- **`docs/sql/rewards_redemption_limits.sql`** (**a aplicar no Supabase**): duas
+  colunas em `public.rewards` — `daily_limit int not null default 0` e
+  `monthly_limit int not null default 0` — com `CHECK >= 0` (0 = ilimitado).
+- **`src/utils/reward-limits.ts`** (módulo puro, novo): `REWARD_LIMIT_UNLIMITED`,
+  `isRewardUnlimited`, `validateRewardLimit` (fail-closed: inteiro >= 0),
+  `rewardLimitLabel` ("2/dia · 3/mês"), `countRewardRedemptionsSince` e
+  `isRewardLimitReached`. `REWARD_LIMIT_COUNTED_STATUSES = ['PENDING','APPROVED']`
+  — **só quem ocupa a vaga consome o limite** (um resgate recusado pelo ADMIN
+  devolve os pontos e não consome).
+- **`src/utils/timezone.ts`**: `zonedDayStart` e `zonedMonthStart` — as fronteiras
+  das janelas (dia/mês) no **fuso da casa** (`house_timezone`), porque quem
+  decide o dia é a casa, não o fuso do aparelho do dependente.
+- **`src/actions/rewards.ts`**: `createReward`/`updateReward` aceitam e validam
+  os limites; `requestRedemption` **aplica** o limite (janela calculada no
+  servidor, contagem dos resgates do próprio dependente para aquela recompensa).
+- **`src/app/(app)/rewards/page.tsx`**: passa as fronteiras (`dayStartIso`/
+  `monthStartIso`) ao componente do dependente; a view do resgate ganhou
+  `reward_id` (necessário para a contagem).
+- **`src/components/rewards/rewards-admin.tsx`**: campos "Limite diário/mensal de
+  resgates" no form de criação e no de edição (vazio = ilimitado) + chip "máx.
+  2/dia · 3/mês" no card.
+- **`src/components/rewards/rewards-dependent.tsx`**: mostra o limite no card,
+  desabilita o botão com "Limite atingido" e avisa "Limite diário/mensal
+  atingido" quando o teto do período é alcançado.
+- **`src/types/database.ts`**: as 2 colunas novas espelhadas em `rewards`.
+
+### Verificação
+`npm run lint` ✓ (**0 warnings**) · `npm run typecheck` ✓ · `npm run build` ✓ ·
+`npm run check:encoding` ✓. Regras puras conferidas executando os módulos reais
+com `node --experimental-strip-types` (script temporário fora do repo): **31
+casos** — 0/undefined = ilimitado, validação (aceita 0/vazio, recusa negativo,
+fracionário e NaN), rótulos, "atingido" só quando `usados >= limite`, a contagem
+(**rejeitado não consome**, outra recompensa não conta, janela do dia vs. do mês)
+e as fronteiras no fuso da casa (Recife: dia 20 começa às 03:00Z, mês em
+01/10 03:00Z, mês antes do dia).
+
+### Pontos de atenção
+- **Ordem obrigatória: SQL antes do deploy** — a *criação/edição* de recompensa
+  grava as 2 colunas, então sem o SQL o banco recusa (`column does not exist`).
+- **A LEITURA degrada em vez de quebrar**: `requestRedemption` lê a recompensa
+  com os limitadores e, se a coluna ainda não existir (SQL pendente), relê sem
+  eles e segue **sem limite** — a loja continua funcionando. `isRewardUnlimited`
+  trata `undefined` como ilimitado pelo mesmo motivo (o `select('*')` das
+  recompensas não devolve colunas inexistentes).
+- **Quem consome o limite**: o pedido **pendente** já ocupa a vaga (o
+  dependente está esperando a aprovação) e o **aprovado** consumiu; o
+  **recusado** não consome.
+- **A janela é do fuso da CASA** — o dia/mês do dependente que vale é o da
+  casa, não o do aparelho dele.
+- **Corrida fechada no servidor**: dois pedidos simultâneos podem passar a
+  contagem ao mesmo tempo; quando a inserção ocupa a **última vaga** do limite,
+  a contagem é relida e, se estourou, o pedido é desfeito (fail closed). No
+  caso comum não há round-trip extra.
+- **O servidor é a barreira**: o botão desabilitado e o aviso no card do
+  dependente são conveniência — o `requestRedemption` rechecka sempre.
+
+---
+
 ## Comunicados: `repeats_total = 0` = sem limite + zerar confirmações (implementado — **1 SQL a aplicar**)
 
 ### O que mudou
