@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useKeyAction } from '@/hooks/use-key-action'
 import {
   adjustAchievementProgress,
   createAchievement,
@@ -110,6 +111,8 @@ export function AchievementsAdmin({
   )
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  useKeyAction('Escape', () => closeForm(), { enabled: showForm })
   const [form, setForm] = useState<AchievementForm>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Achievement | null>(null)

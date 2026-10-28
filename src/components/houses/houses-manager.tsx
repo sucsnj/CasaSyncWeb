@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useFormKeyboard } from '@/hooks/use-form-keyboard'
 import { toast } from 'sonner'
 import {
   createDependent,
@@ -195,6 +196,15 @@ export function HousesManager({
   }
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+
+  useFormKeyboard({
+    onConfirm: () => void handleConfirmAction(),
+    onCancel: () => {
+      setConfirmAction(null)
+      setConfirmError(null)
+    },
+    enabled: !!confirmAction,
+  })
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState(false)
   // Um flag por operação (mesmo padrão de `depPending`/`pointsPending`). Não usa o

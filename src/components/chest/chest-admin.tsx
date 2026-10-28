@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { cn } from '@/lib/utils'
+import { useKeyAction } from '@/hooks/use-key-action'
 import {
   CHEST_ITEM_FOLDER,
   CHEST_ITEM_TITLE_MAX,
@@ -81,6 +82,11 @@ export function ChestAdmin({
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  useKeyAction('Escape', () => {
+    setShowForm(false)
+    resetForm()
+  }, { enabled: showForm })
   const [formError, setFormError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 

@@ -14,6 +14,7 @@ import {
   updateTask,
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useKeyAction } from '@/hooks/use-key-action'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import {
@@ -125,6 +126,8 @@ export function TasksAdmin({
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
+
+  useKeyAction('Escape', () => setShowTaskForm(false), { enabled: showTaskForm })
   const [formError, setFormError] = useState<string | null>(null)
   // Anexo do form de criação (imagem, vídeo, PDF ou página HTML — arquivo
   // único). A URL vai em `image_url`; nome e tipo andam junto na action.

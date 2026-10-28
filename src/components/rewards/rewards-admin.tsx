@@ -11,6 +11,7 @@ import {
   updateReward,
 } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useKeyAction } from '@/hooks/use-key-action'
 import type { NotificationRow } from '@/types/notifications'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -87,6 +88,8 @@ export function RewardsAdmin({
   )
   const [pending, startTransition] = useTransition()
   const [showRewardForm, setShowRewardForm] = useState(false)
+
+  useKeyAction('Escape', () => setShowRewardForm(false), { enabled: showRewardForm })
   const [formError, setFormError] = useState<string | null>(null)
   const [rewardEmoji, setRewardEmoji] = useState<string | null>(null)
   const [rewardImageUrl, setRewardImageUrl] = useState<string | null>(null)

@@ -11,6 +11,7 @@ import {
   updateComunicado,
 } from '@/actions/comunicados'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useKeyAction } from '@/hooks/use-key-action'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
@@ -74,6 +75,8 @@ export function ComunicadosAdmin({
   const [confirmations, setConfirmations] = useState(initialConfirmations)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  useKeyAction('Escape', () => resetForm(), { enabled: showForm })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
