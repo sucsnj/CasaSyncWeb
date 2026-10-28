@@ -20,7 +20,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
    - Schema & Tipos DB: `src/types/database.ts` ou `docs/schema.md`.
    - Regras de Negócio e Features: `docs/business-rules.md`.
    - Arquitetura, Supabase & Proxy: `docs/architecture.md`.
+   - **Decisões Arquiteturais:** Para consultar decisões passadas, leia **primeiro** `docs/adr-index.md` para identificar o arquivo correto e abra apenas a ADR específica em `docs/adr/`.
    - Contexto da Sprint / Tarefas: `PROJECT_STATUS.md`.
+   - **Glossário & Termos de Negócio:** Consulte `docs/glossary.md` para entender nomenclaturas específicas do domínio (ex: SLA, PIN, Castigo, Tutor).
 
 ## Comandos de Verificação & Validação
 Rode estritamente nesta ordem antes de entregar qualquer código:
@@ -47,3 +49,4 @@ Rode estritamente nesta ordem antes de entregar qualquer código:
   - Shells usam `max-w-7xl`. Padding de página fica **apenas** na raiz da rota (`layout.tsx`), nunca repetido em subpáginas.
   - Não use variantes `2xl:` do Tailwind (use `min-[1536px]:`).
 - **Git:** Commits curtos em português, apenas quando solicitado.
+- **Manutenção de Docs:** Se a tarefa alterar uma regra de negócio, fluxo de sistema ou modelo de dados, **atualize o arquivo correspondente na pasta `docs/`** (ex: `docs/business-rules.md`, `docs/architecture.md`) de forma sintética antes de concluir.

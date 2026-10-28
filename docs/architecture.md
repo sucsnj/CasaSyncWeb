@@ -19,3 +19,6 @@
 ## Realtime & Fuso Horário
 - **Realtime:** Hooks `use-postgres-changes.ts` e `use-profile-points.ts`. Exigem `getSession()` + `realtime.setAuth(access_token)` **antes** de assinar (evita falha silenciosa de RLS).
 - **Datas & Fuso:** Prazos aceitam apenas strings ISO com fuso (`normalizeDueDate`). O cliente usa `datetimeLocalToIso`. Exibição sempre via `FormattedDateTime` para evitar hydration mismatch entre SSR e browser.
+
+## Anexos e Mídia
+- Para detalhes sobre CSP, sandbox, brechas e mitigações de anexos, consulte docs/seguranca-anexos.md.
