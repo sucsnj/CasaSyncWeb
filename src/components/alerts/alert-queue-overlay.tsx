@@ -12,8 +12,9 @@ import { Input } from '@/components/ui/input'
 import type { DueComunicado } from '@/utils/comunicados'
 import {
   ALERT_TYPED_WORDS_REQUIRED,
+  countNonConsecutiveTypedWords,
+  hasTypedAlertConfirmation,
   isPendingPenalty,
-  matchedAlertWords,
   sortAlertQueue,
   toComunicadoAlertItem,
   toPenaltyAlertItem,
@@ -109,12 +110,21 @@ export function AlertQueueOverlay({
   const typedText = current && phrase.id === current.id ? phrase.text : ''
   const matchedCount =
     isComunicado && current
-      ? matchedAlertWords(
+      ? countNonConsecutiveTypedWords(
           typedText,
-          `${current.title} ${current.description}`
-        ).length
+          current.title,
+          current.description
+        )
       : 0
-  const canConfirm = !isComunicado || matchedCount >= ALERT_TYPED_WORDS_REQUIRED
+  const canConfirm =
+    !isComunicado ||
+    (current
+      ? hasTypedAlertConfirmation(
+          typedText,
+          current.title,
+          current.description
+        )
+      : false)
 
   // Enquanto um alerta está na tela: trava o scroll, prende o foco na janela e
   // bloqueia o Esc (o item só fecha ao confirmar/entender).
@@ -259,6 +269,9 @@ export function AlertQueueOverlay({
                 {canConfirm
                   ? 'Leitura confirmada. Pode confirmar o aviso.'
                   : `${matchedCount} de ${ALERT_TYPED_WORDS_REQUIRED} palavras — pode usar o título ou a descrição, sem diferenciar maiúsculas nem acentos.`}
+              </p>
+              <p className="text-xs text-red-600">
+                Palavras em sequência (2 ou mais consecutivas) não contabilizam.
               </p>
             </div>
 

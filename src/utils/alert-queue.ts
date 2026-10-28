@@ -75,9 +75,41 @@ export function matchedAlertWords(typed: string, source: string): string[] {
 }
 
 /**
- * Regra de confirmação por digitação: `>= 3` palavras do comunicado, em qualquer
- * ordem, ignorando repetição, caixa e acento. Usada na UI (habilita o botão) e
- * na action (fail-closed — o cliente não é confiar).
+ * Conta quantas das palavras digitadas (que existem no comunicado) NÃO fazem
+ * parte de uma sequência de 2+ palavras consecutivas do comunicado. Palavras
+ * que aparecem adjacentes a outra palavra digitada no texto não contabilizam.
+ */
+export function countNonConsecutiveTypedWords(
+  typed: string,
+  title: string,
+  description: string
+): number {
+  const sourceWords = alertWords(`${title} ${description}`)
+  const matched = new Set(matchedAlertWords(typed, `${title} ${description}`))
+  // Palavras que participam de alguma sequência (adjacentes a outra digitada).
+  const inSequence = new Set<string>()
+  for (let i = 0; i < sourceWords.length; i++) {
+    if (!matched.has(sourceWords[i])) continue
+    const prevMatched =
+      i > 0 && matched.has(sourceWords[i - 1])
+    const nextMatched =
+      i < sourceWords.length - 1 && matched.has(sourceWords[i + 1])
+    if (prevMatched || nextMatched) {
+      inSequence.add(sourceWords[i])
+    }
+  }
+  let count = 0
+  for (const word of matched) {
+    if (!inSequence.has(word)) count++
+  }
+  return count
+}
+
+/**
+ * Regra de confirmação por digitação: ao menos 3 palavras do comunicado, em
+ * qualquer ordem, ignorando repetição, caixa e acento. Palavras que aparecem em
+ * sequência (2+ consecutivas) no comunicado não contabilizam. Usada na UI
+ * (habilita o botão) e na action (fail-closed — o cliente não é confiar).
  */
 export function hasTypedAlertConfirmation(
   typed: string,
@@ -85,7 +117,7 @@ export function hasTypedAlertConfirmation(
   description: string
 ): boolean {
   return (
-    matchedAlertWords(typed, `${title} ${description}`).length >=
+    countNonConsecutiveTypedWords(typed, title, description) >=
     ALERT_TYPED_WORDS_REQUIRED
   )
 }
