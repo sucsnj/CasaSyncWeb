@@ -35,19 +35,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  groupRedemptionsByStatus,
+  getRedemptionDisplayDate,
+  type RedemptionView,
+} from '@/utils/redemptions'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
-
-type RedemptionView = {
-  id: string
-  status: Redemption['status']
-  points_cost: number
-  created_at: string
-  /** Recompensa do resgate — necessário para contar o uso dos limitadores. */
-  reward_id: string
-  rewardTitle: string
-}
 
 type SuggestionView = {
   id: string
@@ -159,6 +154,7 @@ export function RewardsDependent({
           status: row.status,
           points_cost: row.points_cost,
           created_at: row.created_at,
+          resolved_at: row.resolved_at,
           reward_id: row.reward_id,
           rewardTitle: rewardById.get(row.reward_id)?.title ?? 'Recompensa',
         }
@@ -262,6 +258,11 @@ export function RewardsDependent({
   }
 
   const myRedemptions = redemptions
+
+  const groupedRedemptions = useMemo(
+    () => groupRedemptionsByStatus(myRedemptions),
+    [myRedemptions]
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -578,7 +579,7 @@ export function RewardsDependent({
             message="Ao trocar seus pontos, o pedido aparece aqui. 🎁"
           />
         ) : (
-          myRedemptions.map((redemption) => (
+          groupedRedemptions.map((redemption) => (
             <Card
               key={redemption.id}
               data-status={redemption.status}
@@ -591,7 +592,7 @@ export function RewardsDependent({
                   </p>
                   <p className="text-xs text-slate-500">
                     {redemption.points_cost} pts ·{' '}
-                    <FormattedDateTime iso={redemption.created_at} />
+                    <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
                   </p>
                 </div>
                 <span
@@ -603,6 +604,11 @@ export function RewardsDependent({
                     : redemption.status === 'APPROVED'
                       ? 'Aprovado'
                       : 'Rejeitado'}
+                  {redemption.totalCount > 1 && (
+                    <span className="px-2.5 py-1 text-xs font-semibold">
+                      {redemption.totalCount}x
+                    </span>
+                  )}
                 </span>
               </CardContent>
             </Card>

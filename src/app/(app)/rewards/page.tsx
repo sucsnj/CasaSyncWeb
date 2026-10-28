@@ -108,6 +108,8 @@ export default async function RewardsPage() {
           status: redemption.status,
           points_cost: redemption.points_cost,
           created_at: redemption.created_at,
+          resolved_at: redemption.resolved_at,
+          reward_id: redemption.reward_id,
           rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
           dependentName: nameById.get(redemption.profile_id) ?? 'Dependente',
         })
@@ -181,6 +183,7 @@ export default async function RewardsPage() {
           status: redemption.status,
           points_cost: redemption.points_cost,
           created_at: redemption.created_at,
+          resolved_at: redemption.resolved_at,
           reward_id: redemption.reward_id,
           rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
         })

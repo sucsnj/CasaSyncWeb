@@ -38,18 +38,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  groupRedemptionsByStatus,
+  getRedemptionDisplayDate,
+  type RedemptionView,
+} from '@/utils/redemptions'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
-
-type RedemptionView = {
-  id: string
-  status: Redemption['status']
-  points_cost: number
-  created_at: string
-  rewardTitle: string
-  dependentName: string
-}
 
 type SuggestionView = {
   id: string
@@ -122,8 +118,10 @@ export function RewardsAdmin({
       status: row.status,
       points_cost: row.points_cost,
       created_at: row.created_at,
+      resolved_at: row.resolved_at,
       rewardTitle: rewardById.get(row.reward_id)?.title ?? 'Recompensa',
       dependentName: dependentNameById.get(row.profile_id) ?? 'Dependente',
+      reward_id: row.reward_id,
     }
   }
 
@@ -339,6 +337,11 @@ export function RewardsAdmin({
     (suggestion) => suggestion.status !== 'PENDING'
   )
 
+  const groupedRedemptions = useMemo(
+    () => groupRedemptionsByStatus(resolvedRedemptions),
+    [resolvedRedemptions]
+  )
+
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
@@ -520,73 +523,73 @@ export function RewardsAdmin({
                     reward.monthly_limit
                   )
                   return (
-                  <li
-                    key={reward.id}
-                    className={cn(
-                      'flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
-                      !reward.active && 'border-slate-300 bg-slate-50'
-                    )}
-                  >
-                    {reward.image_url ? (
-                      <img
-                        src={reward.image_url}
-                        alt=""
-                        className={cn(
-                          'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
-                          !reward.active && 'opacity-50 grayscale'
-                        )}
-                      />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-800">
-                        {reward.emoji ? `${reward.emoji} ` : ''}
-                        {reward.title}
-                      </p>
-                      {reward.description ? (
-                        <p className="text-sm text-slate-500">
-                          {reward.description}
+                    <li
+                      key={reward.id}
+                      className={cn(
+                        'flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
+                        !reward.active && 'border-slate-300 bg-slate-50'
+                      )}
+                    >
+                      {reward.image_url ? (
+                        <img
+                          src={reward.image_url}
+                          alt=""
+                          className={cn(
+                            'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
+                            !reward.active && 'opacity-50 grayscale'
+                          )}
+                        />
+                      ) : null}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-800">
+                          {reward.emoji ? `${reward.emoji} ` : ''}
+                          {reward.title}
                         </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
-                        {reward.points_cost} pts
-                      </span>
-                      {limitLabel ? (
-                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                          máx. {limitLabel}
+                        {reward.description ? (
+                          <p className="text-sm text-slate-500">
+                            {reward.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
+                          {reward.points_cost} pts
                         </span>
-                      ) : null}
-                      {!reward.active ? (
-                        <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
-                          Inativa
-                        </span>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="min-h-8 px-2 text-xs"
-                        onClick={() => handleToggleActive(reward)}
-                        disabled={pending}
-                      >
-                        {reward.active ? 'Desativar' : 'Reativar'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="min-h-8 px-2 text-xs"
-                        onClick={() => {
-                          setFormError(null)
-                          setEditImageUrl(reward.image_url)
-                          setEditingReward(reward)
-                        }}
-                      >
-                        Editar
-                      </Button>
-                    </div>
-                  </li>
+                        {limitLabel ? (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                            máx. {limitLabel}
+                          </span>
+                        ) : null}
+                        {!reward.active ? (
+                          <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
+                            Inativa
+                          </span>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-8 px-2 text-xs"
+                          onClick={() => handleToggleActive(reward)}
+                          disabled={pending}
+                        >
+                          {reward.active ? 'Desativar' : 'Reativar'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-8 px-2 text-xs"
+                          onClick={() => {
+                            setFormError(null)
+                            setEditImageUrl(reward.image_url)
+                            setEditingReward(reward)
+                          }}
+                        >
+                          Editar
+                        </Button>
+                      </div>
+                    </li>
                   )
                 })}
               </ul>
@@ -749,43 +752,46 @@ export function RewardsAdmin({
         )}
       </section>
 
-      {resolvedRedemptions.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
-            <Layers className="size-4 text-slate-500" />
-            Histórico
-          </h2>
-          {resolvedRedemptions.map((redemption) => (
-            <Card
-              key={redemption.id}
-              className={cn(
-                'border-l-4',
-                redemption.status === 'APPROVED'
-                  ? 'border-l-emerald-500'
-                  : 'border-l-rose-400'
-              )}
-            >
-              <CardContent className="flex items-center justify-between gap-2 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">
-                    {redemption.dependentName} · {redemption.rewardTitle}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {redemption.points_cost} pts · tratado em{' '}
-                    <FormattedDateTime iso={redemption.created_at} />
-                  </p>
-                </div>
-                <span
-                  data-status={redemption.status}
-                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
-                >
-                  {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
-                </span>
-              </CardContent>
-            </Card>
-          ))}
-        </section>
-      ) : null}
+      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+          <Layers className="size-4 text-slate-500" />
+          Histórico
+        </h2>
+        {groupedRedemptions.map((redemption) => (
+          <Card
+            key={redemption.id}
+            className={cn(
+              'border-l-4',
+              redemption.status === 'APPROVED'
+                ? 'border-l-emerald-500'
+                : 'border-l-rose-400'
+            )}
+          >
+            <CardContent className="flex items-center justify-between gap-2 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  {redemption.dependentName} · {redemption.rewardTitle}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {redemption.points_cost} pts · tratado em{' '}
+                  <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
+                </p>
+              </div>
+              <span
+                data-status={redemption.status}
+                className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
+              >
+                {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
+                {redemption.totalCount > 1 && (
+                  <span className="px-2.5 py-1 text-xs font-semibold">
+                    {redemption.totalCount}x
+                  </span>
+                )}
+              </span>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
       <Modal
         open={!!editingReward}
