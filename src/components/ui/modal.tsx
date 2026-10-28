@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useKeyAction } from '@/hooks/use-key-action'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -36,6 +37,11 @@ export function Modal({
     onCloseRef.current = onClose
   })
 
+  useKeyAction('Escape', () => onCloseRef.current(), {
+    enabled: open,
+    preventDefault: true,
+  })
+
   useEffect(() => {
     if (!open) return
 
@@ -54,11 +60,6 @@ export function Modal({
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onCloseRef.current()
-        return
-      }
       if (event.key !== 'Tab') return
 
       // Prende o Tab dentro da janela: sem isso, o foco "vaza" para os

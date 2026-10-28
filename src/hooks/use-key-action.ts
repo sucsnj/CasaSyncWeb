@@ -7,6 +7,8 @@ export type UseKeyActionOptions = {
   enabled?: boolean
   /** Chama `preventDefault()` antes da ação. Padrão: false. */
   preventDefault?: boolean
+  /** Chama `stopPropagation()` antes da ação. Padrão: false. */
+  stopPropagation?: boolean
   /** Alvo do listener. Padrão: `document` (client). */
   target?: EventTarget | null
 }
@@ -16,15 +18,17 @@ export type UseKeyActionOptions = {
  * Aceita tanto `KeyboardEvent` nativo quanto `React.KeyboardEvent`.
  * A tecla e a ação são definidas na chamada.
  */
-export function triggerOnKey<E extends { key: string; preventDefault(): void }>(
+export function triggerOnKey<E extends { key: string; preventDefault(): void; stopPropagation(): void }>(
   event: E,
   key: string | string[],
   action: (event: E) => void,
-  preventDefault = false
+  preventDefault = false,
+  stopPropagation = false
 ): boolean {
   const keys = Array.isArray(key) ? key : [key]
   if (!keys.includes(event.key)) return false
   if (preventDefault) event.preventDefault()
+  if (stopPropagation) event.stopPropagation()
   action(event)
   return true
 }
@@ -39,7 +43,7 @@ export function useKeyAction(
   action: KeyAction,
   options: UseKeyActionOptions = {}
 ): void {
-  const { enabled = true, preventDefault = false, target = null } = options
+  const { enabled = true, preventDefault = false, stopPropagation = false, target = null } = options
 
   const actionRef = useRef<KeyAction>(action)
   const keysRef = useRef<string[]>(Array.isArray(key) ? key : [key])
@@ -79,10 +83,11 @@ export function useKeyAction(
         }
       }
       if (preventDefault) keyboardEvent.preventDefault()
+      if (stopPropagation) keyboardEvent.stopPropagation()
       actionRef.current(keyboardEvent)
     }
 
     attachTo.addEventListener('keydown', handler)
     return () => attachTo.removeEventListener('keydown', handler)
-  }, [enabled, preventDefault])
+  }, [enabled, preventDefault, stopPropagation])
 }

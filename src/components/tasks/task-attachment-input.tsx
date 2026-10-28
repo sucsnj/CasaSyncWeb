@@ -27,6 +27,7 @@ import {
   validateAttachmentLink,
 } from '@/utils/task-attachment'
 import { cn } from '@/lib/utils'
+import { triggerOnKey } from '@/hooks/use-key-action'
 
 /**
  * Seletor de anexo: **um arquivo ou um link** por item (imagem, vídeo, PDF,
@@ -269,12 +270,9 @@ export function TaskAttachmentInput({
                 inputMode="url"
                 value={linkDraft}
                 onChange={(event) => setLinkDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    handleSaveLink()
-                  }
-                }}
+                onKeyDown={(event) =>
+                  triggerOnKey(event, 'Enter', () => handleSaveLink(), true)
+                }
                 placeholder="https://exemplo.com/aula"
                 aria-label="Endereço do link"
                 disabled={disabled || uploading || Boolean(url)}

@@ -26,6 +26,7 @@ import {
 import { updateAttachmentSettings, updateHouseSettings } from '@/actions/settings'
 import type { ActionResult } from '@/actions/types'
 import { Button } from '@/components/ui/button'
+import { useKeyAction } from '@/hooks/use-key-action'
 import {
   Card,
   CardAction,
@@ -254,6 +255,8 @@ function TimezoneSelect({
   const listRef = useRef<HTMLUListElement>(null)
   const listboxId = useId()
 
+  useKeyAction('Escape', () => setOpen(false), { enabled: open })
+
   // Fuso gravado fora da lista (ex.: casa migrada de outra configuração) continua
   // selecionável em vez de o seletor "pular" para o primeiro item.
   const allOptions = options.some((option) => option.value === value)
@@ -305,13 +308,8 @@ function TimezoneSelect({
         setOpen(false)
       }
     }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false)
-    }
-
     place()
     document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
     // Reposiciona enquanto aberto: a página pode rolar (o trigger se move) e a
     // janela pode ser redimensionada.
     window.addEventListener('scroll', place, true)
@@ -319,7 +317,6 @@ function TimezoneSelect({
 
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }

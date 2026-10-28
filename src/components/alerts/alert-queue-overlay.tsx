@@ -7,6 +7,7 @@ import { Flame, Megaphone } from 'lucide-react'
 import { confirmComunicadoDelivery } from '@/actions/comunicados'
 import { markNotificationRead } from '@/actions/notifications'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useKeyAction } from '@/hooks/use-key-action'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { DueComunicado } from '@/utils/comunicados'
@@ -89,6 +90,12 @@ export function AlertQueueOverlay({
   const current = queue[0]
   const isComunicado = current?.kind === 'comunicado'
 
+  useKeyAction('Escape', () => {}, {
+    enabled: Boolean(current) && isMounted,
+    preventDefault: true,
+    stopPropagation: true,
+  })
+
   // Realtime: penalização nova entra na MESMA fila (sem prioridade, respeita a
   // ordem) e uma já lida no sino sai da fila.
   usePostgresChanges<NotificationRow>({
@@ -137,11 +144,6 @@ export function AlertQueueOverlay({
     else confirmRef.current?.focus()
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
       if (event.key !== 'Tab') return
       // Foco cicla só entre os campos do alerta atual (não vaza para a página).
       const focusables = Array.from(
