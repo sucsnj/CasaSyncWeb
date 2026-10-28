@@ -289,9 +289,12 @@ export function RewardsAdmin({
       }
 
       const nextStatus = approve ? 'APPROVED' : 'REJECTED'
+      const resolvedAt = new Date().toISOString()
       setRedemptions((prev) =>
         prev.map((item) =>
-          item.id === redemption.id ? { ...item, status: nextStatus } : item
+          item.id === redemption.id
+            ? { ...item, status: nextStatus, resolved_at: resolvedAt }
+            : item
         )
       )
       router.refresh()
@@ -752,6 +755,7 @@ export function RewardsAdmin({
         )}
       </section>
 
+      {groupedRedemptions.length > 0 ? (
       <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <Layers className="size-4 text-slate-500" />
@@ -792,6 +796,7 @@ export function RewardsAdmin({
           </Card>
         ))}
       </section>
+      ) : null}
 
       <Modal
         open={!!editingReward}

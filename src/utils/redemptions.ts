@@ -47,7 +47,8 @@ export function groupRedemptionsByStatus(
       const storedResolvedIso = acc[groupKey].resolved_at ?? acc[groupKey].created_at
 
       if (new Date(currentResolvedIso) > new Date(storedResolvedIso)) {
-        acc[groupKey].resolved_at = redemption.resolved_at
+        acc[groupKey].resolved_at =
+          redemption.resolved_at ?? acc[groupKey].resolved_at
       }
 
       return acc
