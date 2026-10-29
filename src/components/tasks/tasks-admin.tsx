@@ -15,6 +15,7 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useKeyAction } from '@/hooks/use-key-action'
+import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import {
@@ -150,7 +151,9 @@ export function TasksAdmin({
   const [confirmDuplicate, setConfirmDuplicate] = useState(false)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const { expandedIds, toggle: toggleExpanded } = useExpandedIds({
+    storageKey: `casasync:expanded:tasks-admin:${houseId}`,
+  })
 
   // Estado para rastrear status de salvamento de cada card.
   const [savingStatuses, setSavingStatuses] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
@@ -762,18 +765,6 @@ export function TasksAdmin({
         toast.error('Falha de conexão. O anexo não foi alterado.')
       }
     })()
-  }
-
-  function toggleExpanded(taskId: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(taskId)) {
-        next.delete(taskId)
-      } else {
-        next.add(taskId)
-      }
-      return next
-    })
   }
 
   return (

@@ -28,6 +28,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { QuickMessageComposer } from '@/components/notifications/quick-message-composer'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import type { QuickMessageSettings } from '@/utils/settings'
 import {
   deleteAllNotifications,
@@ -120,9 +121,7 @@ export function NotificationsBell({
   const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
   const [open, setOpen] = useState(false)
   // Cards de mensagem rápida colapsáveis — todos recolhidos por padrão.
-  const [expandedQuickIds, setExpandedQuickIds] = useState<Set<string>>(
-    () => new Set()
-  )
+  const { isExpanded, toggle } = useExpandedIds()
 
   const unread = items.filter((item) => !item.read_at).length
 
@@ -204,12 +203,7 @@ export function NotificationsBell({
   // Mensagem rápida: o toque no cabeçalho colapsa/expande o card (inicia
   // recolhido). Expandir marca como lida automaticamente; não há link.
   function toggleQuick(item: NotificationRow) {
-    setExpandedQuickIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(item.id)) next.delete(item.id)
-      else next.add(item.id)
-      return next
-    })
+    toggle(item.id)
     if (!item.read_at) markRead(item.id)
   }
 
@@ -308,7 +302,7 @@ export function NotificationsBell({
             {items.map((item) => {
               const meta = metaFor(item.type)
               const expanded =
-                item.type === 'QUICK_MESSAGE' && expandedQuickIds.has(item.id)
+                item.type === 'QUICK_MESSAGE' && isExpanded(item.id)
               // Notificação de outra casa que este ADMIN controla: ganha chip
               // com o nome (é o que evita o clique na casa errada) e, ao clicar,
               // troca a casa antes de navegar.

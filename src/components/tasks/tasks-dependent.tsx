@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
@@ -65,7 +66,9 @@ export function TasksDependent({
   const [error, setError] = useState<string | null>(null)
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const { expandedIds, toggle: toggleExpanded } = useExpandedIds({
+    storageKey: `casasync:expanded:tasks-dependent:${houseId}`,
+  })
   // Ids das tarefas com uma transição em andamento (concluir / pedir mais
   // tempo). NÃO usa `pending` do `useTransition`: `startTransition(async …)`
   // nunca marca `isPending` — o React não rastreia a Promise devolvida pelo
@@ -125,18 +128,6 @@ export function TasksDependent({
     if (optimisticIdsRef.current.size > 0) return
     setTasks(initialTasks)
   }, [initialTasks])
-
-  function toggleExpanded(taskId: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(taskId)) {
-        next.delete(taskId)
-      } else {
-        next.add(taskId)
-      }
-      return next
-    })
-  }
 
   // ENSINO (teach): o evento de UPDATE é recebido ao vivo. Quando o ADMIN
   // aprova (APPROVED) a lista muda na hora; quando o ADMIN cria (INSERT) uma
