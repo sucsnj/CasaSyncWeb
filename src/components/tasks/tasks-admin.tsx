@@ -151,7 +151,7 @@ export function TasksAdmin({
   const [confirmDuplicate, setConfirmDuplicate] = useState(false)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   // Cards colapsáveis (só ADMIN): por padrão todas as tarefas vêm recolhidas.
-  const { expandedIds, toggle: toggleExpanded } = useExpandedIds({
+  const { expandedIds, isHydrated, toggle: toggleExpanded } = useExpandedIds({
     storageKey: `casasync:expanded:tasks-admin:${houseId}`,
   })
 
@@ -1143,7 +1143,8 @@ export function TasksAdmin({
                       </span>
                       <ChevronDown
                         className={cn(
-                          'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                          'size-4 shrink-0 text-slate-400',
+                          isHydrated && 'transition-transform duration-200',
                           isExpanded && 'rotate-180'
                         )}
                       />
@@ -1412,7 +1413,10 @@ export function TasksAdmin({
                         </span>
                         <ChevronDown
                           className={cn(
-                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            cn(
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200'
+                          ),
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -1596,7 +1600,10 @@ export function TasksAdmin({
                         </span>
                         <ChevronDown
                           className={cn(
-                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            cn(
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200'
+                          ),
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -1707,7 +1714,10 @@ export function TasksAdmin({
                         </span>
                         <ChevronDown
                           className={cn(
-                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            cn(
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200'
+                          ),
                             isExpanded && 'rotate-180'
                           )}
                         />

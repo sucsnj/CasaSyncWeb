@@ -66,7 +66,7 @@ export function TasksDependent({
   const [error, setError] = useState<string | null>(null)
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)
-  const { expandedIds, toggle: toggleExpanded } = useExpandedIds({
+  const { expandedIds, isHydrated, toggle: toggleExpanded } = useExpandedIds({
     storageKey: `casasync:expanded:tasks-dependent:${houseId}`,
   })
   // Ids das tarefas com uma transição em andamento (concluir / pedir mais
@@ -452,7 +452,8 @@ export function TasksDependent({
                         </p>
                         <ChevronDown
                           className={cn(
-                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200',
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -527,7 +528,8 @@ export function TasksDependent({
                         </p>
                         <ChevronDown
                           className={cn(
-                            'size-4 shrink-0 text-slate-400 transition-transform duration-200',
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200',
                             isExpanded && 'rotate-180'
                           )}
                         />

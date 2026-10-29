@@ -22,16 +22,20 @@ export type UseExpandedIdsOptions<T extends string = string> = {
 export type UseExpandedIdsResult<T extends string = string> = {
   /** Conjunto de ids atualmente expandidos. */
   expandedIds: ReadonlySet<T>
+  /** `true` após a primeira hidratação no cliente (evita flash de estado SSR). */
+  isHydrated: boolean
   isExpanded: (id: T) => boolean
   /** Alterna um id (expande se recolhido, recolhe se expandido). */
   toggle: (id: T) => void
   expand: (id: T) => void
   collapse: (id: T) => void
   setExpanded: (id: T, expanded: boolean) => void
-  /** Expande vários ids de uma vez. */
+  /** Adiciona vários ids ao conjunto expandido (mescla com o estado atual). */
   expandAll: (ids: Iterable<T>) => void
   /** Recolhe todos. */
   collapseAll: () => void
+  /** Remove a persistência e zera o estado (volta ao estado inicial). */
+  clear: () => void
 }
 
 type ExpandedStore = {
@@ -163,10 +167,14 @@ function createLocalStorageStore(
     set(ids) {
       const serialized = JSON.stringify(ids)
       try {
-        window.localStorage.setItem(storageKey, serialized)
+        if (ids.length === 0) {
+          window.localStorage.removeItem(storageKey)
+        } else {
+          window.localStorage.setItem(storageKey, serialized)
+        }
         memoryOverride = null
-        cachedRaw = serialized
-        cachedIds = ids
+        cachedRaw = ids.length === 0 ? null : serialized
+        cachedIds = ids.length === 0 ? defaultIds : ids
       } catch {
         // Sem localStorage: segue apenas em memória.
         memoryOverride = ids
@@ -204,13 +212,25 @@ export function useExpandedIds<T extends string = string>({
   storageKey,
   initialIds = [],
 }: UseExpandedIdsOptions<T> = {}): UseExpandedIdsResult<T> {
-  const [memoryStore] = useState(() => createMemoryStore(initialIds))
-  const store = storageKey ? getStore(storageKey, initialIds) : memoryStore
+  const hasStorage = Boolean(storageKey && storageKey.trim() !== '')
+  const [memoryStore] = useState<ExpandedStore | null>(() =>
+    hasStorage ? null : createMemoryStore(initialIds)
+  )
+  const store: ExpandedStore = hasStorage
+    ? getStore(storageKey as string, initialIds)
+    : (memoryStore ?? createMemoryStore(initialIds))
 
   const ids = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
     getServerSnapshot
+  )
+
+  // Hidratação: falso no servidor, verdadeiro no cliente após a montagem.
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
   )
 
   const expandedIds = useMemo(() => new Set<T>(ids as T[]), [ids])
@@ -260,7 +280,10 @@ export function useExpandedIds<T extends string = string>({
 
   const expandAll = useCallback(
     (nextIds: Iterable<T>) => {
-      store.set([...nextIds])
+      const current = store.getSnapshot() as T[]
+      const merged = new Set<T>(current)
+      for (const id of nextIds) merged.add(id)
+      store.set([...merged])
     },
     [store]
   )
@@ -269,8 +292,20 @@ export function useExpandedIds<T extends string = string>({
     store.set([])
   }, [store])
 
+  const clear = useCallback(() => {
+    if (hasStorage) {
+      try {
+        window.localStorage.removeItem(storageKey as string)
+      } catch {
+        // Ignora: segue apenas em memória.
+      }
+    }
+    store.set([])
+  }, [store, hasStorage, storageKey])
+
   return {
     expandedIds,
+    isHydrated,
     isExpanded,
     toggle,
     expand,
@@ -278,5 +313,6 @@ export function useExpandedIds<T extends string = string>({
     setExpanded,
     expandAll,
     collapseAll,
+    clear,
   }
 }
