@@ -12,6 +12,7 @@ import {
 } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useKeyAction } from '@/hooks/use-key-action'
+import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import type { NotificationRow } from '@/types/notifications'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -22,7 +23,7 @@ import { LimitedTextarea } from '@/components/ui/limited-textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Gift, ClipboardList, Layers, Lightbulb, Search } from 'lucide-react'
+import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -97,6 +98,12 @@ export function RewardsAdmin({
   const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
+  const { isExpanded, isHydrated, toggle, expand } = useExpandedIds({
+    storageKey: `casasync:expanded:rewards-admin:${houseId}`,
+  })
+  const catalogExpanded = useExpandedIds({
+    storageKey: `casasync:expanded:rewards-admin-catalog:${houseId}`,
+  })
   const rewardById = useMemo(
     () => new Map(rewards.map((reward) => [reward.id, reward])),
     [rewards]
@@ -330,6 +337,16 @@ export function RewardsAdmin({
     })
   }
 
+  function handlePreviewClick(rewardId: string) {
+    catalogExpanded.expand('catalog')
+    expand(rewardId)
+    // Aguarda a renderização do catálogo expandido para rolar até o card.
+    window.setTimeout(() => {
+      const element = document.getElementById(`reward-${rewardId}`)
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+  }
+
   const pendingRedemptions = redemptions.filter(
     (redemption) => redemption.status === 'PENDING'
   )
@@ -500,13 +517,28 @@ export function RewardsAdmin({
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Gift className="size-4 text-blue-600" />
-              Catálogo
-            </CardTitle>
-            <CardDescription>Recompensas disponíveis na casa.</CardDescription>
+            <button
+              type="button"
+              onClick={() => catalogExpanded.toggle('catalog')}
+              aria-expanded={catalogExpanded.isExpanded('catalog')}
+              className="flex w-full items-center justify-between gap-2 text-left"
+            >
+              <CardTitle className="flex items-center gap-2">
+                <Gift className="size-4 text-blue-600" />
+                Catálogo
+                <ChevronDown
+                  className={cn(
+                    'size-4 shrink-0 text-slate-400',
+                    catalogExpanded.isHydrated && 'transition-transform duration-200',
+                    catalogExpanded.isExpanded('catalog') && 'rotate-180'
+                  )}
+                />
+              </CardTitle>
+              <CardDescription>Recompensas disponíveis na casa.</CardDescription>
+            </button>
           </CardHeader>
-          <CardContent>
+          {catalogExpanded.isExpanded('catalog') ? (
+            <CardContent>
             {rewards.length === 0 ? (
               <EmptyState
                 icon={Gift}
@@ -530,77 +562,130 @@ export function RewardsAdmin({
                   )
                   return (
                     <li
+                      id={`reward-${reward.id}`}
                       key={reward.id}
                       className={cn(
-                        'flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
+                        'rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
                         !reward.active && 'border-slate-300 bg-slate-50'
                       )}
                     >
-                      {reward.image_url ? (
-                        <img
-                          src={reward.image_url}
-                          alt=""
-                          className={cn(
-                            'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
-                            !reward.active && 'opacity-50 grayscale'
-                          )}
-                        />
-                      ) : null}
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-slate-800">
-                          {reward.emoji ? `${reward.emoji} ` : ''}
-                          {reward.title}
-                        </p>
-                        {reward.description ? (
-                          <p className="text-sm text-slate-500">
-                            {reward.description}
-                          </p>
+                      <div className="flex items-center justify-between gap-3">
+                        {reward.image_url ? (
+                          <img
+                            src={reward.image_url}
+                            alt=""
+                            className={cn(
+                              'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
+                              !reward.active && 'opacity-50 grayscale'
+                            )}
+                          />
                         ) : null}
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
+                        <button
+                          type="button"
+                          onClick={() => toggle(reward.id)}
+                          aria-expanded={isExpanded(reward.id)}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        >
+                          <p className="font-medium text-slate-800">
+                            {reward.emoji ? `${reward.emoji} ` : ''}
+                            {reward.title}
+                          </p>
+                          <ChevronDown
+                            className={cn(
+                              'size-4 shrink-0 text-slate-400',
+                              isHydrated && 'transition-transform duration-200',
+                              isExpanded(reward.id) && 'rotate-180'
+                            )}
+                          />
+                        </button>
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                           {reward.points_cost} pts
                         </span>
-                        {limitLabel ? (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                            máx. {limitLabel}
-                          </span>
-                        ) : null}
                         {!reward.active ? (
-                          <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
+                          <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
                             Inativa
                           </span>
                         ) : null}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="min-h-8 px-2 text-xs"
-                          onClick={() => handleToggleActive(reward)}
-                          disabled={pending}
-                        >
-                          {reward.active ? 'Desativar' : 'Reativar'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="min-h-8 px-2 text-xs"
-                          onClick={() => {
-                            setFormError(null)
-                            setEditImageUrl(reward.image_url)
-                            setEditingReward(reward)
-                          }}
-                        >
-                          Editar
-                        </Button>
                       </div>
+                      {isExpanded(reward.id) ? (
+                        <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2">
+                          {reward.description ? (
+                            <p className="text-sm text-slate-500">
+                              {reward.description}
+                            </p>
+                          ) : null}
+                          {limitLabel ? (
+                            <span className="w-fit rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                              máx. {limitLabel}
+                            </span>
+                          ) : null}
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-8 px-2 text-xs"
+                              onClick={() => handleToggleActive(reward)}
+                              disabled={pending}
+                            >
+                              {reward.active ? 'Desativar' : 'Reativar'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-8 px-2 text-xs"
+                              onClick={() => {
+                                setFormError(null)
+                                setEditImageUrl(reward.image_url)
+                                setEditingReward(reward)
+                              }}
+                            >
+                              Editar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </li>
                   )
                 })}
               </ul>
             )}
           </CardContent>
+          ) : (
+            <CardContent>
+              {rewards.length === 0 ? null : filteredRewards.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {filteredRewards.slice(0, 5).map((reward) => (
+                    <button
+                      type="button"
+                      key={reward.id}
+                      onClick={() => handlePreviewClick(reward.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100',
+                        !reward.active && 'opacity-60'
+                      )}
+                    >
+                      {reward.emoji ? `${reward.emoji} ` : null}
+                      {reward.title}
+                      <span className="text-amber-700">
+                        {reward.points_cost} pts
+                      </span>
+                    </button>
+                  ))}
+                  {filteredRewards.length > 5 ? (
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                      +{filteredRewards.length - 5}
+                    </span>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          )}
         </Card>
       </div>
 

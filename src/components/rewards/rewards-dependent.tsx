@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Coins, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
+import { Coins, ChevronDown, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { useProfilePoints } from '@/hooks/use-profile-points'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -101,6 +102,9 @@ export function RewardsDependent({
   )
   const [search, setSearch] = useState('')
 
+  const { isExpanded, isHydrated, toggle } = useExpandedIds({
+    storageKey: `casasync:expanded:rewards:${houseId}`,
+  })
   const rewardById = useMemo(
     () => new Map(rewards.map((reward) => [reward.id, reward])),
     [rewards]
@@ -455,30 +459,48 @@ export function RewardsDependent({
                       />
                     ) : null}
                     <div className="flex items-start justify-between gap-2">
-                      <p
-                        className={cn(
-                          'font-semibold text-slate-800',
-                          inactive && 'text-slate-500'
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => toggle(reward.id)}
+                        aria-expanded={isExpanded(reward.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
-                        {reward.emoji ? `${reward.emoji} ` : ''}
-                        {reward.title}
-                      </p>
+                        <p
+                          className={cn(
+                            'font-semibold text-slate-800',
+                            inactive && 'text-slate-500'
+                          )}
+                        >
+                          {reward.emoji ? `${reward.emoji} ` : ''}
+                          {reward.title}
+                        </p>
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200',
+                            isExpanded(reward.id) && 'rotate-180'
+                          )}
+                        />
+                      </button>
                       <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
                         {reward.points_cost} pts
                       </span>
                     </div>
-                    {reward.description ? (
-                      <p className="text-sm text-slate-500">
-                        {reward.description}
-                      </p>
-                    ) : null}
-                    {limitDetails.length > 0 ? (
-                      <div className="flex flex-col gap-0.5 text-xs text-slate-500">
-                        {limitDetails.map((detail) => (
-                          <span key={detail}>{detail}</span>
-                        ))}
-                      </div>
+                    {isExpanded(reward.id) ? (
+                      <>
+                        {reward.description ? (
+                          <p className="text-sm text-slate-500">
+                            {reward.description}
+                          </p>
+                        ) : null}
+                        {limitDetails.length > 0 ? (
+                          <div className="flex flex-col gap-0.5 text-xs text-slate-500">
+                            {limitDetails.map((detail) => (
+                              <span key={detail}>{detail}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
                     ) : null}
                     <div className="mt-1 flex items-center justify-between gap-2">
                       {inactive ? (
