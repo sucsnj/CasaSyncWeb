@@ -1609,9 +1609,10 @@ export function TasksAdmin({
                         />
                       </button>
                       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        {/* Não é mais necessário */}
+                        {/* <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
                           {taskChipByStatus.COMPLETED.label}
-                        </span>
+                        </span> */}
                         <Button
                           variant="outline"
                           onClick={() => handleRejectComplete(task)}
