@@ -37,6 +37,7 @@ function activeFor(href: string, pathname: string) {
 export function DashboardNav({
   items,
   userName,
+  avatarUrl,
   points,
   userId,
   notifications,
@@ -49,6 +50,7 @@ export function DashboardNav({
 }: {
   items: NavItem[]
   userName?: string | null
+  avatarUrl?: string | null
   points?: number | null
   userId?: string
   notifications?: NotificationRow[]
@@ -196,9 +198,17 @@ export function DashboardNav({
               type="button"
               onClick={() => setShowAccount(true)}
               aria-label="Abrir sua conta e opção de sair"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white transition-all duration-200 hover:bg-white/25 active:scale-95"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white transition-all duration-200 hover:bg-white/25 active:scale-95 overflow-hidden"
             >
-              {initial}
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={userName ?? 'Avatar'}
+                  className="size-full object-cover"
+                />
+              ) : (
+                initial
+              )}
             </button>
             <span className="hidden max-w-[9rem] truncate text-sm font-medium text-white md:block">
               {userName}

@@ -59,6 +59,7 @@ export default async function DependentDashboardLayout({
       <DashboardNav
         items={DEPENDENT_NAV_ITEMS}
         userName={profile?.full_name}
+        avatarUrl={profile?.avatar_url}
         points={profile?.points}
         userId={user?.id}
         notifications={notifications}

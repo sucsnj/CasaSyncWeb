@@ -35,6 +35,7 @@ export default async function AdminDashboardLayout({
       <DashboardNav
         items={ADMIN_NAV_ITEMS}
         userName={profile?.full_name}
+        avatarUrl={profile?.avatar_url}
         userId={user?.id}
         notifications={notifications}
         role="ADMIN"

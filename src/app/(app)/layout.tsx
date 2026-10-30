@@ -104,6 +104,7 @@ export default async function AppLayout({
       <DashboardNav
         items={isAdmin ? ADMIN_NAV_ITEMS : DEPENDENT_NAV_ITEMS}
         userName={profile.full_name}
+        avatarUrl={profile.avatar_url}
         // ADMIN não acumula pontos — o badge e a linha do modal "Sua conta"
         // só existem para o dependente.
         points={isAdmin ? undefined : profile.points}
