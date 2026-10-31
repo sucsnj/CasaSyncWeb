@@ -11,6 +11,7 @@ import {
   type ActivePunishment,
 } from '@/utils/punishments'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 
 /**
  * AVISO / CASTIGO DO DEPENDENTE — ícone de triângulo no cabeçalho (ADR-0020).
@@ -100,7 +101,7 @@ export function PunishmentIndicator({
                     isWarning ? 'text-amber-800' : 'text-red-800'
                   )}
                 >
-                  {punishment.description}
+                  {parseRichText(punishment.description)}
                 </p>
               ) : (
                 <p className={cn('text-sm', isWarning ? 'text-amber-700' : 'text-red-700')}>

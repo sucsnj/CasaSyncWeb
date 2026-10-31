@@ -11,7 +11,7 @@ import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
-import { LimitedTextarea } from '@/components/ui/limited-textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Input } from '@/components/ui/input'
 import {
   DEFAULT_TEXT_LIMITS,
@@ -26,6 +26,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -356,7 +357,7 @@ export function RewardsDependent({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="suggestion-description">Detalhes</Label>
-                  <LimitedTextarea
+                  <RichTextEditor
                     id="suggestion-description"
                     name="description"
                     rows={2}
@@ -488,11 +489,11 @@ export function RewardsDependent({
                     </div>
                     {isExpanded(reward.id) ? (
                       <>
-                        {reward.description ? (
-                          <p className="text-sm text-slate-500">
-                            {reward.description}
-                          </p>
-                        ) : null}
+                    {reward.description ? (
+                      <p className="whitespace-pre-wrap text-sm text-slate-500">
+                        {parseRichText(reward.description)}
+                      </p>
+                    ) : null}
                         {limitDetails.length > 0 ? (
                           <div className="flex flex-col gap-0.5 text-xs text-slate-500">
                             {limitDetails.map((detail) => (

@@ -11,6 +11,7 @@ import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -316,7 +317,7 @@ export function TasksDependent({
                       <p className="font-semibold text-slate-800">{task.title}</p>
                       {task.description ? (
                         <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">
-                          {task.description}
+                          {parseRichText(task.description)}
                         </p>
                       ) : null}
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -492,7 +493,7 @@ export function TasksDependent({
                       </p>
                     ) : null}
                     {isExpanded && task.description ? (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{parseRichText(task.description)}</p>
                     ) : null}
                   </CardContent>
                 </Card>
@@ -554,7 +555,7 @@ export function TasksDependent({
                       </p>
                     ) : null}
                     {isExpanded && task.description ? (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{parseRichText(task.description)}</p>
                     ) : null}
                   </CardContent>
                 </Card>

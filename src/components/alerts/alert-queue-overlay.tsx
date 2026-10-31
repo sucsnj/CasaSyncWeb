@@ -9,6 +9,7 @@ import { markNotificationRead } from '@/actions/notifications'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { Button } from '@/components/ui/button'
+import { parseRichText } from '@/components/ui/rich-text'
 import { Input } from '@/components/ui/input'
 import type { DueComunicado } from '@/utils/comunicados'
 import {
@@ -227,9 +228,9 @@ export function AlertQueueOverlay({
               </div>
             </div>
 
-            <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-700">
-              {item.description}
-            </p>
+             <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-700">
+               {parseRichText(item.description)}
+             </p>
 
             {/* Não há mais a necessidade de mostrar o número de vezes restantes
             {/* {item.remaining > 1 ? (

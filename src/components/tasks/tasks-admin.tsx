@@ -36,7 +36,7 @@ import { DebouncedField } from './debounced-field'
 import { TaskAttachmentInput } from './task-attachment-input'
 import { TaskAttachmentView } from './task-attachment-view'
 import { Button } from '@/components/ui/button'
-import { LimitedTextarea } from '@/components/ui/limited-textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -56,6 +56,7 @@ import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 import {
   Card,
   CardAction,
@@ -932,14 +933,14 @@ export function TasksAdmin({
 
               <div className="grid gap-2 md:col-span-2">
                 <Label htmlFor="task-description">Descrição</Label>
-                <LimitedTextarea
+                <RichTextEditor
                   id="task-description"
                   name="description"
                   rows={2}
                   limit={limits.taskDescription}
                   placeholder="Opcional"
                   value={description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={(value) => setDescription(value)}
                   className="h-auto w-full min-w-0 rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
                 />
               </div>
@@ -1645,7 +1646,7 @@ export function TasksAdmin({
                     {isExpanded ? (
                       <>
                         {task.description ? (
-                          <p className="whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
+                          <p className="whitespace-pre-wrap text-sm text-slate-500">{parseRichText(task.description)}</p>
                         ) : null}
                         <p className="text-sm text-slate-500">
                           {assigneeName(task.assigned_to)} ·{' '}
@@ -1753,7 +1754,7 @@ export function TasksAdmin({
                     {isExpanded ? (
                       <>
                         {task.description ? (
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{parseRichText(task.description)}</p>
                         ) : null}
                         <p className="mt-1 text-sm text-slate-500">
                           {assigneeName(task.assigned_to)} ·{' '}

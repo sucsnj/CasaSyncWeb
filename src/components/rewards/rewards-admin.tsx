@@ -19,12 +19,13 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
-import { LimitedTextarea } from '@/components/ui/limited-textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
@@ -429,7 +430,7 @@ export function RewardsAdmin({
 
                   <div className="grid gap-2">
                     <Label htmlFor="reward-description">Descrição</Label>
-                    <LimitedTextarea
+                    <RichTextEditor
                       id="reward-description"
                       name="description"
                       rows={2}
@@ -610,8 +611,8 @@ export function RewardsAdmin({
                       {isExpanded(reward.id) ? (
                         <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2">
                           {reward.description ? (
-                            <p className="text-sm text-slate-500">
-                              {reward.description}
+                            <p className="whitespace-pre-wrap text-sm text-slate-500">
+                              {parseRichText(reward.description)}
                             </p>
                           ) : null}
                           {limitLabel ? (
@@ -721,8 +722,8 @@ export function RewardsAdmin({
                     {suggestion.title}
                   </p>
                   {suggestion.description ? (
-                    <p className="mt-1 text-sm text-slate-500">
-                      {suggestion.description}
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">
+                      {parseRichText(suggestion.description)}
                     </p>
                   ) : null}
                   <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
@@ -929,7 +930,7 @@ export function RewardsAdmin({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-reward-description">Descrição</Label>
-              <LimitedTextarea
+              <RichTextEditor
                 id="edit-reward-description"
                 name="description"
                 rows={2}

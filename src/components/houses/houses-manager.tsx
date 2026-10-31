@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { useFormKeyboard } from '@/hooks/use-form-keyboard'
 import { toast } from 'sonner'
 import {
@@ -1487,10 +1489,11 @@ export function HousesManager({
                 <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                   {punishmentLevelLabel(currentPunishment.level)} atual
                 </p>
-                <p className="text-sm whitespace-pre-wrap text-slate-800">
-                  {currentPunishment.description ??
-                    'Sem descrição — o dependente vê apenas o aviso.'}
-                </p>
+                 <p className="text-sm whitespace-pre-wrap text-slate-800">
+                   {currentPunishment.description
+                     ? parseRichText(currentPunishment.description)
+                     : 'Sem descrição — o dependente vê apenas o aviso.'}
+                 </p>
                 <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                   <div>
                     <dt className="text-slate-500">Duração</dt>
@@ -1520,15 +1523,15 @@ export function HousesManager({
 
             <div className="grid gap-2">
               <Label htmlFor="punish-description">Descrição (opcional)</Label>
-              <textarea
+              <RichTextEditor
                 id="punish-description"
                 name="description"
-                rows={3}
-                maxLength={PUNISHMENT_MAX_DESCRIPTION}
                 value={punishDescription}
-                onChange={(event) => setPunishDescription(event.target.value)}
+                onChange={(value) => setPunishDescription(value)}
                 placeholder="Explique ao dependente o motivo."
-                className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                limit={PUNISHMENT_MAX_DESCRIPTION}
+                rows={3}
+                className="min-h-12 text-base md:text-sm"
               />
               <p className="text-xs text-muted-foreground">
                 Opcional. Sem texto, o dependente vê apenas o aviso de que há um{' '}

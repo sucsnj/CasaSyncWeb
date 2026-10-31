@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
   achievementRewardAtLevel,
@@ -273,7 +274,9 @@ export function AchievementsDependent({
             </div>
 
             {achievement.description ? (
-              <p className="text-sm text-slate-600">{achievement.description}</p>
+              <p className="whitespace-pre-wrap text-sm text-slate-600">
+                {parseRichText(achievement.description)}
+              </p>
             ) : null}
 
             {/* Rodapé ancorado na base do card: recompensa, progresso e a ação

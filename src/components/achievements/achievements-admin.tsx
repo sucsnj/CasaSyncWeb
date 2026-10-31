@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { parseRichText } from '@/components/ui/rich-text'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { useKeyAction } from '@/hooks/use-key-action'
 import {
   adjustAchievementProgress,
@@ -29,7 +31,7 @@ import {
 } from '@/utils/settings'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ClearableInput } from '@/components/ui/clearable-input'
-import { CharCounter } from '@/components/ui/limited-textarea'
+
 import { Input } from '@/components/ui/input'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
@@ -514,18 +516,14 @@ export function AchievementsAdmin({
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="ach-description">Descrição (opcional)</Label>
-                <ClearableInput
+                <RichTextEditor
                   id="ach-description"
                   value={form.description}
-                  maxLength={limits.achievementDescription > 0 ? limits.achievementDescription : undefined}
-                  onChange={(event) =>
-                    setForm({ ...form, description: event.target.value })
+                  limit={limits.achievementDescription}
+                  onChange={(value) =>
+                    setForm({ ...form, description: value })
                   }
                   placeholder="Ex.: Aprove 10 tarefas para desbloquear"
-                />
-                <CharCounter
-                  value={form.description}
-                  limit={limits.achievementDescription}
                 />
               </div>
             </div>
@@ -792,8 +790,8 @@ export function AchievementsAdmin({
                   </div>
 
                   {achievement.description ? (
-                    <p className="text-sm text-slate-600">
-                      {achievement.description}
+                    <p className="whitespace-pre-wrap text-sm text-slate-500">
+                      {parseRichText(achievement.description)}
                     </p>
                   ) : null}
 

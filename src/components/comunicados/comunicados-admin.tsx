@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { parseRichText } from '@/components/ui/rich-text'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   COMUNICADO_DEFAULT_TIME,
@@ -327,18 +329,16 @@ export function ComunicadosAdmin({
                 <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-description">
                   Descrição (mínimo {COMUNICADO_MIN_DESCRIPTION} caracteres)
                 </label>
-                <textarea
+                <RichTextEditor
                   id="comunicado-description"
                   value={form.description}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, description: event.target.value }))
+                  onChange={(value) =>
+                    setForm((prev) => ({ ...prev, description: value }))
                   }
                   placeholder="O que os dependentes precisam ler e confirmar?"
-                  minLength={COMUNICADO_MIN_DESCRIPTION}
-                  maxLength={COMUNICADO_MAX_DESCRIPTION}
-                  required
+                  limit={COMUNICADO_MAX_DESCRIPTION}
                   rows={3}
-                  className="min-h-12 w-full rounded-xl border border-input bg-white px-3 py-2 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                  className="min-h-12 text-base md:text-sm"
                 />
                 <p
                   className={
@@ -555,7 +555,7 @@ export function ComunicadosAdmin({
                   </div>
 
                   <p className="whitespace-pre-wrap text-sm text-slate-600">
-                    {comunicado.description}
+                    {parseRichText(comunicado.description)}
                   </p>
 
                   <div className="flex flex-wrap gap-1.5 text-xs">
