@@ -931,6 +931,7 @@ export function RewardsAdmin({
             <div className="grid gap-2">
               <Label htmlFor="edit-reward-description">Descrição</Label>
               <RichTextEditor
+                key={editingReward?.id}
                 id="edit-reward-description"
                 name="description"
                 rows={2}

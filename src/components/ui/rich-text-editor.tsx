@@ -33,7 +33,7 @@ function escapeHtml(text: string): string {
 
 /**
  * Converte o texto com marcação em HTML, ocultando os caracteres especiais
- * (font-size 0) e aplicando a formatação. Quebras de linha viram <br>.
+ * (font-size 0) e aplicando a formatação. Quebras de linha são preservadas.
  */
 const MARKER_STYLE = 'font-size:0;line-height:0;display:inline-block;overflow:hidden'
 
@@ -80,7 +80,7 @@ function toHtml(text: string): string {
           `<span style="${COLOR[colorMatch[1]]}">${escapeHtml(colorMatch[2])}</span>` +
           `<span style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
       } else {
-        html += escapeHtml(part).replace(/\n/g, '<br>')
+        html += escapeHtml(part)
       }
     }
   }
