@@ -76,8 +76,10 @@ export function DashboardNav({
   const pathname = usePathname()
   const router = useRouter()
   const [showAccount, setShowAccount] = useState(false)
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const claimable = useClaimableAchievement(hasClaimableAchievement)
   const initial = userName?.trim()?.[0]?.toUpperCase() ?? 'U'
+  const avatarFailed = failedAvatarUrl === avatarUrl
   const brandHref = items[0]?.href ?? '/'
 
   /**
@@ -200,11 +202,12 @@ export function DashboardNav({
               aria-label="Abrir sua conta e opção de sair"
               className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white transition-all duration-200 hover:bg-white/25 active:scale-95 overflow-hidden"
             >
-              {avatarUrl ? (
+              {avatarUrl && !avatarFailed ? (
                 <img
                   src={avatarUrl}
                   alt={userName ?? 'Avatar'}
                   className="size-full object-cover"
+                  onError={() => setFailedAvatarUrl(avatarUrl)}
                 />
               ) : (
                 initial
@@ -278,8 +281,17 @@ export function DashboardNav({
       >
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg font-bold text-sky-700">
-              {initial}
+            <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-lg font-bold text-sky-700">
+              {avatarUrl && !avatarFailed ? (
+                <img
+                  src={avatarUrl}
+                  alt={userName ?? 'Avatar'}
+                  className="size-full object-cover"
+                  onError={() => setFailedAvatarUrl(avatarUrl)}
+                />
+              ) : (
+                initial
+              )}
             </span>
             <div className="min-w-0">
               <p className="truncate font-medium text-slate-800">
