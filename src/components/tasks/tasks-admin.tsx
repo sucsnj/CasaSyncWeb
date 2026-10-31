@@ -1645,7 +1645,7 @@ export function TasksAdmin({
                     {isExpanded ? (
                       <>
                         {task.description ? (
-                          <p className="text-sm text-slate-500">{task.description}</p>
+                          <p className="whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
                         ) : null}
                         <p className="text-sm text-slate-500">
                           {assigneeName(task.assigned_to)} ·{' '}
@@ -1753,7 +1753,7 @@ export function TasksAdmin({
                     {isExpanded ? (
                       <>
                         {task.description ? (
-                          <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
                         ) : null}
                         <p className="mt-1 text-sm text-slate-500">
                           {assigneeName(task.assigned_to)} ·{' '}

@@ -315,7 +315,7 @@ export function TasksDependent({
                       ) : null}
                       <p className="font-semibold text-slate-800">{task.title}</p>
                       {task.description ? (
-                        <p className="mt-1 text-sm text-slate-500">
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">
                           {task.description}
                         </p>
                       ) : null}
@@ -492,7 +492,7 @@ export function TasksDependent({
                       </p>
                     ) : null}
                     {isExpanded && task.description ? (
-                      <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
                     ) : null}
                   </CardContent>
                 </Card>
@@ -554,7 +554,7 @@ export function TasksDependent({
                       </p>
                     ) : null}
                     {isExpanded && task.description ? (
-                      <p className="mt-1 text-sm text-slate-500">{task.description}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{task.description}</p>
                     ) : null}
                   </CardContent>
                 </Card>
