@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { parseRichText } from '@/components/ui/rich-text'
 import { QuickMessageComposer } from '@/components/notifications/quick-message-composer'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
@@ -416,7 +417,7 @@ export function NotificationsBell({
                     <div className="flex flex-col gap-2 border-t border-slate-200 pt-2">
                       {item.body ? (
                         <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
-                          {item.body}
+                          {parseRichText(item.body)}
                         </p>
                       ) : null}
                       {item.image_url ? (

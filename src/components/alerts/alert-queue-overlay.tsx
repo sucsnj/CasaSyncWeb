@@ -297,7 +297,7 @@ export function AlertQueueOverlay({
                 {item.points}
               </p>
               <p className="text-sm font-medium text-slate-600">
-                {item.reason}
+                {parseRichText(item.reason)}
               </p>
             </div>
 

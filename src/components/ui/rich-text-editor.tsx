@@ -20,6 +20,8 @@ export type RichTextEditorProps = Omit<React.ComponentProps<'div'>, 'onChange'> 
   name?: string
   /** Texto de ajuda exibido quando vazio. */
   placeholder?: string
+  /** Desabilita a edição. */
+  disabled?: boolean
 }
 
 function escapeHtml(text: string): string {
@@ -134,6 +136,7 @@ export function RichTextEditor({
   rows = 2,
   name,
   placeholder,
+  disabled,
   className,
   ...props
 }: RichTextEditorProps) {
@@ -162,7 +165,7 @@ export function RichTextEditor({
 
   function handleInput() {
     const el = ref.current
-    if (!el) return
+    if (!el || disabled) return
     let text = el.textContent ?? ''
     if (limit > 0 && text.length > limit) {
       text = text.slice(0, limit)
@@ -189,7 +192,7 @@ export function RichTextEditor({
       <div className="relative">
         <div
           ref={ref}
-          contentEditable
+          contentEditable={!disabled}
           suppressContentEditableWarning
           role="textbox"
           aria-multiline="true"
@@ -220,6 +223,7 @@ export function RichTextEditor({
           }}
           className={cn(
             'w-full rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm',
+            disabled && 'cursor-not-allowed opacity-60',
             className
           )}
           style={{ minHeight, whiteSpace: 'pre-wrap' }}

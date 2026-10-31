@@ -1335,18 +1335,16 @@ export function HousesManager({
 
             <div className="grid gap-2">
               <Label htmlFor="member-reason">Descrição do ajuste</Label>
-              <ClearableInput
+               <RichTextEditor
                 id="member-reason"
                 name="reason"
-                type="text"
-                autoComplete="off"
                 placeholder="Informe a descrição do ajuste"
                 disabled={!pointsIsPenalty}
-                required={pointsIsPenalty}
-                suppressHydrationWarning
-                defaultValue=""
+                limit={0}
+                rows={2}
+                className="min-h-12"
               />
-              <p className="text-xs text-muted-foreground">
+               <p className="text-xs text-muted-foreground">
                 Obrigatório apenas quando o novo total for menor que o saldo
                 atual (penalização).
               </p>

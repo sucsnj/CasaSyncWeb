@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/actions/types'
-import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
-import { CharCounter } from '@/components/ui/limited-textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 
 /**
  * Quanto tempo "✓ Alterações salvas" fica visível antes do botão de ação do
@@ -137,20 +136,20 @@ export function DebouncedField({
   return (
     <div className="flex flex-col gap-1">
       {textarea ? (
-        <AutoGrowTextarea
+        <RichTextEditor
           value={local}
           placeholder={placeholder}
+          limit={maxLength && maxLength > 0 ? maxLength : 0}
+          rows={2}
           onFocus={() => {
             focusedRef.current = true
           }}
-          onChange={(event) => {
-            setLocal(event.target.value)
-            schedule(event.target.value)
+          onChange={(value) => {
+            setLocal(value)
+            schedule(value)
           }}
           onBlur={handleBlur}
-          rows={2}
-          maxLength={maxLength && maxLength > 0 ? maxLength : undefined}
-          className={`${controlClass} h-auto resize-y py-1.5`}
+          className={`${controlClass} h-auto py-1.5`}
         />
       ) : (
         <input
@@ -168,10 +167,6 @@ export function DebouncedField({
           className={controlClass}
         />
       )}
-
-      {maxLength && maxLength > 0 ? (
-        <CharCounter value={local} limit={maxLength} />
-      ) : null}
 
       {saving ? (
         <span className="text-xs text-muted-foreground">salvando…</span>
