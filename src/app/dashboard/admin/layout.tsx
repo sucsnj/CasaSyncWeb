@@ -31,7 +31,7 @@ export default async function AdminDashboardLayout({
   )
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-20 pb-24 md:p-6 md:pt-24 md:pb-6">
+    <div className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 p-4 pt-[calc(5rem_+_env(safe-area-inset-top))] pb-[calc(6rem_+_env(safe-area-inset-bottom))] md:p-6 md:pt-[calc(6rem_+_env(safe-area-inset-top))] md:pb-6">
       <DashboardNav
         items={ADMIN_NAV_ITEMS}
         userName={profile?.full_name}

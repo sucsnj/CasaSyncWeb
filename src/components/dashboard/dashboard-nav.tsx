@@ -139,7 +139,7 @@ export function DashboardNav({
   return (
     <>
       {/* Cabeçalho fixo — azul sólido, alto contraste */}
-      <header className="fixed inset-x-0 top-0 z-50 bg-blue-700 text-white shadow-md">
+      <header className="fixed inset-x-0 top-0 z-50 bg-blue-700 pt-[env(safe-area-inset-top)] text-white shadow-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 md:px-6">
           <Link href={brandHref} className="flex min-h-12 items-center gap-2">
             <span className="flex size-9 items-center justify-center rounded-xl bg-white/10 text-amber-300">

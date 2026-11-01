@@ -3,6 +3,7 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
+import { NativeShell } from "@/components/native/native-shell";
 import { Toaster } from "sonner";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -33,6 +34,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  // Deixa o WebView do Android edge-to-edge (Capacitor SystemBars) e expõe
+  // `env(safe-area-inset-*)` para o cabeçalho/bottom nav não ficarem sob as
+  // barras do sistema. No navegador não muda nada (insets = 0).
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -40,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="pt-BR" className={cn("font-sans", geist.variable)}>
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
         {children}
+        <NativeShell />
         <ServiceWorkerRegistration />
         <Toaster
           position="bottom-right"

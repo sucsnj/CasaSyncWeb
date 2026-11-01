@@ -3,9 +3,14 @@
 import { useEffect } from 'react'
 import { subscribeToPush, subscriptionToJSON } from '@/utils/push'
 import { registerPushSubscription, unregisterAllPushSubscriptions } from '@/actions/push'
+import { isNativeApp } from '@/utils/native'
 
 export function usePushNotifications(userId: string | undefined) {
   useEffect(() => {
+    // Web Push não existe no WebView do Capacitor (exigiria FCM nativo). Dentro
+    // do APK o recurso fica desligado — no navegador/PWA segue igual.
+    if (isNativeApp()) return
+
     if (!userId || typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return
     }
@@ -51,6 +56,7 @@ export function usePushNotifications(userId: string | undefined) {
   // Pede permissão (exige gesto) e subscreve/registra assim que concedida.
   // Chamado pelo botão "Ativar" do PushPermissionPrompt.
   async function enablePush(): Promise<boolean> {
+    if (isNativeApp()) return false
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return false
 
     try {
@@ -84,6 +90,7 @@ export function usePushNotifications(userId: string | undefined) {
 
   // Função para o usuário desativar push manualmente (ex: nas configurações)
   async function disablePush() {
+    if (isNativeApp()) return
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
 
     try {

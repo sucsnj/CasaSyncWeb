@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Bell, Check, X } from 'lucide-react'
 import { usePushNotifications } from '@/hooks/use-push-notifications'
+import { isNativeApp } from '@/utils/native'
 import { Button } from '@/components/ui/button'
 
 export function PushPermissionPrompt({ userId }: { userId: string | undefined }) {
@@ -10,7 +11,7 @@ export function PushPermissionPrompt({ userId }: { userId: string | undefined })
   const [activating, setActivating] = useState(false)
   const { enablePush } = usePushNotifications(userId)
 
-  if (dismissed || !userId || typeof window === 'undefined') return null
+  if (dismissed || !userId || typeof window === 'undefined' || isNativeApp()) return null
 
   // Se já tem permissão concedida ou negada permanentemente, não mostra
   if (Notification.permission !== 'default') return null

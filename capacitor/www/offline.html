@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CasaSync — sem conexão</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #f1f5f9;
+        color: #1e293b;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        text-align: center;
+      }
+      .card {
+        max-width: 22rem;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0 0 20px;
+        color: #64748b;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      button {
+        min-height: 48px;
+        padding: 0 24px;
+        border: 0;
+        border-radius: 12px;
+        background: #1d4ed8;
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Sem conexão</h1>
+      <p>
+        Não foi possível falar com o CasaSync. Verifique a internet e tente
+        novamente.
+      </p>
+      <button type="button" onclick="location.replace('https://casa-sync-web.vercel.app')">
+        Tentar novamente
+      </button>
+    </div>
+  </body>
+</html>
