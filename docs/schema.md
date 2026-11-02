@@ -121,6 +121,25 @@ todos os ADMINs membros para ações do dependente). O delete é do próprio usu
 as **lidas são apagadas após 5 dias** por limpeza lazy (`getMyNotifications`), sem
 pg_cron.
 
+### app_operations
+| coluna | tipo | notas |
+|---|---|---|
+| operation_id | uuid PK | chave de idempotência gerada no cliente (UUID) |
+| kind | text | tipo da operação (`task.complete`, `reward.request_redemption`, ...) |
+| actor_id | uuid FK → profiles | nullable; reservado para o ator (hoje nulo) |
+| house_id | uuid FK → houses | nullable; reservado para o escopo da casa |
+| result | jsonb | `ActionResult` de **sucesso** da primeira execução; replay devolve este valor |
+| created_at | timestamptz | claim; sem `result` por > 60s é considerado órfão e pode ser retomado |
+| completed_at | timestamptz | nullable; reservado (o helper grava apenas `result`) |
+
+Tabela de **idempotência** da fila offline (Fase 0). `result` preenchido = operação já
+executada com sucesso: o replay devolve o mesmo `ActionResult` **sem** reexecutar
+pontos, notificações ou push. Falhas **não** são memorizadas — a chave é liberada
+para nova tentativa (as ações só produzem efeito depois das validações). RLS
+habilitada **sem policies** — só a service role acessa.
+Limpeza de 7 dias via `purge_app_operations()` (`docs/sql/app_operations.sql`) e
+DELETE direto a cada N execuções. Ações sem `operationId` **não** tocam nesta tabela.
+
 ### house_settings
 | coluna | tipo | notas |
 |---|---|---|

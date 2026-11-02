@@ -52,6 +52,20 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // Rotas de API respondem JSON, nunca redirect para /login (o cliente da fila
+  // offline precisa distinguir 401 de sucesso). `/api/health` nem chega aqui
+  // (matcher em `src/proxy.ts`).
+  if (pathname.startsWith('/api/')) {
+    if (user) {
+      return supabaseResponse
+    }
+
+    return NextResponse.json(
+      { ok: false, error: 'Autenticação necessária.' },
+      { status: 401, headers: { 'Cache-Control': 'no-store' } }
+    )
+  }
+
   // Nenhum usuário autenticado: apenas rotas públicas são permitidas.
   if (!user) {
     if (isPublicPath(pathname)) {

@@ -30,6 +30,7 @@ import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import type { RewardPricingSettings } from '@/utils/settings'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
+import { withIdempotency } from '@/lib/idempotency'
 import type { ActionResult } from './types'
 
 type CreateRewardInput = {
@@ -189,7 +190,18 @@ async function readRewardWithLimits(
  * considera só os resgates que ocupam a vaga (pendente/aprovado) — um
  * resgate recusado pelo ADMIN não consome o limite.
  */
-export async function requestRedemption(rewardId: string): Promise<ActionResult> {
+export async function requestRedemption(
+  rewardId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'reward.request_redemption', () =>
+    requestRedemptionImpl(rewardId)
+  )
+}
+
+async function requestRedemptionImpl(
+  rewardId: string
+): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
   if (!user || profile?.user_role !== 'DEPENDENT') {
     return { ok: false, error: 'Apenas dependentes podem solicitar resgates.' }
@@ -369,7 +381,18 @@ function nextRewardCost(
  * A escrita condicional usa `.eq('status','PENDING')` + `.gte('points', cost)`
  * para que requisições concorrentes não gastem o mesmo saldo duas vezes.
  */
-export async function approveRedemption(redemptionId: string): Promise<ActionResult> {
+export async function approveRedemption(
+  redemptionId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'reward.approve_redemption', () =>
+    approveRedemptionImpl(redemptionId)
+  )
+}
+
+async function approveRedemptionImpl(
+  redemptionId: string
+): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -509,7 +532,18 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
   return { ok: true, message: 'Resgate aprovado e pontos debitados.' }
 }
 
-export async function rejectRedemption(redemptionId: string): Promise<ActionResult> {
+export async function rejectRedemption(
+  redemptionId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'reward.reject_redemption', () =>
+    rejectRedemptionImpl(redemptionId)
+  )
+}
+
+async function rejectRedemptionImpl(
+  redemptionId: string
+): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -694,6 +728,15 @@ type CreateSuggestionInput = {
 
 /** DEPENDENTE sugere uma recompensa — o ADMIN aprova/cria ou rejeita. */
 export async function createRewardSuggestion(
+  input: CreateSuggestionInput,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'reward.create_suggestion', () =>
+    createRewardSuggestionImpl(input)
+  )
+}
+
+async function createRewardSuggestionImpl(
   input: CreateSuggestionInput
 ): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
@@ -755,6 +798,16 @@ export async function createRewardSuggestion(
  * que uma sugestão vire duas recompensas em requisições concorrentes.
  */
 export async function resolveRewardSuggestion(
+  suggestionId: string,
+  approve: boolean,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'reward.resolve_suggestion', () =>
+    resolveRewardSuggestionImpl(suggestionId, approve)
+  )
+}
+
+async function resolveRewardSuggestionImpl(
   suggestionId: string,
   approve: boolean
 ): Promise<ActionResult> {

@@ -23,6 +23,15 @@
 ## Anexos e Mídia
 - Para detalhes sobre CSP, sandbox, brechas e mitigações de anexos, consulte docs/seguranca-anexos.md.
 
+## Idempotência & Fila Offline
+- **Helper:** `withIdempotency(operationId, kind, run)` em `src/lib/idempotency.ts` (server-only). Sem `operationId`, executa a ação original sem tocar no banco — o caminho online fica inalterado.
+- **Primeira execução:** reserva `app_operations.operation_id`, executa a ação e grava o `ActionResult` em `result`. Replay devolve o mesmo resultado **sem** reexecutar pontos, notificações ou push.
+- **Claim em andamento:** `result` nulo e claim recente (< 60s) devolve `code: 'IN_PROGRESS'`; claim órfão é retomado e, se a reexecução esbarrar num guard, devolve `code: 'CONFLICT'`.
+- **Falhas:** não são memorizadas. A chave é liberada (DELETE) para nova tentativa — as ações só produzem efeito depois das validações, então reexecutar é seguro.
+- **Escopo (Fase 0):** `completeTask`, `requestTaskExtension`, `approveTask`, `rejectCompletedTask`, `markTaskNotDelivered`, `setTaskOnHold`, `restoreTask`, `adminCompleteTask`, `resolveTaskExtension`, `requestRedemption`, `approveRedemption`, `rejectRedemption`, `createRewardSuggestion`, `resolveRewardSuggestion`. `updateDependentPoints` (SET absoluto) fica **online-only**.
+- **Schema:** `docs/sql/app_operations.sql` (aplicado). Ações sem `operationId` são o caminho normal até a Fase 4 (UI) conectá-las.
+- **Infra cliente (Fase 1):** `src/lib/offline/{types,db,queue,snapshot,actions,sync-dispatch}.ts`, `src/hooks/{use-online,use-pending-sync}.ts`, `src/components/offline/offline-provider.tsx`, rotas `/api/health` e `/api/sync`. IndexedDB `casasync-pwa` v1 (stores `snapshot`/`outbox`/`meta`), fila com `flushQueue` (batch 20, timeout 10s, lock `inFlight`, max 3 tentativas) e `submitOrQueue` (gera `operationId` antes da tentativa online). `clearOfflineData()` no logout. Proxy exclui `/api/health` do matcher e responde 401 JSON em `/api/*` sem sessão.
+
 ## Android (Capacitor)
 - **Modelo:** wrapper remoto (ADR-0028). O APK carrega a URL publicada (`capacitor.config.ts` → `server.url`, default `https://casa-sync-web.vercel.app`) no WebView. RSC, Server Actions, rotas `/api/*` de anexo e sessão por cookie continuam no servidor — **não** há export estático.
 - **Shell nativo (`src/components/native/native-shell.tsx`):** status bar via `SystemBars` do Capacitor 8 (`insetsHandling: native`, ícones claros no topo azul e escuros em login/cadastro/anexo), splash e botão voltar (histórico do WebView; na raiz minimiza o app). Fora do APK é no-op (`src/utils/native.ts`).

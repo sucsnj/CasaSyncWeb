@@ -4,6 +4,7 @@ import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 import { NativeShell } from "@/components/native/native-shell";
+import { OfflineProvider } from "@/components/offline/offline-provider";
 import { Toaster } from "sonner";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
         {children}
         <NativeShell />
+        <OfflineProvider />
         <ServiceWorkerRegistration />
         <Toaster
           position="bottom-right"

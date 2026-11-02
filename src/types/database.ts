@@ -935,6 +935,51 @@ chest_items: {
           }
         ]
 }
+      app_operations: {
+        Row: {
+          operation_id: string
+          kind: string
+          actor_id: string | null
+          house_id: string | null
+          result: Json | null
+          created_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          operation_id: string
+          kind: string
+          actor_id?: string | null
+          house_id?: string | null
+          result?: Json | null
+          created_at?: string
+          completed_at?: string | null
+        }
+        Update: {
+          operation_id?: string
+          kind?: string
+          actor_id?: string | null
+          house_id?: string | null
+          result?: Json | null
+          created_at?: string
+          completed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'app_operations_actor_id_fkey'
+            columns: ['actor_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'app_operations_house_id_fkey'
+            columns: ['house_id']
+            isOneToOne: false
+            referencedRelation: 'houses'
+            referencedColumns: ['id']
+          }
+        ]
+      }
   }
   push_subscriptions: {
     Row: {

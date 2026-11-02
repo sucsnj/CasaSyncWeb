@@ -40,6 +40,7 @@ import {
   storageObjectBytes,
 } from '@/utils/attachment-usage'
 import { removeStorageFile } from '@/utils/storage'
+import { withIdempotency } from '@/lib/idempotency'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
 
@@ -740,7 +741,16 @@ async function checkReopenTaskLimit(
  * DEPENDENTE marca a própria tarefa como concluída.
  * Guards: a tarefa deve estar PENDING/IN_PROGRESS e atribuída ao usuário.
  */
-export async function completeTask(taskId: string): Promise<ActionResult> {
+export async function completeTask(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.complete', () =>
+    completeTaskImpl(taskId)
+  )
+}
+
+async function completeTaskImpl(taskId: string): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
   if (!user) return { ok: false, error: 'Autenticação necessária.' }
 
@@ -835,7 +845,16 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
  *      que queremos: o balanço só muda por este caminho de negócio).
  *   3. Se a creditação falhar, revertemos a tarefa para COMPLETED.
  */
-export async function approveTask(taskId: string): Promise<ActionResult> {
+export async function approveTask(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.approve', () =>
+    approveTaskImpl(taskId)
+  )
+}
+
+async function approveTaskImpl(taskId: string): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -935,7 +954,18 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
  * refazer e marcar novamente). Transição guardada para não reabrir uma tarefa
  * que já tenha sido aprovada/creditada em outra aba.
  */
-export async function rejectCompletedTask(taskId: string): Promise<ActionResult> {
+export async function rejectCompletedTask(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.reject', () =>
+    rejectCompletedTaskImpl(taskId)
+  )
+}
+
+async function rejectCompletedTaskImpl(
+  taskId: string
+): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -1009,7 +1039,18 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
  * para NOT_DELIVERED. A penalidade é **definitiva**: um adiamento aprovado (ou a
  * edição do prazo) reabre a tarefa com 0 pontos, mas não devolve o débito.
  */
-export async function markTaskNotDelivered(taskId: string): Promise<ActionResult> {
+export async function markTaskNotDelivered(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.not_delivered', () =>
+    markTaskNotDeliveredImpl(taskId)
+  )
+}
+
+async function markTaskNotDeliveredImpl(
+  taskId: string
+): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -1112,6 +1153,16 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
  * entregue"), sem mexer no saldo do dependente.
  */
 export async function setTaskOnHold(
+  taskId: string,
+  onHold: boolean,
+  operationId?: string
+): Promise<ActionResult<{ task: Task }>> {
+  return withIdempotency(operationId, 'task.set_on_hold', () =>
+    setTaskOnHoldImpl(taskId, onHold)
+  )
+}
+
+async function setTaskOnHoldImpl(
   taskId: string,
   onHold: boolean
 ): Promise<ActionResult<{ task: Task }>> {
@@ -1281,6 +1332,15 @@ export async function setTaskOnHold(
  * prazo reinicia (agora + 1 dia). A tarefa volta para PENDING.
  */
 export async function restoreTask(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult<{ task: Task }>> {
+  return withIdempotency(operationId, 'task.restore', () =>
+    restoreTaskImpl(taskId)
+  )
+}
+
+async function restoreTaskImpl(
   taskId: string
 ): Promise<ActionResult<{ task: Task }>> {
   const activeHouse = await getActiveAdminHouse()
@@ -1367,7 +1427,16 @@ export async function restoreTask(
  * (PENDING/IN_PROGRESS -> APPROVED) impede crédito duplicado em cliques
  * concorrentes; falha na creditação reverte a tarefa ao estado anterior.
  */
-export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
+export async function adminCompleteTask(
+  taskId: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.admin_complete', () =>
+    adminCompleteTaskImpl(taskId)
+  )
+}
+
+async function adminCompleteTaskImpl(taskId: string): Promise<ActionResult> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }
 
@@ -1469,6 +1538,16 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
  * Marca `extension_requested = true` + `extension_reason` para o ADMIN resolver.
  */
 export async function requestTaskExtension(
+  taskId: string,
+  reason: string,
+  operationId?: string
+): Promise<ActionResult> {
+  return withIdempotency(operationId, 'task.request_extension', () =>
+    requestTaskExtensionImpl(taskId, reason)
+  )
+}
+
+async function requestTaskExtensionImpl(
   taskId: string,
   reason: string
 ): Promise<ActionResult> {
@@ -1573,7 +1652,18 @@ export async function requestTaskExtension(
 export async function resolveTaskExtension(
   taskId: string,
   approve: boolean,
-  days = 3
+  days = 3,
+  operationId?: string
+): Promise<ActionResult<{ task: Task }>> {
+  return withIdempotency(operationId, 'task.resolve_extension', () =>
+    resolveTaskExtensionImpl(taskId, approve, days)
+  )
+}
+
+async function resolveTaskExtensionImpl(
+  taskId: string,
+  approve: boolean,
+  days: number
 ): Promise<ActionResult<{ task: Task }>> {
   const activeHouse = await getActiveAdminHouse()
   if (!activeHouse) return { ok: false, error: 'Selecione uma casa primeiro.' }

@@ -3,6 +3,7 @@
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { clearOfflineData } from '@/lib/offline/db'
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,9 @@ export function SignOutButton({
     startTransition(async () => {
       const supabase = createClient()
       await supabase.auth.signOut()
+      // Dados offline são por usuário: nunca deixar snapshot/fila vazar entre
+      // contas no mesmo dispositivo.
+      await clearOfflineData()
       router.push('/login')
       router.refresh()
     })
