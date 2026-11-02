@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { FileText, Film, Link2, LoaderCircle, Package } from 'lucide-react'
+import { usePrefetch } from '@/hooks/use-prefetch'
 import { toast } from 'sonner'
 import {
   copyChestItemToTask,
@@ -40,44 +41,31 @@ export function ChestAttachmentPicker({
   onPick: (attachment: { url: string; name: string | null; type: string }) => void
   disabled?: boolean
 }) {
-  // `null` = carregando. O componente só é montado com o modal aberto (o input
-  // controla isso), então o estado nasce limpo a cada abertura.
-  const [state, setState] = useState<{
-    items: ChestAttachmentOption[]
-    error: string | null
-  } | null>(null)
   const [copyingId, setCopyingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const {
+    data: prefetchedItems,
+    error: prefetchedError,
+    loading,
+    load,
+  } = usePrefetch<ChestAttachmentOption[]>(
+    'chest-attachments',
+    listChestAttachmentsForTask
+  )
 
   useEffect(() => {
-    let cancelled = false
-
-    listChestAttachmentsForTask()
-      .then((result) => {
-        if (cancelled) return
-        setState({
-          items: result.ok ? result.data : [],
-          error: result.ok ? null : result.error,
-        })
-      })
-      .catch(() => {
-        if (cancelled) return
-        setState({ items: [], error: 'Não foi possível carregar o baú da casa.' })
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    void load()
+  }, [load])
 
   async function handlePick(item: ChestAttachmentOption) {
     if (copyingId || disabled) return
+    setActionError(null)
     setCopyingId(item.id)
     try {
       const result = await copyChestItemToTask(item.id)
       if (!result.ok) {
         const message = result.error
-        setState((current) => (current ? { ...current, error: message } : current))
+        setActionError(message)
         toast.error(message)
         return
       }
@@ -91,8 +79,9 @@ export function ChestAttachmentPicker({
     }
   }
 
-  const items = state?.items ?? []
-  const loading = state === null
+  const [actionError, setActionError] = useState<string | null>(null)
+  const items = prefetchedItems ?? []
+  const isLoading = loading || (prefetchedItems === null && prefetchedError === null)
   const filteredItems = query.trim()
     ? items.filter((item) =>
         item.title.toLowerCase().includes(query.trim().toLowerCase())
@@ -116,7 +105,7 @@ export function ChestAttachmentPicker({
            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
          />
  
-         {loading ? (
+         {isLoading ? (
           <p className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500">
             <LoaderCircle className="size-4 animate-spin" />
             Carregando o baú…
@@ -181,11 +170,11 @@ export function ChestAttachmentPicker({
           </ul>
         )}
 
-        {state?.error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {state.error}
-          </p>
-        ) : null}
+         {actionError || prefetchedError ? (
+           <p className="text-sm text-destructive" role="alert">
+             {actionError || prefetchedError}
+           </p>
+         ) : null}
       </div>
     </Modal>
   )

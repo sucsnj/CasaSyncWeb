@@ -12,6 +12,8 @@ import {
   X,
 } from 'lucide-react'
 import { uploadMedia } from '@/utils/media'
+import { listChestAttachmentsForTask } from '@/actions/chest'
+import { usePrefetch } from '@/hooks/use-prefetch'
 import { ChestAttachmentPicker } from '@/components/tasks/chest-attachment-picker'
 import {
   attachmentKind,
@@ -102,6 +104,10 @@ export function TaskAttachmentInput({
   const [error, setError] = useState<string | null>(null)
   const [linkDraft, setLinkDraft] = useState('')
   const [chestOpen, setChestOpen] = useState(false)
+  const { prefetch: prefetchChest } = usePrefetch(
+    'chest-attachments',
+    listChestAttachmentsForTask
+  )
 
   async function handleFile(file: File | undefined) {
     if (!file || uploading || disabled) return
@@ -331,10 +337,12 @@ export function TaskAttachmentInput({
                 servidor faz a cópia e devolve os 3 campos — o mesmo formato do
                 upload, então daqui em diante é o mesmo anexo. */}
             {chestSource ? (
-              <button
-                type="button"
-                onClick={() => setChestOpen(true)}
-                disabled={disabled || uploading}
+               <button
+                 type="button"
+                 onClick={() => setChestOpen(true)}
+                 onMouseEnter={prefetchChest}
+                 onFocus={prefetchChest}
+                 disabled={disabled || uploading}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-all duration-200 hover:bg-slate-50 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
               >
                 <Package className="size-4" />
