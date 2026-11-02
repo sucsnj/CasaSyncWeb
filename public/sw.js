@@ -1,8 +1,7 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-// v4: o `notificationclick` passou a trocar a casa ativa antes de navegar (o
-// `link` é relativo e abria a tela da casa errada). Bump para forçar reinstalação
-// nos browsers com a versão antiga em uso.
-const CACHE_NAME = 'casasync-v4';
+// v5: fallback de rede para navegação offline (serve /offline.html quando a
+// requisição falha). Bump para forçar reinstalação e limpar caches antigos.
+const CACHE_NAME = 'casasync-v5';
 // Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
 // é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
 const STATIC_ASSETS = [
@@ -10,6 +9,7 @@ const STATIC_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/apple-icon.png',
+  '/offline.html',
 ];
 
 self.addEventListener('install', (event) => {
@@ -40,9 +40,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navegação de página NUNCA vem do cache-first: o app é dinâmico e o proxy
-  // do servidor decide o redirect por sessão/role. Servir HTML em cache
-  // impedia o redirect e prendia o usuário na página inicial.
+  // do servidor decide o redirect por sessão/role. Em falha de rede (offline),
+  // serve a página de fallback /offline.html em cache.
   if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match('/offline.html'))
+    );
     return;
   }
 

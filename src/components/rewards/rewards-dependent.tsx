@@ -26,6 +26,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { submitOrQueue } from '@/lib/offline/actions'
 import { parseRichText } from '@/components/ui/rich-text'
 import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -213,22 +214,40 @@ export function RewardsDependent({
 
     void (async () => {
       try {
-        const result = await createRewardSuggestion({
+        const payload = {
           title: String(formData.get('title') ?? ''),
           description: String(formData.get('description') ?? ''),
           pointsCost: Number(formData.get('points_cost')) || null,
           imageUrl: String(formData.get('image_url') ?? '') || null,
+        }
+        const result = await submitOrQueue({
+          kind: 'reward.create_suggestion',
+          payload: {
+            title: payload.title,
+            description: payload.description,
+            pointsCost: payload.pointsCost,
+            imageUrl: payload.imageUrl,
+          },
+          run: (operationId) =>
+            createRewardSuggestion(payload, operationId),
         })
         if (!result.ok) {
           setError(result.error)
           toast.error(result.error)
           return
         }
-        toast.success('Sugestão enviada para aprovação!')
-        form.reset()
-        setShowSuggestionModal(false)
-        setSuggestionImageUrl(null)
-        router.refresh()
+        if (result.queued) {
+          toast.success('Sugestão salva offline.')
+          form.reset()
+          setShowSuggestionModal(false)
+          setSuggestionImageUrl(null)
+        } else {
+          toast.success('Sugestão enviada para aprovação!')
+          form.reset()
+          setShowSuggestionModal(false)
+          setSuggestionImageUrl(null)
+          router.refresh()
+        }
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)
@@ -243,15 +262,22 @@ export function RewardsDependent({
 
     void (async () => {
       try {
-        const result = await requestRedemption(reward.id)
+        const result = await submitOrQueue({
+          kind: 'reward.request_redemption',
+          payload: { rewardId: reward.id },
+          run: (operationId) => requestRedemption(reward.id, operationId),
+        })
         if (!result.ok) {
           setError(result.error)
           toast.error(result.error)
           return
         }
-        toast.success('Resgate solicitado! Aguardando aprovação.')
-        // O INSERT chega também via Realtime; refresh é a rede de segurança.
-        router.refresh()
+        if (result.queued) {
+          toast.success('Resgate salvo offline.')
+        } else {
+          toast.success('Resgate solicitado! Aguardando aprovação.')
+          router.refresh()
+        }
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)

@@ -56,6 +56,7 @@ import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
+import { submitOrQueue } from '@/lib/offline/actions'
 import { parseRichText } from '@/components/ui/rich-text'
 import {
   Card,
@@ -258,6 +259,10 @@ export function TasksAdmin({
         toast.error(result.error)
         return
       }
+      if ((result as { queued?: boolean }).queued) {
+        toast.success('Alteração salva offline. Será enviada ao sincronizar.')
+        return
+      }
       const message = result.message ?? options?.fallbackMessage ?? ''
       if (options?.successToast === 'warning') toast.warning(message)
       else if (options?.successToast === 'info') toast.info(message)
@@ -401,23 +406,29 @@ export function TasksAdmin({
     // reiniciando o prazo (+1 dia) — equivalente ao restoreTask dos cards.
     if (reuseTask?.status === 'APPROVED') {
       startTransition(async () => {
-        const result = await restoreTask(reuseTask.id)
+        const result = await submitOrQueue({
+          kind: 'task.restore',
+          payload: { taskId: reuseTask.id },
+          run: (operationId) => restoreTask(reuseTask.id, operationId),
+        })
         if (!result.ok) {
           setFormError(result.error)
           toast.error(result.error)
           return
         }
 
-        toast.success(result.message ?? 'Tarefa reativada')
-        // Otimista: reabre o card na seção de pendentes na hora, mesmo que o
-        // router.refresh() ou o Realtime estejam atrasados/indisponíveis.
-        if (result.data?.task) {
-          setTasks((prev) => upsertTask(prev, result.data!.task))
+        if (result.queued) {
+          toast.success('Tarefa reativada offline.')
+        } else {
+          toast.success(result.message ?? 'Tarefa reativada')
+          if (result.data?.task) {
+            setTasks((prev) => upsertTask(prev, result.data!.task))
+          }
+          router.refresh()
         }
         setFormError(null)
         resetForm()
         setShowTaskForm(false)
-        router.refresh()
       })
       return
     }
@@ -482,7 +493,12 @@ export function TasksAdmin({
     void runTaskTransition(
       task,
       () => ({ ...task, status: 'APPROVED' }),
-      () => approveTask(task.id),
+      () =>
+        submitOrQueue({
+          kind: 'task.approve',
+          payload: { taskId: task.id },
+          run: (operationId) => approveTask(task.id, operationId),
+        }),
       { fallbackMessage: 'Tarefa aprovada' }
     )
   }
@@ -497,7 +513,12 @@ export function TasksAdmin({
         completed_by: null,
         completed_at: null,
       }),
-      () => rejectCompletedTask(task.id),
+      () =>
+        submitOrQueue({
+          kind: 'task.reject',
+          payload: { taskId: task.id },
+          run: (operationId) => rejectCompletedTask(task.id, operationId),
+        }),
       { fallbackMessage: 'Tarefa devolvida' }
     )
   }
@@ -509,7 +530,12 @@ export function TasksAdmin({
     void runTaskTransition(
       task,
       () => ({ ...task, status: 'APPROVED' }),
-      () => adminCompleteTask(task.id),
+      () =>
+        submitOrQueue({
+          kind: 'task.admin_complete',
+          payload: { taskId: task.id },
+          run: (operationId) => adminCompleteTask(task.id, operationId),
+        }),
       { fallbackMessage: 'Tarefa concluída e creditada' }
     )
   }
@@ -521,7 +547,12 @@ export function TasksAdmin({
     void runTaskTransition(
       task,
       () => ({ ...task, status: 'NOT_DELIVERED' }),
-      () => markTaskNotDelivered(task.id),
+      () =>
+        submitOrQueue({
+          kind: 'task.not_delivered',
+          payload: { taskId: task.id },
+          run: (operationId) => markTaskNotDelivered(task.id, operationId),
+        }),
       {
         successToast: 'warning',
         fallbackMessage: 'Tarefa marcada como não entregue',
@@ -555,8 +586,12 @@ export function TasksAdmin({
             extension_reason: null,
           },
       async () => {
-        const result = await setTaskOnHold(task.id, onHold)
-        if (result.ok && result.data?.task) {
+        const result = await submitOrQueue({
+          kind: 'task.set_on_hold',
+          payload: { taskId: task.id, onHold },
+          run: (operationId) => setTaskOnHold(task.id, onHold, operationId),
+        })
+        if (result.ok && !result.queued && result.data?.task) {
           setTasks((prev) => upsertTask(prev, result.data!.task))
         }
         return result
@@ -586,9 +621,13 @@ export function TasksAdmin({
         extension_reason: null,
       }),
       async () => {
-        const result = await restoreTask(task.id)
+        const result = await submitOrQueue({
+          kind: 'task.restore',
+          payload: { taskId: task.id },
+          run: (operationId) => restoreTask(task.id, operationId),
+        })
         // Linha autoritativa (com o `due_date`/`decay_started_at` reais).
-        if (result.ok && result.data?.task) {
+        if (result.ok && !result.queued && result.data?.task) {
           setTasks((prev) => upsertTask(prev, result.data!.task))
         }
         return result
@@ -630,8 +669,13 @@ export function TasksAdmin({
           : {}),
       }),
       async () => {
-        const result = await resolveTaskExtension(task.id, approve, days)
-        if (result.ok && result.data?.task) {
+        const result = await submitOrQueue({
+          kind: 'task.resolve_extension',
+          payload: { taskId: task.id, approve, days },
+          run: (operationId) =>
+            resolveTaskExtension(task.id, approve, days, operationId),
+        })
+        if (result.ok && !result.queued && result.data?.task) {
           setTasks((prev) => upsertTask(prev, result.data!.task))
         }
         return result

@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { submitOrQueue } from '@/lib/offline/actions'
 import { parseRichText } from '@/components/ui/rich-text'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -284,12 +285,25 @@ export function RewardsAdmin({
   function handleResolve(redemption: RedemptionView, approve: boolean) {
     startTransition(async () => {
       const result = approve
-        ? await approveRedemption(redemption.id)
-        : await rejectRedemption(redemption.id)
+        ? await submitOrQueue({
+            kind: 'reward.approve_redemption',
+            payload: { redemptionId: redemption.id },
+            run: (operationId) => approveRedemption(redemption.id, operationId),
+          })
+        : await submitOrQueue({
+            kind: 'reward.reject_redemption',
+            payload: { redemptionId: redemption.id },
+            run: (operationId) => rejectRedemption(redemption.id, operationId),
+          })
 
       if (!result.ok) {
         setFormError(result.error)
         toast.error(result.error)
+        return
+      }
+
+      if (result.queued) {
+        toast.success('Resgate salvo offline.')
         return
       }
 
@@ -315,10 +329,20 @@ export function RewardsAdmin({
   function handleResolveSuggestion(suggestion: SuggestionView, approve: boolean) {
     setFormError(null)
     startTransition(async () => {
-      const result = await resolveRewardSuggestion(suggestion.id, approve)
+      const result = await submitOrQueue({
+        kind: 'reward.resolve_suggestion',
+        payload: { suggestionId: suggestion.id, approve },
+        run: (operationId) =>
+          resolveRewardSuggestion(suggestion.id, approve, operationId),
+      })
       if (!result.ok) {
         setFormError(result.error)
         toast.error(result.error)
+        return
+      }
+
+      if (result.queued) {
+        toast.success('Sugestão salva offline.')
         return
       }
 

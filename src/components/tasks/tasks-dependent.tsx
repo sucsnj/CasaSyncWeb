@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
+import { submitOrQueue } from '@/lib/offline/actions'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -163,7 +164,11 @@ export function TasksDependent({
 
     void (async () => {
       try {
-        const result = await completeTask(task.id)
+        const result = await submitOrQueue({
+          kind: 'task.complete',
+          payload: { taskId: task.id },
+          run: (operationId) => completeTask(task.id, operationId),
+        })
         if (!result.ok) {
           rollbackOptimistic(task)
           setError(result.error)
@@ -171,14 +176,15 @@ export function TasksDependent({
           return
         }
 
-        toast.success('Tarefa concluída! Aguardando aprovação.')
-        router.refresh()
+        if (result.queued) {
+          toast.success('Tarefa concluída offline. Será enviada ao sincronizar.')
+        } else {
+          toast.success('Tarefa concluída! Aguardando aprovação.')
+          router.refresh()
+        }
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         rollbackOptimistic(task)
-        // Erro de rede é ambíguo: o servidor pode ter gravado e só a resposta
-        // não ter chegado. O `refresh` traz a linha real de volta (ver o efeito
-        // de sincronização da prop) e o Realtime confirma.
         router.refresh()
         setError(msg)
         toast.error(msg)
@@ -209,16 +215,26 @@ export function TasksDependent({
 
     void (async () => {
       try {
-        const result = await requestTaskExtension(task.id, reason)
+        const result = await submitOrQueue({
+          kind: 'task.request_extension',
+          payload: { taskId: task.id, reason },
+          run: (operationId) =>
+            requestTaskExtension(task.id, reason, operationId),
+        })
         if (!result.ok) {
           rollbackOptimistic(task)
           setExtensionError(result.error)
           toast.error(result.error)
           return
         }
-        toast.success('Pedido de adiamento enviado!')
-        setExtendingTask(null)
-        router.refresh()
+        if (result.queued) {
+          toast.success('Pedido de adiamento salvo offline.')
+          setExtendingTask(null)
+        } else {
+          toast.success('Pedido de adiamento enviado!')
+          setExtendingTask(null)
+          router.refresh()
+        }
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         rollbackOptimistic(task)
