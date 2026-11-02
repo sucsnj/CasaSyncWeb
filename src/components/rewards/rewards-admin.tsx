@@ -263,31 +263,54 @@ export function RewardsAdmin({
 
   function handleToggleActive(reward: Reward) {
     setFormError(null)
+    const nextActive = !reward.active
+    // Feedback imediato (otimista), como em tasks: o card muda no mesmo quadro.
+    setRewards((prev) =>
+      prev.map((item) =>
+        item.id === reward.id ? { ...item, active: nextActive } : item
+      )
+    )
     startTransition(async () => {
-      const result = await setRewardActive(reward.id, !reward.active)
+      const result = await setRewardActive(reward.id, nextActive)
       if (!result.ok) {
+        setRewards((prev) =>
+          prev.map((item) =>
+            item.id === reward.id ? { ...item, active: reward.active } : item
+          )
+        )
         setFormError(result.error)
         toast.error(result.error)
         return
       }
-      toast.success(!reward.active ? 'Recompensa reativada!' : 'Recompensa desativada.')
-      const nextActive = !reward.active
-      setRewards((prev) =>
-        prev.map((item) =>
-          item.id === reward.id ? { ...item, active: nextActive } : item
-        )
-      )
+      toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
       router.refresh()
     })
   }
 
   function handleResolve(redemption: RedemptionView, approve: boolean) {
+    const nextStatus = approve ? 'APPROVED' : 'REJECTED'
+    const resolvedAt = new Date().toISOString()
+    // Feedback imediato (otimista).
+    setRedemptions((prev) =>
+      prev.map((item) =>
+        item.id === redemption.id
+          ? { ...item, status: nextStatus, resolved_at: resolvedAt }
+          : item
+      )
+    )
     startTransition(async () => {
       const result = approve
         ? await approveRedemption(redemption.id)
         : await rejectRedemption(redemption.id)
 
       if (!result.ok) {
+        setRedemptions((prev) =>
+          prev.map((item) =>
+            item.id === redemption.id
+              ? { ...item, status: redemption.status, resolved_at: redemption.resolved_at }
+              : item
+          )
+        )
         setFormError(result.error)
         toast.error(result.error)
         return
@@ -299,24 +322,27 @@ export function RewardsAdmin({
         toast.info('Resgate rejeitado.')
       }
 
-      const nextStatus = approve ? 'APPROVED' : 'REJECTED'
-      const resolvedAt = new Date().toISOString()
-      setRedemptions((prev) =>
-        prev.map((item) =>
-          item.id === redemption.id
-            ? { ...item, status: nextStatus, resolved_at: resolvedAt }
-            : item
-        )
-      )
       router.refresh()
     })
   }
 
   function handleResolveSuggestion(suggestion: SuggestionView, approve: boolean) {
     setFormError(null)
+    const nextStatus = approve ? 'APPROVED' : 'REJECTED'
+    // Feedback imediato (otimista).
+    setSuggestions((prev) =>
+      prev.map((item) =>
+        item.id === suggestion.id ? { ...item, status: nextStatus } : item
+      )
+    )
     startTransition(async () => {
       const result = await resolveRewardSuggestion(suggestion.id, approve)
       if (!result.ok) {
+        setSuggestions((prev) =>
+          prev.map((item) =>
+            item.id === suggestion.id ? { ...item, status: suggestion.status } : item
+          )
+        )
         setFormError(result.error)
         toast.error(result.error)
         return
@@ -328,12 +354,6 @@ export function RewardsAdmin({
         toast.info('Sugestão rejeitada.')
       }
 
-      const nextStatus = approve ? 'APPROVED' : 'REJECTED'
-      setSuggestions((prev) =>
-        prev.map((item) =>
-          item.id === suggestion.id ? { ...item, status: nextStatus } : item
-        )
-      )
       router.refresh()
     })
   }
