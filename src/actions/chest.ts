@@ -196,7 +196,14 @@ export async function createChestItem(input: {
   // rede, e este é o que barra a gravação.
   const sizeError = await checkAttachmentFile(admin, input.fileUrl, fileType)
   if (sizeError) return { ok: false, error: sizeError }
-
+ 
+  // Tamanho persistido (emenda do ADR-0027): evita `storage.list` ao montar o
+  // seletor "usar do baú". Link não ocupa storage (`null`).
+  const fileSize =
+    fileType === LINK_ATTACHMENT_TYPE
+      ? null
+      : await storageObjectBytes(admin, input.fileUrl)
+ 
   const { data, error } = await admin
     .from('chest_items')
     .insert({
@@ -205,6 +212,7 @@ export async function createChestItem(input: {
       file_url: input.fileUrl,
       file_name: fileName,
       file_type: fileType,
+      file_size: fileSize,
       created_by: auth.adminId,
     })
     .select('*')
@@ -275,8 +283,14 @@ export async function updateChestItem(
       )
       if (fileError) return { ok: false, error: fileError }
 
-      const sizeError = await checkAttachmentFile(admin, patch.fileUrl, fileType)
-      if (sizeError) return { ok: false, error: sizeError }
+       const sizeError = await checkAttachmentFile(admin, patch.fileUrl, fileType)
+       if (sizeError) return { ok: false, error: sizeError }
+ 
+       // Tamanho persistido (emenda do ADR-0027): regravado quando o arquivo muda.
+       updates.file_size =
+         fileType === LINK_ATTACHMENT_TYPE
+           ? null
+           : await storageObjectBytes(admin, patch.fileUrl)
 
       // Peso da casa (ADR-0027): o arquivo novo já está no storage (o upload é
       // client-side), então entra sozinho em `usedBytes`; o que a troca **libera**
@@ -360,7 +374,7 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
  * Opção do seletor "usar do baú" — só o **mínimo** que a tela precisa. O rótulo
  * do tipo (`Imagem`/`PDF`/`Link`) é calculado no client pelo mesmo helper puro do
  * anexo, então não há duas traduções do mesmo texto; o **tamanho** vem do servidor
- * porque só ele lê o storage (o app não guarda `file_size` em lugar nenhum).
+ * persistido em `chest_items.file_size` (rótulo de UI; o storage segue fonte do orçamento).
  */
 export type ChestAttachmentOption = {
   id: string
@@ -422,35 +436,61 @@ export async function listChestAttachmentsForTask(): Promise<
     return { ok: false, error: 'Crie ou selecione uma casa primeiro.' }
   }
 
-  const auth = await assertAdminCanManage(admin, activeHouse.id)
-  if (!auth.ok) return auth
-
-  const allowed = await canReuseChestItem(activeHouse.id)
+  const [allowed, itemsResult] = await Promise.all([
+    canReuseChestItem(activeHouse.id),
+    admin
+      .from('chest_items')
+      .select('id, title, file_url, file_type, file_size')
+      .eq('house_id', activeHouse.id)
+      .order('created_at', { ascending: false }),
+  ])
+ 
   if (!allowed.ok) return allowed
-
-  const { data: items, error } = await admin
-    .from('chest_items')
-    .select('id, title, file_url, file_type')
-    .eq('house_id', activeHouse.id)
-    .order('created_at', { ascending: false })
-
+ 
+  const { data: items, error } = itemsResult
   if (error) {
     return { ok: false, error: 'Não foi possível carregar o baú da casa.' }
   }
+ 
+  const rawItems = items ?? []
 
-  // Um `list` só (não um `info` por item): o tamanho real de todos os arquivos da
-  // pasta numa ida. Falha aqui é só rótulo ausente — quem barra é o teto por
-  // arquivo, na cópia.
-  const sizes = await folderObjectSizes(admin, `${CHEST_ITEM_FOLDER}/${activeHouse.id}`).catch(
-    (err) => {
-      console.error('[CHEST] Falha ao ler o tamanho dos arquivos do baú:', err)
-      return new Map<string, number>()
-    }
+  // Backfill idempotente para linhas antigas com `file_size = null`: uma única
+  // listagem do Storage popula a coluna; depois disso o seletor fica rápido.
+  const missing = rawItems.filter(
+    (item) => item.file_size === null && item.file_type !== LINK_ATTACHMENT_TYPE
   )
+  let sizes: Map<string, number> | null = null
+  if (missing.length > 0) {
+    try {
+      sizes = await folderObjectSizes(admin, `${CHEST_ITEM_FOLDER}/${activeHouse.id}`)
+    } catch (err) {
+      console.error('[CHEST] Falha ao ler o tamanho dos arquivos do baú:', err)
+      sizes = new Map()
+    }
+    await Promise.all(
+      missing.map(async (item) => {
+        const path = storagePathFromUrl(item.file_url)
+        if (!path) return
+        const name = path.split('/').pop()
+        if (!name) return
+        const bytes = sizes?.get(name)
+        if (bytes === undefined) return
+        await admin
+          .from('chest_items')
+          .update({ file_size: bytes })
+          .eq('id', item.id)
+          .is('file_size', null)
+      })
+    )
+  }
 
-  const options: ChestAttachmentOption[] = (items ?? []).map((item) => {
+  const options: ChestAttachmentOption[] = rawItems.map((item) => {
+    if (item.file_size !== null) {
+      return { id: item.id, title: item.title, fileType: item.file_type, bytes: item.file_size }
+    }
     const path = storagePathFromUrl(item.file_url)
-    const bytes = path ? (sizes.get(path) ?? null) : null
+    const name = path?.split('/').pop()
+    const bytes = name && sizes ? (sizes.get(name) ?? null) : null
     return { id: item.id, title: item.title, fileType: item.file_type, bytes }
   })
 

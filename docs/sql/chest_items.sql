@@ -20,6 +20,7 @@ create table if not exists public.chest_items (
   file_url text not null,
   file_name text,
   file_type text not null,
+  file_size integer,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

@@ -2,8 +2,9 @@
  * Peso dos anexos no storage — **server-only** (lê o bucket com service-role).
  *
  * Este módulo é a **fonte da verdade de bytes**: o app não tem coluna
- * `file_size` em `tasks`/`chest_items` (ver ADR-0027), então o número vem do
- * próprio objeto, no bucket. Vantagens sobre uma coluna:
+ * `file_size` em `tasks` e `chest_items.file_size` é só rótulo de UI (ver ADR-0027),
+ * então o número do orçamento vem do próprio objeto, no bucket. Vantagens sobre
+ * uma coluna:
  *
  * - é **autoritativo** — o tamanho do arquivo que existe, não o que o cliente
  *   declarou nem o que foi salvo no momento do upload;

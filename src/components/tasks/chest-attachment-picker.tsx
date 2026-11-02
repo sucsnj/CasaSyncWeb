@@ -47,6 +47,7 @@ export function ChestAttachmentPicker({
     error: string | null
   } | null>(null)
   const [copyingId, setCopyingId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +93,11 @@ export function ChestAttachmentPicker({
 
   const items = state?.items ?? []
   const loading = state === null
+  const filteredItems = query.trim()
+    ? items.filter((item) =>
+        item.title.toLowerCase().includes(query.trim().toLowerCase())
+      )
+    : items
 
   return (
     <Modal open={open} onClose={onClose} title="Usar material do baú">
@@ -99,27 +105,39 @@ export function ChestAttachmentPicker({
         <p className="text-xs text-slate-500">
           O arquivo é <strong className="font-medium text-slate-700">copiado</strong>{' '}
           para o anexo desta tarefa. O baú continua guardando o material dele, e os
-          dois passam a contar no limite de anexos da casa.
-        </p>
-
-        {loading ? (
+           dois passam a contar no limite de anexos da casa.
+         </p>
+ 
+         <input
+           type="search"
+           value={query}
+           onChange={(e) => setQuery(e.target.value)}
+           placeholder="Buscar no baú…"
+           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+         />
+ 
+         {loading ? (
           <p className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500">
             <LoaderCircle className="size-4 animate-spin" />
             Carregando o baú…
           </p>
-        ) : items.length === 0 ? (
+         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center">
-            <Package className="size-6 text-slate-400" />
-            <p className="text-sm text-slate-600">
-              O baú desta casa está vazio.
-            </p>
-            <p className="text-xs text-slate-500">
-              Guarde um arquivo no Baú para poder usá-lo como anexo depois.
-            </p>
+             <Package className="size-6 text-slate-400" />
+             <p className="text-sm text-slate-600">
+               {items.length === 0
+                 ? 'O baú desta casa está vazio.'
+                 : 'Nenhum material encontrado.'}
+             </p>
+             <p className="text-xs text-slate-500">
+               {items.length === 0
+                 ? 'Guarde um arquivo no Baú para poder usá-lo como anexo depois.'
+                 : 'Tente outro termo de busca.'}
+             </p>
           </div>
         ) : (
           <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const kind = attachmentKind(item.fileType)
               const isLink = kind === 'link'
               const copying = copyingId === item.id

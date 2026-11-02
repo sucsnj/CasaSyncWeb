@@ -441,6 +441,7 @@ chest_items: {
           file_url: string
           file_name: string | null
           file_type: string
+          file_size: number | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -452,6 +453,7 @@ chest_items: {
           file_url: string
           file_name?: string | null
           file_type: string
+          file_size?: number | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -463,6 +465,7 @@ chest_items: {
           file_url?: string
           file_name?: string | null
           file_type?: string
+          file_size?: number | null
           created_by?: string | null
           created_at?: string
           updated_at?: string

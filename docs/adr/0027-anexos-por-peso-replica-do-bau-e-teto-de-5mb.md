@@ -143,6 +143,16 @@ importa agora que o peso do bucket conta para o orçamento.
   toda escrita de storage, e o número é barato (2 leituras) nas 2 telas que o
   mostram.
 
+## Emenda — coluna `file_size` em `chest_items` (exibição)
+
+A coluna `file_size` (bytes, nullable) foi adicionada **apenas** em
+`chest_items`, para montar o seletor "usar do baú" sem `storage.list`
+(`listChestAttachmentsForTask`). Ela **não** substitui o storage como fonte de
+verdade do orçamento: `houseAttachmentBytes`/`checkAttachmentBudget` continuam
+lendo o bucket. A coluna pode ficar desatualizada em reenvio/órfão, então o
+valor é tratado como rótulo de UI ("tamanho indisponível" quando `null`), nunca
+como barreira. `tasks` segue sem `file_size`.
+
 ## Consequências
 
 - **Leitura nova no caminho de escrita** (1–2 leituras de storage por anexo
