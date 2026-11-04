@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
@@ -70,53 +71,13 @@ export function TasksDependent({
   const { expandedIds, isHydrated, toggle: toggleExpanded } = useExpandedIds({
     storageKey: `casasync:expanded:tasks-dependent:${houseId}`,
   })
-  // Ids das tarefas com uma transição em andamento (concluir / pedir mais
-  // tempo). NÃO usa `pending` do `useTransition`: `startTransition(async …)`
-  // nunca marca `isPending` — o React não rastreia a Promise devolvida pelo
-  // callback — então o label "Enviando..." e o `disabled` ficavam
-  // permanentemente falsos e o botão parecia travado durante todo o trabalho
-  // do servidor.
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  // Pending/otimista por item compartilhado com ADMIN e recompensas.
+  const { isPending, markServer, optimisticIdsRef, runOptimistic } =
+    useOptimisticAction()
   // O pedido de adiamento sai de um Modal de instância única (não de um card
   // repetido), então um flag próprio é mais simples que o Set — e não sofre com
   // o `setExtendingTask(null)` do sucesso, que desmonta o botão.
   const [sendingExtension, setSendingExtension] = useState(false)
-
-  function setPendingId(id: string, on: boolean) {
-    setPendingIds((prev) => {
-      const next = new Set(prev)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }
-
-  /**
-   * Ids cujo card está num valor que **só o otimista produziu**. Ref (e não
-   * state) porque o efeito de sincronização da prop precisa ler sem se
-   * reinscrever — ver `rollbackOptimistic`.
-   */
-  const optimisticIdsRef = useRef<Set<string>>(new Set())
-
-  function setOptimistic(id: string, on: boolean) {
-    if (on) optimisticIdsRef.current.add(id)
-    else optimisticIdsRef.current.delete(id)
-  }
-
-  /**
-   * Desfaz o update otimista **só se o card ainda estiver num valor produzido
-   * pelo otimista** — se uma linha real chegou no meio do `await`, o id já saiu
-   * do registro e o dado novo (mais recente que o `task` capturado no render) é
-   * preservado em vez de sobrescrito.
-   *
-   * Registro e não predicado (`item.status === 'COMPLETED'`): o predicado seria
-   * indistinguível da linha que um escritor concorrente produziu (ver
-   * `rollbackOptimistic` em `tasks-admin.tsx`).
-   */
-  function rollbackOptimistic(task: Task) {
-    if (!optimisticIdsRef.current.has(task.id)) return
-    setTasks((prev) => upsertTask(prev, task))
-  }
 
   /**
    * Sincroniza a lista com a prop do servidor. Sem isso o `router.refresh()`
@@ -128,7 +89,7 @@ export function TasksDependent({
   useEffect(() => {
     if (optimisticIdsRef.current.size > 0) return
     setTasks(initialTasks)
-  }, [initialTasks])
+  }, [initialTasks, optimisticIdsRef])
 
   // ENSINO (teach): o evento de UPDATE é recebido ao vivo. Quando o ADMIN
   // aprova (APPROVED) a lista muda na hora; quando o ADMIN cria (INSERT) uma
@@ -140,7 +101,7 @@ export function TasksDependent({
     filter: `house_id=eq.${houseId}`,
     onUpsert: (task) => {
       // Chegou linha REAL do servidor → sai do registro de otimistas.
-      setOptimistic(task.id, false)
+      markServer(task.id)
       setTasks((prev) => upsertTask(prev, task))
     },
     onDelete: (taskId) =>
@@ -148,45 +109,35 @@ export function TasksDependent({
   })
 
   function handleComplete(task: Task) {
-    if (pendingIds.has(task.id)) return
     setError(null)
-    setPendingId(task.id, true)
-    setOptimistic(task.id, true)
     // Otimista ANTES do `await`: o card muda de seção na hora. O `completed_at`
     // é aproximado (o valor exato é o do servidor) e o Realtime/refresh corrige.
-    const optimistic: Task = {
-      ...task,
-      status: 'COMPLETED',
-      completed_at: new Date().toISOString(),
-    }
-    setTasks((prev) => upsertTask(prev, optimistic))
-
-    void (async () => {
-      try {
-        const result = await completeTask(task.id)
-        if (!result.ok) {
-          rollbackOptimistic(task)
-          setError(result.error)
-          toast.error(result.error)
-          return
-        }
-
+    void runOptimistic({
+      current: task,
+      optimistic: {
+        ...task,
+        status: 'COMPLETED',
+        completed_at: new Date().toISOString(),
+      },
+      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      action: () => completeTask(task.id),
+      onSuccess: () => {
         toast.success('Tarefa concluída! Aguardando aprovação.')
         router.refresh()
-      } catch {
-        const msg = 'Falha de conexão. Tente novamente.'
-        rollbackOptimistic(task)
+      },
+      onError: (message) => {
+        setError(message)
+        toast.error(message)
+      },
+      onNetworkError: (message) => {
         // Erro de rede é ambíguo: o servidor pode ter gravado e só a resposta
         // não ter chegado. O `refresh` traz a linha real de volta (ver o efeito
         // de sincronização da prop) e o Realtime confirma.
         router.refresh()
-        setError(msg)
-        toast.error(msg)
-      } finally {
-        setPendingId(task.id, false)
-        setOptimistic(task.id, false)
-      }
-    })()
+        setError(message)
+        toast.error(message)
+      },
+    })
   }
 
   function handleRequestExtension(task: Task, form: HTMLFormElement) {
@@ -196,40 +147,32 @@ export function TasksDependent({
     const reason = String(data.get('extensionReason') ?? '')
     form.reset()
     setSendingExtension(true)
-    setOptimistic(task.id, true)
-    // Otimista: o banner "Pedido de adiamento" e a somatória aparecem na hora,
-    // e o botão "Pedir mais tempo" some (o card já não tem `due_date` livre).
-    setTasks((prev) =>
-      upsertTask(prev, {
+    void runOptimistic({
+      current: task,
+      // Otimista: o banner "Pedido de adiamento" e a somatória aparecem na hora,
+      // e o botão "Pedir mais tempo" some (o card já não tem `due_date` livre).
+      optimistic: {
         ...task,
         extension_requested: true,
         extension_reason: reason,
-      })
-    )
-
-    void (async () => {
-      try {
-        const result = await requestTaskExtension(task.id, reason)
-        if (!result.ok) {
-          rollbackOptimistic(task)
-          setExtensionError(result.error)
-          toast.error(result.error)
-          return
-        }
+      },
+      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      action: () => requestTaskExtension(task.id, reason),
+      onSuccess: () => {
         toast.success('Pedido de adiamento enviado!')
         setExtendingTask(null)
         router.refresh()
-      } catch {
-        const msg = 'Falha de conexão. Tente novamente.'
-        rollbackOptimistic(task)
+      },
+      onError: (message) => {
+        setExtensionError(message)
+        toast.error(message)
+      },
+      onNetworkError: (message) => {
         router.refresh()
-        setExtensionError(msg)
-        toast.error(msg)
-      } finally {
-        setSendingExtension(false)
-        setOptimistic(task.id, false)
-      }
-    })()
+        setExtensionError(message)
+        toast.error(message)
+      },
+    }).finally(() => setSendingExtension(false))
   }
 
   const openTasks = tasks.filter(
@@ -389,10 +332,10 @@ export function TasksDependent({
                       ) : (
                         <Button
                           onClick={() => handleComplete(task)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:w-auto"
                         >
-                          {pendingIds.has(task.id)
+                          {isPending(task.id)
                             ? 'Enviando...'
                             : 'Concluir tarefa'}
                         </Button>

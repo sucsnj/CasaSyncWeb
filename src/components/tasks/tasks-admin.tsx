@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   adminCompleteTask,
@@ -14,6 +14,7 @@ import {
   updateTask,
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -159,56 +160,10 @@ export function TasksAdmin({
   // Estado para rastrear status de salvamento de cada card.
   const [savingStatuses, setSavingStatuses] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
 
-  // Ids das tarefas com uma transição de status em andamento (aprovar, concluir,
-  // desaprovar, marcar não entregue, pausar/reativar, restaurar, resolver
-  // adiamento). NÃO usa o `pending` do `useTransition`: `startTransition(async …)`
-  // nunca marca `isPending` — o React não rastreia a Promise devolvida pelo
-  // callback — então os labels ("Aprovando…") e o `disabled` ficavam
-  // permanentemente falsos e o botão parecia travado durante todo o trabalho do
-  // servidor. Um Set (e não um lock de tela) porque o ADMIN pode agir em vários
-  // cards ao mesmo tempo; cada card trava só o próprio botão.
-  //
-  // `pending` continua existindo (declarado acima) para os 3 botões do FORMULÁRIO
-  // de criação, onde a ação é de escopo único e o `startTransition` faz sentido.
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
-
-  function setPendingId(id: string, on: boolean) {
-    setPendingIds((prev) => {
-      const next = new Set(prev)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }
-
-  /**
-   * Ids cujo card está num valor que **só o otimista produziu** (ainda sem
-   * resposta do servidor). Vive numa ref porque dois pontos precisam ler sem se
-   * reinscrever: o rollback e a sincronização da prop.
-   */
-  const optimisticIdsRef = useRef<Set<string>>(new Set())
-
-  function setOptimistic(id: string, on: boolean) {
-    if (on) optimisticIdsRef.current.add(id)
-    else optimisticIdsRef.current.delete(id)
-  }
-
-  /**
-   * Desfaz o update otimista **só se o card ainda estiver num valor produzido
-   * pelo otimista** — isto é, se nenhuma linha real chegou no meio do `await`.
-   *
-   * Por que um registro e não um predicado (`item.status === 'APPROVED'`): o
-   * predicado é indistinguível da linha que um **escritor concorrente** produziu.
-   * Numa colisão — que é exatamente o caso para onde os guards de transição
-   * existem — o outro escritor grava o MESMO valor, o Realtime entrega, o
-   * predicado casa e o rollback aplica o `task` capturado no render (stale) por
-   * cima, pondo o card numa seção que não existe mais no banco. Com o registro, o
-   * id já saiu do Set quando a linha real chegou e o dado novo é preservado.
-   */
-  function rollbackOptimistic(task: Task) {
-    if (!optimisticIdsRef.current.has(task.id)) return
-    setTasks((prev) => upsertTask(prev, task))
-  }
+  // Pending/otimista por item compartilhado com recompensas. `pending` continua
+  // existindo para os 3 botões do FORMULÁRIO de criação (escopo único).
+  const { isPending, markServer, optimisticIdsRef, runOptimistic } =
+    useOptimisticAction()
 
   type TransitionResult =
     | { ok: true; message?: string }
@@ -221,12 +176,12 @@ export function TasksAdmin({
    *    quadro, sem esperar o servidor;
    * 3. aguarda a action;
    * 4. em erro, reverte — mas só o que ainda for o valor do otimista (ver
-   *    `rollbackOptimistic`), preservando dado novo do Realtime;
+   *    `useOptimisticAction`), preservando dado novo do Realtime;
    * 5. destrava no `finally`.
    *
    * Unifica os 7 handlers de transição (aprovar, concluir e creditar, desaprovar,
    * não entregue, pausa/reativação, restaurar, resolver adiamento) — o ponto de
-   * elas é idêntico; o que muda é o otimista, o predicado de rollback e a action.
+   * elas é idêntico; o que muda é o otimista e a action.
    */
   async function runTaskTransition(
     task: Task,
@@ -237,46 +192,32 @@ export function TasksAdmin({
       fallbackMessage?: string
     }
   ) {
-    if (pendingIds.has(task.id)) return
-    // NÃO mexe em `formError`: esse state é renderizado dentro do FORM DE
-    // CRIAÇÃO (que nasce colapsado), então usá-lo para uma transição de card
-    // tinha dois efeitos ruins — o erro nunca aparecia ali, e o `setFormError(null)`
-    // de início apagava um erro do form que ainda era válido. O erro da transição
-    // sai pelo `toast.error`, que é o canal visível perto do card.
-    setPendingId(task.id, true)
-    setOptimistic(task.id, true)
-    // A factory é avaliada AQUI (no clique), nunca durante o render: o
-    // otimista de pausa/restauração calcula um prazo novo com `Date.now()`, o
-    // que a regra de pureza do React proíbe em tempo de render.
-    const optimistic = buildOptimistic()
-    setTasks((prev) => upsertTask(prev, optimistic))
-
-    try {
-      const result = await run()
-      if (!result.ok) {
-        rollbackOptimistic(task)
-        toast.error(result.error)
-        return
-      }
-      const message = result.message ?? options?.fallbackMessage ?? ''
-      if (options?.successToast === 'warning') toast.warning(message)
-      else if (options?.successToast === 'info') toast.info(message)
-      else toast.success(message)
-      router.refresh()
-    } catch {
-      // Erro de rede é ambíguo: pode ser que o servidor tenha gravado e só a
-      // resposta não chegou. O `refresh` traz a linha real de volta (ver o
-      // efeito de sincronização da prop) e o Realtime confirma.
-      rollbackOptimistic(task)
-      router.refresh()
-      toast.error('Falha de conexão. Tente novamente.')
-    } finally {
-      setPendingId(task.id, false)
-      // A transição terminou (sucesso ou erro): o card passa a exibir o estado do
-      // servidor, então sai do registro de otimistas. Fazer aqui garante que o
-      // rollback já rodou ANTES desta limpeza (branches mutuamente exclusivos).
-      setOptimistic(task.id, false)
-    }
+    // A factory é avaliada AQUI (no clique), nunca durante o render: o otimista
+    // de pausa/restauração calcula um prazo novo com `Date.now()`, o que a regra
+    // de pureza do React proíbe em tempo de render.
+    await runOptimistic({
+      current: task,
+      optimistic: buildOptimistic(),
+      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      action: run,
+      onSuccess: (result) => {
+        const message = result.message ?? options?.fallbackMessage ?? ''
+        if (options?.successToast === 'warning') toast.warning(message)
+        else if (options?.successToast === 'info') toast.info(message)
+        else toast.success(message)
+        router.refresh()
+      },
+      onError: (message) => {
+        // NÃO mexe em `formError`: o erro da transição sai pelo toast, perto do card.
+        toast.error(message)
+      },
+      onNetworkError: () => {
+        // Erro de rede é ambíguo: o refresh traz a linha real de volta (ver o
+        // efeito de sincronização da prop) e o Realtime confirma.
+        router.refresh()
+        toast.error('Falha de conexão. Tente novamente.')
+      },
+    })
   }
 
   // Sincronização em tempo real: quando o dependente conclui uma tarefa
@@ -287,8 +228,8 @@ export function TasksAdmin({
     filter: `house_id=eq.${houseId}`,
     onUpsert: (task) => {
       // Chegou linha REAL do servidor: o card não está mais num valor que só o
-      // otimista produziu, então sai do registro (ver `rollbackOptimistic`).
-      setOptimistic(task.id, false)
+      // otimista produziu, então sai do registro de otimistas.
+      markServer(task.id)
       setTasks((prev) => upsertTask(prev, task))
     },
     onDelete: (taskId) =>
@@ -312,7 +253,7 @@ export function TasksAdmin({
   useEffect(() => {
     if (optimisticIdsRef.current.size > 0) return
     setTasks(initialTasks)
-  }, [initialTasks])
+  }, [initialTasks, optimisticIdsRef])
 
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
@@ -1249,11 +1190,11 @@ export function TasksAdmin({
                                   key={days}
                                   type="button"
                                   size="sm"
-                                  disabled={pendingIds.has(task.id)}
+                                  disabled={isPending(task.id)}
                                   className="min-h-9 bg-emerald-500 hover:bg-emerald-600"
                                   onClick={() => handleResolveExtension(task, true, days)}
                                 >
-                                  {pendingIds.has(task.id)
+                                  {isPending(task.id)
                                     ? 'Aprovando...'
                                     : `Aprovar (+${days} ${days === 1 ? 'dia' : 'dias'})`}
                                 </Button>
@@ -1262,12 +1203,12 @@ export function TasksAdmin({
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                disabled={pendingIds.has(task.id)}
+                                disabled={isPending(task.id)}
                                 className="min-h-9 text-slate-600"
                                 onClick={() => handleResolveExtension(task, false)}
                               >
                                 <X className="size-3.5" />
-                                {pendingIds.has(task.id)
+                                {isPending(task.id)
                                   ? 'Rejeitando...'
                                   : 'Rejeitar'}
                               </Button>
@@ -1332,10 +1273,10 @@ export function TasksAdmin({
                               <Button
                                 type="button"
                                 onClick={() => handleAdminComplete(task)}
-                                disabled={pendingIds.has(task.id)}
+                                disabled={isPending(task.id)}
                                 className="w-full bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600 sm:flex-1"
                               >
-                                {pendingIds.has(task.id)
+                                {isPending(task.id)
                                   ? 'Concluindo...'
                                   : 'Aprovar Tarefa e Creditar'}
                               </Button>
@@ -1347,10 +1288,10 @@ export function TasksAdmin({
                                 type="button"
                                 variant="outline"
                                 onClick={() => handleMarkNotDelivered(task)}
-                                disabled={pendingIds.has(task.id)}
+                                disabled={isPending(task.id)}
                                 className="w-full border-red-200 text-red-700 hover:bg-red-50 sm:flex-1"
                               >
-                                {pendingIds.has(task.id)
+                                {isPending(task.id)
                                   ? 'Marcando...'
                                   : 'Marcar como não entregue'}
                               </Button>
@@ -1365,11 +1306,11 @@ export function TasksAdmin({
                             type="button"
                             variant="outline"
                             onClick={() => handleSetOnHold(task, true)}
-                            disabled={pendingIds.has(task.id)}
+                            disabled={isPending(task.id)}
                             className="w-full text-slate-600"
                           >
                             <PauseCircle className="size-4" />
-                            {pendingIds.has(task.id)
+                            {isPending(task.id)
                               ? 'Colocando...'
                               : 'Colocar em espera'}
                           </Button>
@@ -1442,11 +1383,11 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleSetOnHold(task, false)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
                           <PlayCircle className="size-4" />
-                          {pendingIds.has(task.id)
+                          {isPending(task.id)
                             ? 'Reativando...'
                             : 'Voltar para pendente'}
                         </Button>
@@ -1617,19 +1558,19 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleRejectComplete(task)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
-                          {pendingIds.has(task.id)
+                          {isPending(task.id)
                             ? 'Desaprovando...'
                             : 'Desaprovar'}
                         </Button>
                         <Button
                           onClick={() => handleApprove(task)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="min-h-9 shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                         >
-                          {pendingIds.has(task.id) ? (
+                          {isPending(task.id) ? (
                             'Aprovando...'
                           ) : (
                             <>
@@ -1731,21 +1672,21 @@ export function TasksAdmin({
                         <Button
                           variant="outline"
                           onClick={() => handleRestore(task)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
-                          {pendingIds.has(task.id)
+                          {isPending(task.id)
                             ? 'Restaurando...'
                             : 'Restaurar'}
                         </Button>
                         <Button
                           variant="outline"
                           onClick={() => handleSetOnHold(task, true)}
-                          disabled={pendingIds.has(task.id)}
+                          disabled={isPending(task.id)}
                           className="min-h-9 shrink-0 text-slate-600"
                         >
                           <PauseCircle className="size-4" />
-                          {pendingIds.has(task.id)
+                          {isPending(task.id)
                             ? 'Colocando...'
                             : 'Em espera'}
                         </Button>

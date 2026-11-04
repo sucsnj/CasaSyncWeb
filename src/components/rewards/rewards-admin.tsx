@@ -11,6 +11,7 @@ import {
   updateReward,
 } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import type { NotificationRow } from '@/types/notifications'
@@ -89,19 +90,9 @@ export function RewardsAdmin({
     initialSuggestions
   )
   const [pending, startTransition] = useTransition()
-  // Pending por item: o card clicado trava, os demais continuam clicáveis
-  // (mesmo padrão de `tasks-admin`). `pending` fica só para os forms.
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
-
-  function setPendingId(id: string, on: boolean) {
-    setPendingIds((prev) => {
-      const next = new Set(prev)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }
-
+  // Pending/otimista por item compartilhado com tasks. `pending` fica só para
+  // os forms (ação de escopo único).
+  const { isPending, runOptimistic } = useOptimisticAction()
   const [showRewardForm, setShowRewardForm] = useState(false)
 
   useKeyAction('Escape', () => setShowRewardForm(false), { enabled: showRewardForm })
@@ -275,117 +266,79 @@ export function RewardsAdmin({
   }
 
   function handleToggleActive(reward: Reward) {
-    if (pendingIds.has(reward.id)) return
-    setPendingId(reward.id, true)
     setFormError(null)
     const nextActive = !reward.active
-    // Feedback imediato (otimista), como em tasks: o card muda no mesmo quadro.
-    setRewards((prev) =>
-      prev.map((item) =>
-        item.id === reward.id ? { ...item, active: nextActive } : item
-      )
-    )
-    startTransition(async () => {
-      try {
-        const result = await setRewardActive(reward.id, nextActive)
-        if (!result.ok) {
-          setRewards((prev) =>
-            prev.map((item) =>
-              item.id === reward.id ? { ...item, active: reward.active } : item
-            )
-          )
-          setFormError(result.error)
-          toast.error(result.error)
-          return
-        }
+    void runOptimistic({
+      current: reward,
+      optimistic: { ...reward, active: nextActive },
+      apply: (item) =>
+        setRewards((prev) =>
+          prev.map((row) => (row.id === item.id ? item : row))
+        ),
+      action: () => setRewardActive(reward.id, nextActive),
+      onSuccess: () => {
         toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
         router.refresh()
-      } finally {
-        setPendingId(reward.id, false)
-      }
+      },
+      onError: (message) => {
+        setFormError(message)
+        toast.error(message)
+      },
     })
   }
 
   function handleResolve(redemption: RedemptionView, approve: boolean) {
-    if (pendingIds.has(redemption.id)) return
-    setPendingId(redemption.id, true)
-    const nextStatus = approve ? 'APPROVED' : 'REJECTED'
+    const nextStatus: RedemptionView['status'] = approve ? 'APPROVED' : 'REJECTED'
     const resolvedAt = new Date().toISOString()
-    // Feedback imediato (otimista).
-    setRedemptions((prev) =>
-      prev.map((item) =>
-        item.id === redemption.id
-          ? { ...item, status: nextStatus, resolved_at: resolvedAt }
-          : item
-      )
-    )
-    startTransition(async () => {
-      try {
-        const result = approve
-          ? await approveRedemption(redemption.id)
-          : await rejectRedemption(redemption.id)
-
-        if (!result.ok) {
-          setRedemptions((prev) =>
-            prev.map((item) =>
-              item.id === redemption.id
-                ? { ...item, status: redemption.status, resolved_at: redemption.resolved_at }
-                : item
-            )
-          )
-          setFormError(result.error)
-          toast.error(result.error)
-          return
-        }
-
+    void runOptimistic({
+      current: redemption,
+      optimistic: { ...redemption, status: nextStatus, resolved_at: resolvedAt },
+      apply: (item) =>
+        setRedemptions((prev) =>
+          prev.map((row) => (row.id === item.id ? item : row))
+        ),
+      action: () =>
+        approve
+          ? approveRedemption(redemption.id)
+          : rejectRedemption(redemption.id),
+      onSuccess: () => {
         if (approve) {
           toast.success('Resgate aprovado e pontos debitados!')
         } else {
           toast.info('Resgate rejeitado.')
         }
-
         router.refresh()
-      } finally {
-        setPendingId(redemption.id, false)
-      }
+      },
+      onError: (message) => {
+        setFormError(message)
+        toast.error(message)
+      },
     })
   }
 
   function handleResolveSuggestion(suggestion: SuggestionView, approve: boolean) {
-    if (pendingIds.has(suggestion.id)) return
-    setPendingId(suggestion.id, true)
     setFormError(null)
-    const nextStatus = approve ? 'APPROVED' : 'REJECTED'
-    // Feedback imediato (otimista).
-    setSuggestions((prev) =>
-      prev.map((item) =>
-        item.id === suggestion.id ? { ...item, status: nextStatus } : item
-      )
-    )
-    startTransition(async () => {
-      try {
-        const result = await resolveRewardSuggestion(suggestion.id, approve)
-        if (!result.ok) {
-          setSuggestions((prev) =>
-            prev.map((item) =>
-              item.id === suggestion.id ? { ...item, status: suggestion.status } : item
-            )
-          )
-          setFormError(result.error)
-          toast.error(result.error)
-          return
-        }
-
+    const nextStatus: SuggestionView['status'] = approve ? 'APPROVED' : 'REJECTED'
+    void runOptimistic({
+      current: suggestion,
+      optimistic: { ...suggestion, status: nextStatus },
+      apply: (item) =>
+        setSuggestions((prev) =>
+          prev.map((row) => (row.id === item.id ? item : row))
+        ),
+      action: () => resolveRewardSuggestion(suggestion.id, approve),
+      onSuccess: () => {
         if (approve) {
           toast.success('Sugestão aprovada e recompensa criada!')
         } else {
           toast.info('Sugestão rejeitada.')
         }
-
         router.refresh()
-      } finally {
-        setPendingId(suggestion.id, false)
-      }
+      },
+      onError: (message) => {
+        setFormError(message)
+        toast.error(message)
+      },
     })
   }
 
@@ -678,7 +631,7 @@ export function RewardsAdmin({
                               size="sm"
                               className="min-h-8 px-2 text-xs"
                                onClick={() => handleToggleActive(reward)}
-                               disabled={pendingIds.has(reward.id)}
+                               disabled={isPending(reward.id)}
                             >
                               {reward.active ? 'Desativar' : 'Reativar'}
                             </Button>
@@ -791,13 +744,13 @@ export function RewardsAdmin({
                   <Button
                     variant="outline"
                      onClick={() => handleResolveSuggestion(suggestion, false)}
-                     disabled={pendingIds.has(suggestion.id)}
+                     disabled={isPending(suggestion.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
                      onClick={() => handleResolveSuggestion(suggestion, true)}
-                     disabled={pendingIds.has(suggestion.id)}
+                     disabled={isPending(suggestion.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e criar
@@ -877,13 +830,13 @@ export function RewardsAdmin({
                   <Button
                     variant="outline"
                      onClick={() => handleResolve(redemption, false)}
-                     disabled={pendingIds.has(redemption.id)}
+                     disabled={isPending(redemption.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
                      onClick={() => handleResolve(redemption, true)}
-                     disabled={pendingIds.has(redemption.id)}
+                     disabled={isPending(redemption.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e debitar
