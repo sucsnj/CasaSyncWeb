@@ -10,6 +10,7 @@ import {
   type ChestAttachmentOption,
 } from '@/actions/chest'
 import { Modal } from '@/components/ui/modal'
+import { ClearableInput } from '@/components/ui/clearable-input'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -82,9 +83,18 @@ export function ChestAttachmentPicker({
   const [actionError, setActionError] = useState<string | null>(null)
   const items = prefetchedItems ?? []
   const isLoading = loading || (prefetchedItems === null && prefetchedError === null)
-  const filteredItems = query.trim()
+  const normalizedQuery = query
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  const filteredItems = normalizedQuery
     ? items.filter((item) =>
-        item.title.toLowerCase().includes(query.trim().toLowerCase())
+        item.title
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .includes(normalizedQuery)
       )
     : items
 
@@ -97,13 +107,14 @@ export function ChestAttachmentPicker({
            dois passam a contar no limite de anexos da casa.
          </p>
  
-         <input
-           type="search"
-           value={query}
-           onChange={(e) => setQuery(e.target.value)}
-           placeholder="Buscar no baú…"
-           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-         />
+          <ClearableInput
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onClear={() => setQuery('')}
+            placeholder="Buscar no baú…"
+            aria-label="Buscar no baú"
+          />
  
          {isLoading ? (
           <p className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500">
