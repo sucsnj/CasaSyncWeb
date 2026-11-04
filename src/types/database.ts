@@ -178,6 +178,7 @@ export interface Database {
           image_url: string | null
           attachment_name: string | null
           attachment_type: string | null
+          attachment_chest_item_id: string | null
           extension_requested: boolean
           extension_reason: string | null
           extension_count: number
@@ -200,6 +201,7 @@ export interface Database {
           image_url?: string | null
           attachment_name?: string | null
           attachment_type?: string | null
+          attachment_chest_item_id?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
           extension_count?: number
@@ -222,6 +224,7 @@ export interface Database {
           image_url?: string | null
           attachment_name?: string | null
           attachment_type?: string | null
+          attachment_chest_item_id?: string | null
           extension_requested?: boolean
           extension_reason?: string | null
           extension_count?: number
@@ -249,6 +252,13 @@ export interface Database {
             columns: ['created_by']
             isOneToOne: false
             referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tasks_attachment_chest_item_id_fkey'
+            columns: ['attachment_chest_item_id']
+            isOneToOne: false
+            referencedRelation: 'chest_items'
             referencedColumns: ['id']
           }
         ]

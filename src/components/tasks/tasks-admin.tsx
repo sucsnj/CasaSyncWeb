@@ -59,6 +59,9 @@ import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
+import { taskAttachmentView } from '@/utils/task-attachment-view'
+import type { AttachmentSelection } from '@/components/chest/chest-types'
+import type { ChestItemView } from '@/components/chest/chest-types'
 import { parseRichText } from '@/components/ui/rich-text'
 import {
   Card,
@@ -78,7 +81,6 @@ import {
 } from './task-styles'
 
 type Task = Tables<'tasks'>
-type Assignee = { id: string; full_name: string }
 
 function upsertTask(list: Task[], task: Task): Task[] {
   const exists = list.some((item) => item.id === task.id)
@@ -91,6 +93,7 @@ function upsertTask(list: Task[], task: Task): Task[] {
 export function TasksAdmin({
   houseId,
   initialTasks,
+  chestItems,
   assignees,
   defaultDueDays = 1,
   dueSoonHours = 4,
@@ -102,7 +105,8 @@ export function TasksAdmin({
 }: {
   houseId: string
   initialTasks: Task[]
-  assignees: Assignee[]
+  chestItems: Record<string, ChestItemView>
+  assignees: { id: string; full_name: string }[]
   /** Prazo padrão de criação/restauro (dias a partir de agora) - settings.casa. */
   defaultDueDays?: number
   /** Horas restantes até o prazo que ligam o chip "Prazo próximo" - settings.casa. */
@@ -129,6 +133,12 @@ export function TasksAdmin({
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  const [chestItemsMap, setChestItemsMap] = useState<Record<string, ChestItemView>>(chestItems)
+  const [syncedChestItems, setSyncedChestItems] = useState(chestItems)
+  if (chestItems !== syncedChestItems) {
+    setSyncedChestItems(chestItems)
+    setChestItemsMap(chestItems)
+  }
   const [sortPending, setSortPending] = useState('created:desc')
   const [sortApproved, setSortApproved] = useState('created:desc')
   const [pending, startTransition] = useTransition()
@@ -138,11 +148,12 @@ export function TasksAdmin({
   const [formError, setFormError] = useState<string | null>(null)
   // Anexo do form de criação (imagem, vídeo, PDF ou página HTML — arquivo
   // único). A URL vai em `image_url`; nome e tipo andam junto na action.
-  const [taskAttachment, setTaskAttachment] = useState<{
-    url: string | null
-    name: string | null
-    type: string | null
-  }>({ url: null, name: null, type: null })
+  const [taskAttachment, setTaskAttachment] = useState<AttachmentSelection>({
+    url: null,
+    name: null,
+    type: null,
+    chestItemId: null,
+  })
   const [dueDate, setDueDate] = useState(() =>
     modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays)
   )
@@ -238,6 +249,21 @@ export function TasksAdmin({
     },
     onDelete: (taskId) =>
       setTasks((prev) => prev.filter((task) => task.id !== taskId)),
+  })
+
+  usePostgresChanges<ChestItemView>({
+    table: 'chest_items',
+    filter: `house_id=eq.${houseId}`,
+    onUpsert: (row) => {
+      setChestItemsMap((prev) => ({ ...prev, [row.id]: row }))
+    },
+    onDelete: (id) => {
+      setChestItemsMap((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    },
   })
 
   /**
@@ -353,7 +379,7 @@ export function TasksAdmin({
     setPoints('5')
     setAssignedTo(defaultAssignee)
     setDueDate(modifyDateTimeLocal(nowDateTimeLocalValue(), defaultDueDays))
-    setTaskAttachment({ url: null, name: null, type: null })
+    setTaskAttachment({ url: null, name: null, type: null, chestItemId: null })
     setReuseTask(null)
     setConfirmDuplicate(false)
     setSuggestionsOpen(false)
@@ -437,6 +463,7 @@ export function TasksAdmin({
           imageUrl: taskAttachment.url,
           attachmentName: taskAttachment.name,
           attachmentType: taskAttachment.type,
+          attachmentChestItemId: taskAttachment.chestItemId,
         },
         confirmDuplicate ? { force: true } : undefined
       )
@@ -728,12 +755,13 @@ export function TasksAdmin({
    */
   function changeAttachment(
     task: Task,
-    attachment: { url: string | null; name: string | null; type: string | null }
+    attachment: AttachmentSelection
   ) {
     const patch = {
       image_url: attachment.url,
       attachment_name: attachment.name,
       attachment_type: attachment.type,
+      attachment_chest_item_id: attachment.chestItemId ?? null,
     }
     // Otimista: o card mostra o anexo novo/removido na hora; em erro volta ao
     // valor anterior (`task` é o card como estava antes desta mudança).
@@ -1157,15 +1185,19 @@ export function TasksAdmin({
                       <>
                         {/* Anexo: miniatura (imagem) ou chip com ícone — clicar
                             abre o arquivo em uma nova aba do navegador. */}
-                        {task.image_url ? (
-                          <TaskAttachmentView
-                            url={task.image_url}
-                            name={task.attachment_name}
-                            type={task.attachment_type}
-                            taskId={task.id}
-                            blocked={!attachmentsOn}
-                          />
-                        ) : null}
+                        {(() => {
+                          const attachmentView = taskAttachmentView(task, chestItemsMap)
+                          return attachmentView ? (
+                            <TaskAttachmentView
+                              url={attachmentView.url}
+                              name={attachmentView.name}
+                              type={attachmentView.type}
+                              taskId={task.id}
+                              htmlHref={attachmentView.htmlHref}
+                              blocked={!attachmentsOn}
+                            />
+                          ) : null
+                        })()}
 
                         {/* Com os anexos desligados o card ainda mostra o que
                             existe (para o ADMIN saber que há material guardado),
@@ -1456,15 +1488,19 @@ export function TasksAdmin({
                     </div>
                     {isExpanded ? (
                       <>
-                        {task.image_url ? (
-                          <TaskAttachmentView
-                            url={task.image_url}
-                            name={task.attachment_name}
-                            type={task.attachment_type}
-                            taskId={task.id}
-                            blocked={!attachmentsOn}
-                          />
-                        ) : null}
+                        {(() => {
+                          const attachmentView = taskAttachmentView(task, chestItemsMap)
+                          return attachmentView ? (
+                            <TaskAttachmentView
+                              url={attachmentView.url}
+                              name={attachmentView.name}
+                              type={attachmentView.type}
+                              taskId={task.id}
+                              htmlHref={attachmentView.htmlHref}
+                              blocked={!attachmentsOn}
+                            />
+                          ) : null
+                        })()}
 
                         {attachmentsOn ? (
                           <div className="mt-2 flex flex-col gap-1.5">

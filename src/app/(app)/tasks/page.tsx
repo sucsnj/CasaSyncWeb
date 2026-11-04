@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import type { Tables } from '@/types/database'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAdminClient } from '@/utils/supabase/admin'
@@ -16,6 +17,7 @@ import {
   getHouseTextLimitsSettings,
   getHouseAttachmentSettings,
 } from '@/utils/house-settings'
+import type { ChestItemView } from '@/components/chest/chest-types'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
 import {
@@ -31,6 +33,28 @@ export const metadata: Metadata = {
 }
 
 export const dynamic = 'force-dynamic'
+
+type TaskRow = Tables<'tasks'>
+
+/** Carrega o mapa id → item do baú para as tarefas que usam espelho. */
+async function loadChestItems(
+  admin: ReturnType<typeof createAdminClient>,
+  rows: TaskRow[]
+): Promise<Record<string, ChestItemView>> {
+  const ids = [
+    ...new Set(
+      rows
+        .map((task) => task.attachment_chest_item_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ]
+  if (ids.length === 0) return {}
+  const { data } = await admin
+    .from('chest_items')
+    .select('*')
+    .in('id', ids)
+  return Object.fromEntries((data ?? []).map((item) => [item.id, item]))
+}
 
 function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
   return (
@@ -117,12 +141,14 @@ export default async function TasksPage() {
           .order('created_at', { ascending: false }),
         getHouseAssignees(activeHouse.id),
       ])
+      const chestItems = await loadChestItems(admin, tasks ?? [])
 
       content = (
         <TasksAdmin
           key={activeHouse.id}
           houseId={activeHouse.id}
-          initialTasks={tasks ?? []}
+           initialTasks={tasks ?? []}
+           chestItems={chestItems}
           assignees={assignees}
           defaultDueDays={taskSlaSettings?.defaultDueDays}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
@@ -149,6 +175,7 @@ export default async function TasksPage() {
         .order('created_at', { ascending: false })
 
       const taskList = tasks ?? []
+      const chestItems = await loadChestItems(admin, taskList)
       const creatorNames = await getProfileNames(
         taskList.map((task) => task.created_by)
       )
@@ -158,6 +185,7 @@ export default async function TasksPage() {
           key={dependentHouse.id}
           houseId={dependentHouse.id}
           initialTasks={taskList}
+          chestItems={chestItems}
           creatorNames={creatorNames}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           taskDecay={taskDecaySettings}

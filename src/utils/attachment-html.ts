@@ -176,11 +176,30 @@ async function selectAttachmentRow(
     const { data } = await admin
       .from('tasks')
       .select(
-        'house_id, title, assigned_to, created_by, image_url, attachment_name, attachment_type'
+        'house_id, title, assigned_to, created_by, image_url, attachment_name, attachment_type, attachment_chest_item_id'
       )
       .eq('id', id)
       .maybeSingle()
     if (!data) return null
+
+    if (data.attachment_chest_item_id) {
+      const { data: chest } = await admin
+        .from('chest_items')
+        .select('house_id, title, created_by, file_url, file_name, file_type')
+        .eq('id', data.attachment_chest_item_id)
+        .maybeSingle()
+      if (!chest) return null
+      return {
+        houseId: chest.house_id,
+        title: chest.title,
+        url: chest.file_url,
+        type: chest.file_type,
+        fileName: chest.file_name ?? data.title,
+        createdBy: chest.created_by,
+        assignedTo: data.assigned_to,
+      }
+    }
+
     return {
       houseId: data.house_id,
       title: data.title,

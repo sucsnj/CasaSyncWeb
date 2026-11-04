@@ -5,12 +5,13 @@ import { FileText, Film, Link2, LoaderCircle, Package } from 'lucide-react'
 import { usePrefetch } from '@/hooks/use-prefetch'
 import { toast } from 'sonner'
 import {
-  copyChestItemToTask,
+  linkChestItemToTask,
   listChestAttachmentsForTask,
   type ChestAttachmentOption,
 } from '@/actions/chest'
 import { Modal } from '@/components/ui/modal'
 import { ClearableInput } from '@/components/ui/clearable-input'
+import type { AttachmentSelection } from '@/components/chest/chest-types'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -21,10 +22,8 @@ import {
  * Seletor "**usar do baú**" — leva um material já guardado no acervo da casa para
  * o anexo da tarefa (ADR-0027).
  *
- * É uma **réplica**: o servidor copia o objeto de `chest/` para `tasks/` e o
- * baú continua com o seu. Isso é deliberado — a troca de anexo da tarefa apaga o
- * arquivo anterior (`removeStorageFile`), então apontar para o mesmo objeto
- * apagaria material do baú.
+ * A tarefa fica **espelhada** no item do baú: editar ou excluir o item reflete
+ * na tarefa. Os dois toggles da casa precisam estar ligados.
  *
  * O catálogo é buscado **ao abrir** (`listChestAttachmentsForTask`), não no render
  * de `/tasks`: é uma leitura que só interessa depois que o ADMIN decidiu usar o
@@ -38,8 +37,8 @@ export function ChestAttachmentPicker({
 }: {
   open: boolean
   onClose: () => void
-  /** Recebe os 3 campos no mesmo formato do upload. */
-  onPick: (attachment: { url: string; name: string | null; type: string }) => void
+  /** Recebe os campos do anexo. */
+  onPick: (attachment: AttachmentSelection) => void
   disabled?: boolean
 }) {
   const [copyingId, setCopyingId] = useState<string | null>(null)
@@ -63,7 +62,7 @@ export function ChestAttachmentPicker({
     setActionError(null)
     setCopyingId(item.id)
     try {
-      const result = await copyChestItemToTask(item.id)
+      const result = await linkChestItemToTask(item.id)
       if (!result.ok) {
         const message = result.error
         setActionError(message)
@@ -71,10 +70,10 @@ export function ChestAttachmentPicker({
         return
       }
       onPick(result.data)
-      toast.success(`"${item.title}" foi copiado do baú para o anexo.`)
+      toast.success(`"${item.title}" foi usado do baú.`)
       onClose()
     } catch {
-      toast.error('Não foi possível copiar o material do baú.')
+      toast.error('Não foi possível usar o material do baú.')
     } finally {
       setCopyingId(null)
     }

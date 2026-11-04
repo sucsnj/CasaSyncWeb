@@ -10,24 +10,13 @@ import {
   validateChestItemTitle,
 } from '@/utils/chest-attachment'
 import { removeStorageFile, storagePathFromUrl } from '@/utils/storage'
-import {
-  LINK_ATTACHMENT_TYPE,
-  TASK_ATTACHMENT_FOLDER,
-  validateAttachmentLink,
-} from '@/utils/task-attachment'
+import { LINK_ATTACHMENT_TYPE } from '@/utils/task-attachment'
 import {
   checkAttachmentBudget,
   checkAttachmentFile,
-  copyAttachmentObject,
   folderObjectSizes,
-  newAttachmentPath,
   storageObjectBytes,
 } from '@/utils/attachment-usage'
-import {
-  attachmentFileTooLargeError,
-  attachmentFileTooLargeMessage,
-  attachmentMissingFromStorageMessage,
-} from '@/utils/attachment-budget'
 import {
   getHouseAttachmentBudgetSettings,
   getHouseAttachmentSettings,
@@ -357,6 +346,18 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
   if (!loaded.ok) return loaded
   const { item } = loaded
 
+  // Tarefas que usam este item em "espelho" perdem o anexo junto com ele — o
+  // house_select do tasks enviará o UPDATE para as telas abertas.
+  await admin
+    .from('tasks')
+    .update({
+      attachment_chest_item_id: null,
+      attachment_name: null,
+      attachment_type: null,
+      image_url: null,
+    })
+    .eq('attachment_chest_item_id', item.id)
+
   const { error } = await admin.from('chest_items').delete().eq('id', itemId)
   if (error) return { ok: false, error: 'Falha ao excluir o item do baú.' }
 
@@ -383,6 +384,8 @@ export type ChestAttachmentOption = {
   fileType: string
   /** Bytes do arquivo; `null` em link (não ocupa storage) ou arquivo ausente. */
   bytes: number | null
+  fileUrl: string
+  fileName: string | null
 }
 
 /** Guarda da réplica: os dois toggles da casa (ADR-0026) têm de estar ligados. */
@@ -406,7 +409,14 @@ async function canReuseChestItem(
   return { ok: true }
 }
 
-export type ChestAttachmentCopy = { url: string; name: string | null; type: string }
+export type ChestAttachmentLink = {
+  url: string
+  name: string | null
+  type: string
+  /** Item do baú que passa a ser espelhado na tarefa. */
+  chestItemId: string
+  item: Tables<'chest_items'>
+}
 
 /**
  * Resultado das duas actions de réplica, com **union explícita** em vez do
@@ -440,7 +450,7 @@ export async function listChestAttachmentsForTask(): Promise<
     canReuseChestItem(activeHouse.id),
     admin
       .from('chest_items')
-      .select('id, title, file_url, file_type, file_size')
+      .select('id, title, file_url, file_name, file_type, file_size')
       .eq('house_id', activeHouse.id)
       .order('created_at', { ascending: false }),
   ])
@@ -485,41 +495,39 @@ export async function listChestAttachmentsForTask(): Promise<
   }
 
   const options: ChestAttachmentOption[] = rawItems.map((item) => {
-    if (item.file_size !== null) {
-      return { id: item.id, title: item.title, fileType: item.file_type, bytes: item.file_size }
-    }
     const path = storagePathFromUrl(item.file_url)
     const name = path?.split('/').pop()
-    const bytes = name && sizes ? (sizes.get(name) ?? null) : null
-    return { id: item.id, title: item.title, fileType: item.file_type, bytes }
+    const bytes =
+      item.file_size !== null
+        ? item.file_size
+        : name && sizes
+          ? (sizes.get(name) ?? null)
+          : null
+    return {
+      id: item.id,
+      title: item.title,
+      fileType: item.file_type,
+      bytes,
+      fileUrl: item.file_url,
+      fileName: item.file_name,
+    }
   })
 
   return { ok: true, data: options }
 }
 
 /**
- * **Réplica** do material de um item do baú para o anexo da tarefa: copia o
- * objeto de `chest/` para `tasks/` e devolve os 3 campos que o
- * `TaskAttachmentInput` grava na tarefa.
+ * Anexo do baú em "espelho" na tarefa: mantém a mesma referência que
+ * `tasks.attachment_chest_item_id` guarda. A tarefa não copia bytes; editar ou
+ * excluir o item no baú reflete na tarefa.
  *
- * Por que **copiar** e não apontar para o mesmo arquivo: a troca de anexo da
- * tarefa **apaga o arquivo antigo** (`removeStorageFile`, `updateTask`), e um
- * link/apontamento compartilhado apagaria material do baú — que é de outra
- * superfície e de outro público. Cópia é a única forma em que os dois lados
- * continuam independentes; e é o que o usuário pediu ("réplica").
- *
- * Autorização: ADMIN da **casa ativa** (é onde a tarefa vai nascer) e o item tem
- * de ser **dela** — item de outra casa devolve a mesma resposta de "não
- * encontrado", sem revelar existência. Os dois toggles da casa (tarefa + baú)
- * precisam estar ligados: com o baú desligado, ninguém deve conseguir levar o
- * material dele para uma tarefa, que é justamente reexibi-lo.
- *
- * **Link não tem o que copiar:** a "réplica" de um link é o próprio link (o
- * tipo `text/url` não ocupa storage). O arquivo é o único que gera bytes.
+ * Autorização: ADMIN da casa ativa e item dela. Os dois toggles precisam estar
+ * ligados pelas mesmas razões do baú: não é abrir espaço para tarefa de fora e
+ * não é reexibir o que o tutor trancou.
  */
-export async function copyChestItemToTask(
+export async function linkChestItemToTask(
   itemId: string
-): Promise<ChestAttachmentResult<ChestAttachmentCopy>> {
+): Promise<ChestAttachmentResult<ChestAttachmentLink>> {
   const admin = createAdminClient()
 
   const activeHouse = await getActiveAdminHouse()
@@ -535,66 +543,21 @@ export async function copyChestItemToTask(
 
   const { data: item } = await admin
     .from('chest_items')
-    .select('id, title, file_url, file_name, file_type')
+    .select('*')
     .eq('id', itemId)
     .eq('house_id', activeHouse.id)
     .maybeSingle()
 
   if (!item) return { ok: false, error: 'Item do baú não encontrado.' }
 
-  const fileType = (item.file_type ?? '').trim().toLowerCase()
-  const fileUrl = item.file_url ?? ''
-
-  if (!fileUrl) {
-    return { ok: false, error: 'Este item do baú não tem material para copiar.' }
+  return {
+    ok: true,
+    data: {
+      url: item.file_url,
+      name: item.file_name?.trim() || null,
+      type: item.file_type,
+      chestItemId: item.id,
+      item,
+    },
   }
-
-  // Link: nada a copiar no storage — a réplica é o próprio endereço (que a
-  // validação de link do anexo da tarefa vai revalidar na hora de salvar).
-  if (fileType === LINK_ATTACHMENT_TYPE) {
-    const linkError = validateAttachmentLink(fileUrl)
-    if (linkError) return { ok: false, error: linkError }
-    return { ok: true, data: { url: fileUrl, name: null, type: LINK_ATTACHMENT_TYPE } }
-  }
-
-  const fromPath = storagePathFromUrl(fileUrl)
-  if (!fromPath) {
-    return { ok: false, error: 'O arquivo deste item do baú não está no storage da casa.' }
-  }
-
-  // Fail closed no tamanho (ADR-0027): o item veio do baú, mas a validação é a
-  // mesma do anexo enviado pelo browser — teto de 5 MB e objeto que existe.
-  const bytes = await storageObjectBytes(admin, fileUrl)
-  if (bytes === null) return { ok: false, error: attachmentMissingFromStorageMessage() }
-  if (attachmentFileTooLargeError(bytes)) {
-    return { ok: false, error: attachmentFileTooLargeMessage(bytes) }
-  }
-
-  // Peso da casa **antes** de copiar: aqui o arquivo destino ainda não existe, então
-  // ele vai em `pendingBytes` (é o único lugar do app que precisa disso).
-  const { maxMb } = await getHouseAttachmentBudgetSettings(activeHouse.id)
-  const budgetError = await checkAttachmentBudget(admin, activeHouse.id, maxMb, {
-    pendingBytes: bytes,
-  })
-  if (budgetError) return { ok: false, error: budgetError }
-
-  const copied = await copyAttachmentObject(
-    admin,
-    fileUrl,
-    newAttachmentPath(TASK_ATTACHMENT_FOLDER, activeHouse.id, fromPath)
-  )
-  if (!copied.ok) return { ok: false, error: copied.error }
-
-  // Nome só para exibição: o do item do baú, ou o título + extensão quando o item
-  // foi gravado sem nome de arquivo.
-  const name =
-    item.file_name?.trim() ||
-    `${item.title}${fromPath.includes('.') ? fromPath.slice(fromPath.lastIndexOf('.')) : ''}`
-
-  // A réplica consome budget e passa a existir em `tasks/`: as duas telas que
-  // mostram o peso precisam do número novo.
-  revalidateChest()
-  revalidatePath('/tasks')
-
-  return { ok: true, data: { url: copied.url, name, type: fileType } }
 }

@@ -14,6 +14,8 @@ import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
+import { taskAttachmentView } from '@/utils/task-attachment-view'
+import type { ChestItemView } from '@/components/chest/chest-types'
 import { parseRichText } from '@/components/ui/rich-text'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -46,6 +48,7 @@ export function TasksDependent({
   houseId,
   initialTasks,
   creatorNames,
+  chestItems,
   dueSoonHours = 4,
   taskDecay,
   attachmentsAllowed = true,
@@ -53,6 +56,7 @@ export function TasksDependent({
   houseId: string
   initialTasks: Task[]
   creatorNames: Record<string, string>
+  chestItems: Record<string, ChestItemView>
   /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
   dueSoonHours?: number
   /** Decaimento de pontos de tarefas — settings.casa. */
@@ -67,6 +71,12 @@ export function TasksDependent({
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  const [chestItemsMap, setChestItemsMap] = useState<Record<string, ChestItemView>>(chestItems)
+  const [syncedChestItems, setSyncedChestItems] = useState(chestItems)
+  if (chestItems !== syncedChestItems) {
+    setSyncedChestItems(chestItems)
+    setChestItemsMap(chestItems)
+  }
   const [sortOpen, setSortOpen] = useState('created:desc')
   const [sortDone, setSortDone] = useState('created:desc')
   const [error, setError] = useState<string | null>(null)
@@ -299,25 +309,20 @@ export function TasksDependent({
                     <div className="min-w-0 flex-1">
                       {/* Anexo: miniatura (imagem) ou chip com ícone — clicar
                           abre o arquivo em uma nova aba do navegador. */}
-                      {task.image_url ? (
-                        <TaskAttachmentView
-                          url={task.image_url}
-                          name={task.attachment_name}
-                          type={task.attachment_type}
-                          taskId={task.id}
-                          // O HTML passa pelo aviso antes de abrir (ADR-0025):
-                          // servido em origem opaca, o arquivo não alcança a conta
-                          // de quem abre, mas pode exibir qualquer coisa — o aviso
-                          // diz isso em linguagem direta antes de mostrar o
-                          // material. Imagem/vídeo/PDF seguem diretos.
-                          htmlHref={`/abrir-anexo?kind=task&id=${task.id}`}
-                          hideFileName
-                          // Com os anexos desligados na casa o chip vira um aviso
-                          // neutro (ADR-0026): o material continua existindo, mas
-                          // ninguém abre mais.
-                          blocked={!attachmentsAllowed}
-                        />
-                      ) : null}
+                      {(() => {
+                        const attachmentView = taskAttachmentView(task, chestItemsMap)
+                        return attachmentView ? (
+                          <TaskAttachmentView
+                            url={attachmentView.url}
+                            name={attachmentView.name}
+                            type={attachmentView.type}
+                            taskId={task.id}
+                            htmlHref={attachmentView.htmlHref}
+                            hideFileName
+                            blocked={!attachmentsAllowed}
+                          />
+                        ) : null
+                      })()}
                       <p className="font-semibold text-slate-800">{task.title}</p>
                       {task.description ? (
                         <p className="mt-1 whitespace-pre-wrap text-sm text-slate-500">

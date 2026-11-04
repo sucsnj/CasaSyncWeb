@@ -9,3 +9,15 @@ import type { Tables } from '@/types/database'
  * permitia escolher para onde o item ia.
  */
 export type ChestItemView = Tables<'chest_items'>
+
+/**
+ * Payload do anexo selecionado: o trio url/name/type continua, e um `chestItem`
+ * opcional carrega o item do baú quando o anexo é espelho.
+ */
+export type AttachmentSelection = {
+  url: string | null
+  name: string | null
+  type: string | null
+  chestItemId?: string | null
+  chestItem?: ChestItemView | null
+}

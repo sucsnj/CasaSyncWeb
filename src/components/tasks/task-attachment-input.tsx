@@ -15,6 +15,7 @@ import { uploadMedia } from '@/utils/media'
 import { listChestAttachmentsForTask } from '@/actions/chest'
 import { usePrefetch } from '@/hooks/use-prefetch'
 import { ChestAttachmentPicker } from '@/components/tasks/chest-attachment-picker'
+import type { AttachmentSelection } from '@/components/chest/chest-types'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -67,12 +68,8 @@ export function TaskAttachmentInput({
   url?: string | null
   name?: string | null
   type?: string | null
-  /** Recebe os 3 campos de uma vez — a action grava ou limpa em conjunto. */
-  onChange: (attachment: {
-    url: string | null
-    name: string | null
-    type: string | null
-  }) => void
+  /** Recebe o payload de anexo (upload/link/espelho). */
+  onChange: (attachment: AttachmentSelection) => void
   disabled?: boolean
   /**
    * Pasta do bucket onde o arquivo é enviado. Default = `tasks/` (a tarefa); o
@@ -136,6 +133,7 @@ export function TaskAttachmentInput({
         url: uploaded,
         name: file.name.slice(0, 120),
         type: resolvedType,
+        chestItemId: null,
       })
     } catch {
       // Upload falhou: mantém o anexo atual (o form continua válido).
@@ -161,14 +159,14 @@ export function TaskAttachmentInput({
     }
     setError(null)
     // `name` fica nulo: link não tem "nome de arquivo" — o chip mostra o domínio.
-    onChange({ url: normalized, name: null, type: LINK_ATTACHMENT_TYPE })
+      onChange({ url: normalized, name: null, type: LINK_ATTACHMENT_TYPE, chestItemId: null })
     setLinkDraft('')
   }
 
   function handleRemove() {
     setError(null)
     setLinkDraft('')
-    onChange({ url: null, name: null, type: null })
+    onChange({ url: null, name: null, type: null, chestItemId: null })
   }
 
   return (

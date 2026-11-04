@@ -59,6 +59,7 @@ type TaskPatch = {
    */
   attachment_name?: string | null
   attachment_type?: string | null
+  attachment_chest_item_id?: string | null
 }
 
 type CreateTaskInput = {
@@ -70,6 +71,7 @@ type CreateTaskInput = {
   imageUrl: string | null
   attachmentName?: string | null
   attachmentType?: string | null
+  attachmentChestItemId?: string | null
 }
 
 /**
@@ -292,7 +294,26 @@ export async function createTask(
   // zero de round-trip: o getter entra no mesmo `getHouseSettingsMap` que os
   // getters acima já leram. Só barra **anexo novo/trocado** — remover o arquivo
   // continua permitido (é a limpeza justamente depois de a casa desligar).
-  if (input.imageUrl?.trim()) {
+  if (input.attachmentChestItemId?.trim()) {
+    const attachments = await getHouseAttachmentSettings(activeHouse.id)
+    if (!attachments.tasksAllowed || !attachments.chestAllowed) {
+      return {
+        ok: false,
+        error: 'A casa desativou os anexos em tarefas ou no baú. Ligue as opções em Configurações para usar um item do baú.',
+      }
+    }
+
+    const { data: chestItem } = await admin
+      .from('chest_items')
+      .select('id')
+      .eq('id', input.attachmentChestItemId)
+      .eq('house_id', activeHouse.id)
+      .maybeSingle()
+
+    if (!chestItem) {
+      return { ok: false, error: 'Item do baú não encontrado nesta casa.' }
+    }
+  } else if (input.imageUrl?.trim()) {
     const attachments = await getHouseAttachmentSettings(activeHouse.id)
     if (!attachments.tasksAllowed) {
       return {
@@ -394,12 +415,19 @@ export async function createTask(
       assigned_to: input.assignedTo,
       created_by: auth.adminId,
       status: 'PENDING',
-      image_url: input.imageUrl,
-      attachment_name: input.imageUrl ? (input.attachmentName ?? null) : null,
-      attachment_type: input.imageUrl
-        ? (input.attachmentType ??
-          attachmentTypeFromName(input.attachmentName ?? '')) || null
-        : null,
+      image_url: input.attachmentChestItemId ? null : input.imageUrl,
+      attachment_name: input.attachmentChestItemId
+        ? null
+        : input.imageUrl
+          ? (input.attachmentName ?? null)
+          : null,
+      attachment_type: input.attachmentChestItemId
+        ? null
+        : input.imageUrl
+          ? (input.attachmentType ??
+            attachmentTypeFromName(input.attachmentName ?? '')) || null
+          : null,
+      attachment_chest_item_id: input.attachmentChestItemId ?? null,
       decay_started_at: new Date().toISOString(),
     })
     .select('*')
@@ -603,9 +631,50 @@ export async function updateTask(
     }
     updates.assigned_to = nextAssignee
   }
+  if ('attachment_chest_item_id' in patch) {
+    const nextChest = patch.attachment_chest_item_id?.trim()
+      ? patch.attachment_chest_item_id.trim()
+      : null
+
+    if (nextChest) {
+      const attachments = await getHouseAttachmentSettings(activeHouse.id)
+      if (!attachments.tasksAllowed || !attachments.chestAllowed) {
+        return {
+          ok: false,
+          error: 'A casa desativou os anexos em tarefas ou no baú. Ligue as opções em Configurações para usar um item do baú.',
+        }
+      }
+
+      const { data: chestItem } = await admin
+        .from('chest_items')
+        .select('id')
+        .eq('id', nextChest)
+        .eq('house_id', activeHouse.id)
+        .maybeSingle()
+
+      if (!chestItem) {
+        return { ok: false, error: 'Item do baú não encontrado nesta casa.' }
+      }
+    }
+
+    updates.attachment_chest_item_id = nextChest
+    if (nextChest) {
+      updates.image_url = null
+      updates.attachment_name = null
+      updates.attachment_type = null
+      if (task.image_url) {
+        await removeStorageFile(admin, task.image_url, 'tasks', 'TASKS')
+      }
+    }
+  }
   if ('image_url' in patch) {
     const nextUrl = patch.image_url?.trim() ? patch.image_url.trim() : null
     updates.image_url = nextUrl
+    // Um anexo de arquivo (ou limpar) nunca é espelhado, exceto quando o patch
+    // também fixa o item do baú.
+    if (!('attachment_chest_item_id' in patch) || !patch.attachment_chest_item_id) {
+      updates.attachment_chest_item_id = null
+    }
 
     if (nextUrl) {
       // A casa desligou os anexos? (ADR-0026) — mesmo getter, custo zero de
