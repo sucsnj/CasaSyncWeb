@@ -172,7 +172,11 @@ export function AchievementsDependent({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+          <Trophy className="size-4 text-indigo-600" />
+          Conquistas
+        </h2>
         <SortSelect
           value={sort}
           onChange={setSort}

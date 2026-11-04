@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Minus, Pencil, Plus, RotateCcw, Trash2, Trophy, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
@@ -723,7 +723,11 @@ export function AchievementsAdmin({
         </Card>
       ) : null}
 
-       <div className="flex justify-end">
+       <div className="flex items-center justify-between gap-3">
+         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+           <Trophy className="size-4 text-indigo-600" />
+           Conquistas
+         </h2>
          <SortSelect
            value={sort}
            onChange={setSort}

@@ -1666,12 +1666,28 @@ export function TasksAdmin({
         )}
       </section>
 
-      {approvedTasks.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-            <CircleCheckBig className="size-4 text-emerald-500" />
-            Aprovadas
-          </h2>
+       {approvedTasks.length > 0 ? (
+         <section className="flex flex-col gap-3">
+           <div className="flex items-center justify-between gap-3">
+             <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+               <CircleCheckBig className="size-4 text-emerald-500" />
+               Aprovadas
+             </h2>
+             <SortSelect
+               value={sort}
+               onChange={setSort}
+               options={[
+                 { value: 'created:desc', label: 'Mais recentes' },
+                 { value: 'created:asc', label: 'Mais antigas' },
+                 { value: 'title:asc', label: 'Título (A-Z)' },
+                 { value: 'title:desc', label: 'Título (Z-A)' },
+                 { value: 'points:desc', label: 'Mais pontos' },
+                 { value: 'points:asc', label: 'Menos pontos' },
+                 { value: 'due:asc', label: 'Prazo (próximo)' },
+                 { value: 'due:desc', label: 'Prazo (distante)' },
+               ]}
+             />
+           </div>
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {approvedTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)

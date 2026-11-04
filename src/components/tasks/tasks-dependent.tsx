@@ -483,11 +483,27 @@ export function TasksDependent({
         </section>
       ) : null}
 
-      {doneTasks.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-base font-semibold text-slate-800">
-            Concluídas
-          </h2>
+       {doneTasks.length > 0 ? (
+         <section className="flex flex-col gap-3">
+           <div className="flex items-center justify-between gap-3">
+             <h2 className="font-heading text-base font-semibold text-slate-800">
+               Concluídas
+             </h2>
+             <SortSelect
+               value={sort}
+               onChange={setSort}
+               options={[
+                 { value: 'created:desc', label: 'Mais recentes' },
+                 { value: 'created:asc', label: 'Mais antigas' },
+                 { value: 'title:asc', label: 'Título (A-Z)' },
+                 { value: 'title:desc', label: 'Título (Z-A)' },
+                 { value: 'points:desc', label: 'Mais pontos' },
+                 { value: 'points:asc', label: 'Menos pontos' },
+                 { value: 'due:asc', label: 'Prazo (próximo)' },
+                 { value: 'due:desc', label: 'Prazo (distante)' },
+               ]}
+             />
+           </div>
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {doneTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)

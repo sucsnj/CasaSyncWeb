@@ -543,28 +543,16 @@ export function RewardsAdmin({
                 className="pl-10"
               />
             </div>
-            <SortSelect
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: 'title:asc', label: 'Título (A-Z)' },
-                { value: 'title:desc', label: 'Título (Z-A)' },
-                { value: 'points:asc', label: 'Pontos (menor)' },
-                { value: 'points:desc', label: 'Pontos (maior)' },
-                { value: 'created:desc', label: 'Mais recentes' },
-                { value: 'created:asc', label: 'Mais antigas' },
-              ]}
-            />
           </div>
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => catalogExpanded.toggle('catalog')}
               aria-expanded={catalogExpanded.isExpanded('catalog')}
-              className="flex w-full items-center justify-between gap-2 text-left"
+              className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
             >
               <CardTitle className="flex items-center gap-2">
                 <Gift className="size-4 text-blue-600" />
@@ -579,6 +567,18 @@ export function RewardsAdmin({
               </CardTitle>
               <CardDescription>Recompensas disponíveis na casa.</CardDescription>
             </button>
+            <SortSelect
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'title:asc', label: 'Título (A-Z)' },
+                { value: 'title:desc', label: 'Título (Z-A)' },
+                { value: 'points:asc', label: 'Pontos (menor)' },
+                { value: 'points:desc', label: 'Pontos (maior)' },
+                { value: 'created:desc', label: 'Mais recentes' },
+                { value: 'created:asc', label: 'Mais antigas' },
+              ]}
+            />
           </CardHeader>
           {catalogExpanded.isExpanded('catalog') ? (
             <CardContent>
@@ -886,12 +886,26 @@ export function RewardsAdmin({
         )}
       </section>
 
-      {groupedRedemptions.length > 0 ? (
-        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
-            <Layers className="size-4 text-slate-500" />
-            Histórico
-          </h2>
+       {groupedRedemptions.length > 0 ? (
+         <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
+           <div className="flex items-center justify-between gap-3 xl:col-span-2">
+             <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+               <Layers className="size-4 text-slate-500" />
+               Histórico
+             </h2>
+             <SortSelect
+               value={sort}
+               onChange={setSort}
+               options={[
+                 { value: 'title:asc', label: 'Título (A-Z)' },
+                 { value: 'title:desc', label: 'Título (Z-A)' },
+                 { value: 'points:asc', label: 'Pontos (menor)' },
+                 { value: 'points:desc', label: 'Pontos (maior)' },
+                 { value: 'created:desc', label: 'Mais recentes' },
+                 { value: 'created:asc', label: 'Mais antigas' },
+               ]}
+             />
+           </div>
           {groupedRedemptions.map((redemption) => (
             <Card
               key={redemption.id}

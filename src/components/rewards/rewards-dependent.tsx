@@ -315,25 +315,39 @@ export function RewardsDependent({
         </p>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-            <Gift className="size-4 text-blue-600" />
-            Loja de recompensas
-          </h2>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setError(null)
-              setShowSuggestionModal((value) => !value)
-            }}
-          >
-            <Lightbulb className="size-3.5" />
-            {showSuggestionModal ? 'Fechar' : 'Sugerir'}
-          </Button>
-        </div>
+       <section className="flex flex-col gap-3">
+         <div className="flex flex-wrap items-center justify-between gap-2">
+           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+             <Gift className="size-4 text-blue-600" />
+             Loja de recompensas
+           </h2>
+           <div className="flex items-center gap-2">
+             <SortSelect
+               value={sort}
+               onChange={setSort}
+               options={[
+                 { value: 'title:asc', label: 'Título (A-Z)' },
+                 { value: 'title:desc', label: 'Título (Z-A)' },
+                 { value: 'points:asc', label: 'Pontos (menor)' },
+                 { value: 'points:desc', label: 'Pontos (maior)' },
+                 { value: 'created:desc', label: 'Mais recentes' },
+                 { value: 'created:asc', label: 'Mais antigas' },
+               ]}
+             />
+             <Button
+               type="button"
+               variant="outline"
+               size="sm"
+               onClick={() => {
+                 setError(null)
+                 setShowSuggestionModal((value) => !value)
+               }}
+             >
+               <Lightbulb className="size-3.5" />
+               {showSuggestionModal ? 'Fechar' : 'Sugerir'}
+             </Button>
+           </div>
+         </div>
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -345,20 +359,6 @@ export function RewardsDependent({
             placeholder="Buscar recompensa..."
             aria-label="Buscar recompensa"
            className="pl-10"
-         />
-       </div>
-       <div className="flex justify-end">
-         <SortSelect
-           value={sort}
-           onChange={setSort}
-           options={[
-             { value: 'title:asc', label: 'Título (A-Z)' },
-             { value: 'title:desc', label: 'Título (Z-A)' },
-             { value: 'points:asc', label: 'Pontos (menor)' },
-             { value: 'points:desc', label: 'Pontos (maior)' },
-             { value: 'created:desc', label: 'Mais recentes' },
-             { value: 'created:asc', label: 'Mais antigas' },
-           ]}
          />
        </div>
  
