@@ -530,35 +530,35 @@ export function RewardsAdmin({
             ) : null}
           </Card>
 
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <ClearableInput
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              onClear={() => setSearch('')}
-              placeholder="Buscar recompensa..."
-              aria-label="Buscar recompensa"
-              className="pl-10"
-             />
-           </div>
-           <div className="w-full sm:w-48">
-             <SortSelect
-               value={sort}
-               onChange={setSort}
-               options={[
-                 { value: 'title:asc', label: 'Título (A-Z)' },
-                 { value: 'title:desc', label: 'Título (Z-A)' },
-                 { value: 'points:asc', label: 'Pontos (menor)' },
-                 { value: 'points:desc', label: 'Pontos (maior)' },
-                 { value: 'created:desc', label: 'Mais recentes' },
-                 { value: 'created:asc', label: 'Mais antigas' },
-               ]}
-             />
-           </div>
-         </div>
- 
-         <Card>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <ClearableInput
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onClear={() => setSearch('')}
+                placeholder="Buscar recompensa..."
+                aria-label="Buscar recompensa"
+                className="pl-10"
+              />
+            </div>
+            <SortSelect
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'title:asc', label: 'Título (A-Z)' },
+                { value: 'title:desc', label: 'Título (Z-A)' },
+                { value: 'points:asc', label: 'Pontos (menor)' },
+                { value: 'points:desc', label: 'Pontos (maior)' },
+                { value: 'created:desc', label: 'Mais recentes' },
+                { value: 'created:asc', label: 'Mais antigas' },
+              ]}
+            />
+          </div>
+        </div>
+
+        <Card>
           <CardHeader>
             <button
               type="button"
@@ -582,119 +582,119 @@ export function RewardsAdmin({
           </CardHeader>
           {catalogExpanded.isExpanded('catalog') ? (
             <CardContent>
-            {rewards.length === 0 ? (
-              <EmptyState
-                icon={Gift}
-                accent="bg-amber-100 text-amber-600"
-                title="Nenhuma recompensa criada ainda"
-                message="Crie a primeira recompensa para os dependentes. 🎁"
-              />
-            ) : sortedRewards.length === 0 ? (
-              <p
-                className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
-                role="status"
-              >
-                Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {sortedRewards.map((reward) => {
-                  const limitLabel = rewardLimitLabel(
-                    reward.daily_limit,
-                    reward.monthly_limit
-                  )
-                  return (
-                    <li
-                      id={`reward-${reward.id}`}
-                      key={reward.id}
-                      className={cn(
-                        'rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
-                        !reward.active && 'border-slate-300 bg-slate-50'
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        {reward.image_url ? (
-                          <img
-                            src={reward.image_url}
-                            alt=""
-                            className={cn(
-                              'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
-                              !reward.active && 'opacity-50 grayscale'
-                            )}
-                          />
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => toggle(reward.id)}
-                          aria-expanded={isExpanded(reward.id)}
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        >
-                          <p className="font-medium text-slate-800">
-                            {reward.emoji ? `${reward.emoji} ` : ''}
-                            {reward.title}
-                          </p>
-                          <ChevronDown
-                            className={cn(
-                              'size-4 shrink-0 text-slate-400',
-                              isHydrated && 'transition-transform duration-200',
-                              isExpanded(reward.id) && 'rotate-180'
-                            )}
-                          />
-                        </button>
-                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
-                          {reward.points_cost} pts
-                        </span>
-                        {!reward.active ? (
-                          <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
-                            Inativa
-                          </span>
-                        ) : null}
-                      </div>
-                      {isExpanded(reward.id) ? (
-                        <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2">
-                          {reward.description ? (
-                            <p className="whitespace-pre-wrap text-sm text-slate-500">
-                              {parseRichText(reward.description)}
-                            </p>
+              {rewards.length === 0 ? (
+                <EmptyState
+                  icon={Gift}
+                  accent="bg-amber-100 text-amber-600"
+                  title="Nenhuma recompensa criada ainda"
+                  message="Crie a primeira recompensa para os dependentes. 🎁"
+                />
+              ) : sortedRewards.length === 0 ? (
+                <p
+                  className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
+                  role="status"
+                >
+                  Nenhuma recompensa encontrada para &quot;{search.trim()}&quot;.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {sortedRewards.map((reward) => {
+                    const limitLabel = rewardLimitLabel(
+                      reward.daily_limit,
+                      reward.monthly_limit
+                    )
+                    return (
+                      <li
+                        id={`reward-${reward.id}`}
+                        key={reward.id}
+                        className={cn(
+                          'rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm',
+                          !reward.active && 'border-slate-300 bg-slate-50'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          {reward.image_url ? (
+                            <img
+                              src={reward.image_url}
+                              alt=""
+                              className={cn(
+                                'size-12 shrink-0 rounded-xl border border-slate-200 object-cover',
+                                !reward.active && 'opacity-50 grayscale'
+                              )}
+                            />
                           ) : null}
-                          {limitLabel ? (
-                            <span className="w-fit rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                              máx. {limitLabel}
+                          <button
+                            type="button"
+                            onClick={() => toggle(reward.id)}
+                            aria-expanded={isExpanded(reward.id)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            <p className="font-medium text-slate-800">
+                              {reward.emoji ? `${reward.emoji} ` : ''}
+                              {reward.title}
+                            </p>
+                            <ChevronDown
+                              className={cn(
+                                'size-4 shrink-0 text-slate-400',
+                                isHydrated && 'transition-transform duration-200',
+                                isExpanded(reward.id) && 'rotate-180'
+                              )}
+                            />
+                          </button>
+                          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700">
+                            {reward.points_cost} pts
+                          </span>
+                          {!reward.active ? (
+                            <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-600">
+                              Inativa
                             </span>
                           ) : null}
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="min-h-8 px-2 text-xs"
-                               onClick={() => handleToggleActive(reward)}
-                               disabled={isPending(reward.id)}
-                            >
-                              {reward.active ? 'Desativar' : 'Reativar'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="min-h-8 px-2 text-xs"
-                              onClick={() => {
-                                setFormError(null)
-                                setEditImageUrl(reward.image_url)
-                                setEditingReward(reward)
-                              }}
-                            >
-                              Editar
-                            </Button>
-                          </div>
                         </div>
-                      ) : null}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </CardContent>
+                        {isExpanded(reward.id) ? (
+                          <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2">
+                            {reward.description ? (
+                              <p className="whitespace-pre-wrap text-sm text-slate-500">
+                                {parseRichText(reward.description)}
+                              </p>
+                            ) : null}
+                            {limitLabel ? (
+                              <span className="w-fit rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                                máx. {limitLabel}
+                              </span>
+                            ) : null}
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-8 px-2 text-xs"
+                                onClick={() => handleToggleActive(reward)}
+                                disabled={isPending(reward.id)}
+                              >
+                                {reward.active ? 'Desativar' : 'Reativar'}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-8 px-2 text-xs"
+                                onClick={() => {
+                                  setFormError(null)
+                                  setEditImageUrl(reward.image_url)
+                                  setEditingReward(reward)
+                                }}
+                              >
+                                Editar
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </CardContent>
           ) : (
             <CardContent>
               {rewards.length === 0 ? null : filteredRewards.length === 0 ? (
@@ -781,14 +781,14 @@ export function RewardsAdmin({
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
-                     onClick={() => handleResolveSuggestion(suggestion, false)}
-                     disabled={isPending(suggestion.id)}
+                    onClick={() => handleResolveSuggestion(suggestion, false)}
+                    disabled={isPending(suggestion.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
-                     onClick={() => handleResolveSuggestion(suggestion, true)}
-                     disabled={isPending(suggestion.id)}
+                    onClick={() => handleResolveSuggestion(suggestion, true)}
+                    disabled={isPending(suggestion.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e criar
@@ -867,14 +867,14 @@ export function RewardsAdmin({
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
-                     onClick={() => handleResolve(redemption, false)}
-                     disabled={isPending(redemption.id)}
+                    onClick={() => handleResolve(redemption, false)}
+                    disabled={isPending(redemption.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
-                     onClick={() => handleResolve(redemption, true)}
-                     disabled={isPending(redemption.id)}
+                    onClick={() => handleResolve(redemption, true)}
+                    disabled={isPending(redemption.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e debitar
@@ -887,46 +887,46 @@ export function RewardsAdmin({
       </section>
 
       {groupedRedemptions.length > 0 ? (
-      <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
-          <Layers className="size-4 text-slate-500" />
-          Histórico
-        </h2>
-        {groupedRedemptions.map((redemption) => (
-          <Card
-            key={redemption.id}
-            className={cn(
-              'border-l-4',
-              redemption.status === 'APPROVED'
-                ? 'border-l-emerald-500'
-                : 'border-l-rose-400'
-            )}
-          >
-            <CardContent className="flex items-center justify-between gap-2 py-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">
-                  {redemption.dependentName} · {redemption.rewardTitle}
-                </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {redemption.points_cost} pts · tratado em{' '}
-                  <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
-                </p>
-              </div>
-              <span
-                data-status={redemption.status}
-                className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
-              >
-                {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
-                {redemption.totalCount > 1 && (
-                  <span className="px-2.5 py-1 text-xs font-semibold">
-                    {redemption.totalCount}x
-                  </span>
-                )}
-              </span>
-            </CardContent>
-          </Card>
-        ))}
-      </section>
+        <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
+            <Layers className="size-4 text-slate-500" />
+            Histórico
+          </h2>
+          {groupedRedemptions.map((redemption) => (
+            <Card
+              key={redemption.id}
+              className={cn(
+                'border-l-4',
+                redemption.status === 'APPROVED'
+                  ? 'border-l-emerald-500'
+                  : 'border-l-rose-400'
+              )}
+            >
+              <CardContent className="flex items-center justify-between gap-2 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {redemption.dependentName} · {redemption.rewardTitle}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {redemption.points_cost} pts · tratado em{' '}
+                    <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
+                  </p>
+                </div>
+                <span
+                  data-status={redemption.status}
+                  className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-500 data-[status=APPROVED]:bg-emerald-50 data-[status=APPROVED]:text-emerald-700 data-[status=REJECTED]:bg-rose-100 data-[status=REJECTED]:text-rose-600"
+                >
+                  {redemption.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
+                  {redemption.totalCount > 1 && (
+                    <span className="px-2.5 py-1 text-xs font-semibold">
+                      {redemption.totalCount}x
+                    </span>
+                  )}
+                </span>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
       ) : null}
 
       <Modal

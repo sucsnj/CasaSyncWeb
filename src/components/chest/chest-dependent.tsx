@@ -100,19 +100,19 @@ export function ChestDependent({
         </h2>
       </div>
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-        <ClearableInput
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          onClear={() => setSearch('')}
-          placeholder="Buscar pelo título..."
-          aria-label="Buscar item do baú pelo título"
-           className="pl-10"
-         />
-       </div>
-       <div className="flex justify-end">
+       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+         <div className="relative flex-1">
+           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+           <ClearableInput
+             type="search"
+             value={search}
+             onChange={(event) => setSearch(event.target.value)}
+             onClear={() => setSearch('')}
+             placeholder="Buscar pelo título..."
+             aria-label="Buscar item do baú pelo título"
+             className="pl-10"
+           />
+         </div>
          <SortSelect
            value={sort}
            onChange={setSort}
