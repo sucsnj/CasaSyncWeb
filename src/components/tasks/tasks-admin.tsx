@@ -129,7 +129,8 @@ export function TasksAdmin({
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
-  const [sort, setSort] = useState('created:desc')
+  const [sortPending, setSortPending] = useState('created:desc')
+  const [sortApproved, setSortApproved] = useState('created:desc')
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
 
@@ -261,8 +262,13 @@ export function TasksAdmin({
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
 
-  const sortedTasks = useMemo(() => {
-    const [key, direction] = sort.split(':')
+  const pendingPredicate = (task: Task) =>
+    task.status === 'PENDING' ||
+    task.status === 'IN_PROGRESS' ||
+    task.status === 'NOT_DELIVERED'
+
+  const pendingTasks = useMemo(() => {
+    const [key, direction] = sortPending.split(':')
     const getter = (task: Task) => {
       switch (key) {
         case 'title':
@@ -276,19 +282,37 @@ export function TasksAdmin({
           return task.created_at
       }
     }
-    return sortBy(tasks, getter, direction === 'desc' ? 'desc' : 'asc')
-  }, [tasks, sort])
+    return sortBy(
+      tasks.filter(pendingPredicate),
+      getter,
+      direction === 'desc' ? 'desc' : 'asc'
+    )
+  }, [tasks, sortPending])
 
-  const pendingTasks = sortedTasks.filter(
-    (task) =>
-      task.status === 'PENDING' ||
-      task.status === 'IN_PROGRESS' ||
-      task.status === 'NOT_DELIVERED'
-  )
-  const completedTasks = sortedTasks.filter((task) => task.status === 'COMPLETED')
-  const approvedTasks = sortedTasks.filter((task) => task.status === 'APPROVED')
+  const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
+  const approvedTasks = useMemo(() => {
+    const [key, direction] = sortApproved.split(':')
+    const getter = (task: Task) => {
+      switch (key) {
+        case 'title':
+          return task.title
+        case 'points':
+          return task.points
+        case 'due':
+          return task.due_date
+        case 'created':
+        default:
+          return task.created_at
+      }
+    }
+    return sortBy(
+      tasks.filter((task) => task.status === 'APPROVED'),
+      getter,
+      direction === 'desc' ? 'desc' : 'asc'
+    )
+  }, [tasks, sortApproved])
   // "Em espera" (ON_HOLD): pausada pelo ADMIN, invisível para o dependente.
-  const heldTasks = sortedTasks.filter((task) => task.status === 'ON_HOLD')
+  const heldTasks = tasks.filter((task) => task.status === 'ON_HOLD')
 
   // Autocomplete "Você quis dizer...": combinação de palavras do catálogo todo
   // da casa, independente da ordem, aceitando trechos (inclusive de 1
@@ -1011,8 +1035,8 @@ export function TasksAdmin({
               Pendentes
             </h2>
             <SortSelect
-              value={sort}
-              onChange={setSort}
+              value={sortPending}
+              onChange={setSortPending}
               options={[
                 { value: 'created:desc', label: 'Mais recentes' },
                 { value: 'created:asc', label: 'Mais antigas' },
@@ -1674,8 +1698,8 @@ export function TasksAdmin({
                Aprovadas
              </h2>
              <SortSelect
-               value={sort}
-               onChange={setSort}
+               value={sortApproved}
+               onChange={setSortApproved}
                options={[
                  { value: 'created:desc', label: 'Mais recentes' },
                  { value: 'created:asc', label: 'Mais antigas' },

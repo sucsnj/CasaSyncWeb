@@ -104,7 +104,8 @@ export function RewardsAdmin({
   const [editingReward, setEditingReward] = useState<Reward | null>(null)
   const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('title:asc')
+  const [sortCatalog, setSortCatalog] = useState('title:asc')
+  const [sortHistory, setSortHistory] = useState('created:desc')
 
   const { isExpanded, isHydrated, toggle, expand } = useExpandedIds({
     storageKey: `casasync:expanded:rewards-admin:${houseId}`,
@@ -127,7 +128,7 @@ export function RewardsAdmin({
   }, [rewards, search])
 
   const sortedRewards = useMemo(() => {
-    const [key, direction] = sort.split(':')
+    const [key, direction] = sortCatalog.split(':')
     const getter = (reward: Reward) => {
       switch (key) {
         case 'points':
@@ -139,7 +140,8 @@ export function RewardsAdmin({
       }
     }
     return sortBy(filteredRewards, getter, direction === 'desc' ? 'desc' : 'asc')
-  }, [filteredRewards, sort])
+  }, [filteredRewards, sortCatalog])
+
   const dependentNameById = useMemo(
     () => new Map(dependents.map((dependent) => [dependent.id, dependent.full_name])),
     [dependents]
@@ -394,6 +396,24 @@ export function RewardsAdmin({
     [resolvedRedemptions]
   )
 
+  const sortedGroupedRedemptions = useMemo(() => {
+    const [key, direction] = sortHistory.split(':')
+    const getter = (redemption: (typeof groupedRedemptions)[number]) => {
+      switch (key) {
+        case 'dependent':
+          return redemption.dependentName
+        case 'reward':
+          return redemption.rewardTitle
+        case 'points':
+          return redemption.points_cost
+        case 'created':
+        default:
+          return redemption.created_at
+      }
+    }
+    return sortBy(groupedRedemptions, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [groupedRedemptions, sortHistory])
+
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
@@ -568,8 +588,8 @@ export function RewardsAdmin({
               <CardDescription>Recompensas disponíveis na casa.</CardDescription>
             </button>
             <SortSelect
-              value={sort}
-              onChange={setSort}
+              value={sortCatalog}
+              onChange={setSortCatalog}
               options={[
                 { value: 'title:asc', label: 'Título (A-Z)' },
                 { value: 'title:desc', label: 'Título (Z-A)' },
@@ -894,19 +914,21 @@ export function RewardsAdmin({
                Histórico
              </h2>
              <SortSelect
-               value={sort}
-               onChange={setSort}
+               value={sortHistory}
+               onChange={setSortHistory}
                options={[
-                 { value: 'title:asc', label: 'Título (A-Z)' },
-                 { value: 'title:desc', label: 'Título (Z-A)' },
-                 { value: 'points:asc', label: 'Pontos (menor)' },
+                 { value: 'dependent:asc', label: 'Dependente (A-Z)' },
+                 { value: 'dependent:desc', label: 'Dependente (Z-A)' },
+                 { value: 'reward:asc', label: 'Recompensa (A-Z)' },
+                 { value: 'reward:desc', label: 'Recompensa (Z-A)' },
                  { value: 'points:desc', label: 'Pontos (maior)' },
+                 { value: 'points:asc', label: 'Pontos (menor)' },
                  { value: 'created:desc', label: 'Mais recentes' },
                  { value: 'created:asc', label: 'Mais antigas' },
                ]}
              />
            </div>
-          {groupedRedemptions.map((redemption) => (
+           {sortedGroupedRedemptions.map((redemption) => (
             <Card
               key={redemption.id}
               className={cn(

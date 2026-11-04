@@ -67,7 +67,8 @@ export function TasksDependent({
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
-  const [sort, setSort] = useState('created:desc')
+  const [sortOpen, setSortOpen] = useState('created:desc')
+  const [sortDone, setSortDone] = useState('created:desc')
   const [error, setError] = useState<string | null>(null)
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)
@@ -178,8 +179,8 @@ export function TasksDependent({
     }).finally(() => setSendingExtension(false))
   }
 
-  const sortedTasks = useMemo(() => {
-    const [key, direction] = sort.split(':')
+  const openTasks = useMemo(() => {
+    const [key, direction] = sortOpen.split(':')
     const getter = (task: Task) => {
       switch (key) {
         case 'title':
@@ -193,17 +194,40 @@ export function TasksDependent({
           return task.created_at
       }
     }
-    return sortBy(tasks, getter, direction === 'desc' ? 'desc' : 'asc')
-  }, [tasks, sort])
+    return sortBy(
+      tasks.filter(
+        (task) =>
+          task.status === 'PENDING' ||
+          task.status === 'IN_PROGRESS' ||
+          task.status === 'NOT_DELIVERED'
+      ),
+      getter,
+      direction === 'desc' ? 'desc' : 'asc'
+    )
+  }, [tasks, sortOpen])
 
-  const openTasks = sortedTasks.filter(
-    (task) =>
-      task.status === 'PENDING' ||
-      task.status === 'IN_PROGRESS' ||
-      task.status === 'NOT_DELIVERED'
-  )
-  const awaitingTasks = sortedTasks.filter((task) => task.status === 'COMPLETED')
-  const doneTasks = sortedTasks.filter((task) => task.status === 'APPROVED')
+  const awaitingTasks = tasks.filter((task) => task.status === 'COMPLETED')
+  const doneTasks = useMemo(() => {
+    const [key, direction] = sortDone.split(':')
+    const getter = (task: Task) => {
+      switch (key) {
+        case 'title':
+          return task.title
+        case 'points':
+          return task.points
+        case 'due':
+          return task.due_date
+        case 'created':
+        default:
+          return task.created_at
+      }
+    }
+    return sortBy(
+      tasks.filter((task) => task.status === 'APPROVED'),
+      getter,
+      direction === 'desc' ? 'desc' : 'asc'
+    )
+  }, [tasks, sortDone])
 
   return (
     <div className="flex flex-col gap-6">
@@ -223,8 +247,8 @@ export function TasksDependent({
             Suas tarefas
           </h2>
           <SortSelect
-            value={sort}
-            onChange={setSort}
+            value={sortOpen}
+            onChange={setSortOpen}
             options={[
               { value: 'created:desc', label: 'Mais recentes' },
               { value: 'created:asc', label: 'Mais antigas' },
@@ -490,8 +514,8 @@ export function TasksDependent({
                Concluídas
              </h2>
              <SortSelect
-               value={sort}
-               onChange={setSort}
+               value={sortDone}
+               onChange={setSortDone}
                options={[
                  { value: 'created:desc', label: 'Mais recentes' },
                  { value: 'created:asc', label: 'Mais antigas' },
