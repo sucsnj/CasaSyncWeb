@@ -92,7 +92,7 @@ export function RewardsAdmin({
   const [pending, startTransition] = useTransition()
   // Pending/otimista por item compartilhado com tasks. `pending` fica só para
   // os forms (ação de escopo único).
-  const { isPending, runOptimistic } = useOptimisticAction()
+  const { isPending, markServer, runOptimistic } = useOptimisticAction()
   const [showRewardForm, setShowRewardForm] = useState(false)
 
   useKeyAction('Escape', () => setShowRewardForm(false), { enabled: showRewardForm })
@@ -143,14 +143,16 @@ export function RewardsAdmin({
   usePostgresChanges<Redemption>({
     table: 'reward_redemptions',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) =>
+    onUpsert: (row) => {
+      markServer(row.id)
       setRedemptions((prev) => {
         const view = toView(row)
         const exists = prev.some((item) => item.id === row.id)
         return exists
           ? prev.map((item) => (item.id === row.id ? view : item))
           : [view, ...prev]
-      }),
+      })
+    },
   })
 
   // O INSERT do resgate já dispara uma notificação aos ADMINs. Usamos esse
@@ -170,20 +172,23 @@ export function RewardsAdmin({
   usePostgresChanges<Reward>({
     table: 'rewards',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) =>
+    onUpsert: (row) => {
+      markServer(row.id)
       setRewards((prev) => {
         const exists = prev.some((item) => item.id === row.id)
         return exists
           ? prev.map((item) => (item.id === row.id ? row : item))
           : [row, ...prev]
-      }),
+      })
+    },
   })
 
   // Sugestões: nova sugestão (INSERT) e resolução (UPDATE) chegam ao vivo.
   usePostgresChanges<Tables<'reward_suggestions'>>({
     table: 'reward_suggestions',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) =>
+    onUpsert: (row) => {
+      markServer(row.id)
       setSuggestions((prev) => {
         const view: SuggestionView = {
           id: row.id,
@@ -199,7 +204,8 @@ export function RewardsAdmin({
         return exists
           ? prev.map((item) => (item.id === row.id ? view : item))
           : [view, ...prev]
-      }),
+      })
+    },
   })
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
