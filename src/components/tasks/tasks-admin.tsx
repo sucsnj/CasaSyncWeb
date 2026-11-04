@@ -764,6 +764,13 @@ export function TasksAdmin({
       attachment_type: attachment.type,
       attachment_chest_item_id: attachment.chestItemId ?? null,
     }
+
+    if (attachment.chestItemId && attachment.chestItem) {
+      setChestItemsMap((prev) => ({
+        ...prev,
+        [attachment.chestItemId as string]: attachment.chestItem as ChestItemView,
+      }))
+    }
     // Otimista: o card mostra o anexo novo/removido na hora; em erro volta ao
     // valor anterior (`task` é o card como estava antes desta mudança).
     setTasks((prev) => upsertTask(prev, { ...task, ...patch }))

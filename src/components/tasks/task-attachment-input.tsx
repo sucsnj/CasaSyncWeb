@@ -16,6 +16,7 @@ import { listChestAttachmentsForTask } from '@/actions/chest'
 import { usePrefetch } from '@/hooks/use-prefetch'
 import { ChestAttachmentPicker } from '@/components/tasks/chest-attachment-picker'
 import type { AttachmentSelection } from '@/components/chest/chest-types'
+import type { ChestItemView } from '@/components/chest/chest-types'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -375,9 +376,14 @@ export function TaskAttachmentInput({
           open
           onClose={() => setChestOpen(false)}
           onPick={(next) => {
-            console.log('DEBUG onPick', next)
             setError(null)
-            onChange(next)
+            onChange({
+              url: next.url,
+              name: next.name,
+              type: next.type,
+              chestItemId: next.chestItemId,
+              chestItem: (next as { item?: ChestItemView }).item ?? null,
+            })
           }}
           disabled={disabled}
         />
