@@ -426,7 +426,7 @@ export function TasksAdmin({
         if (result.data?.task) {
           setTasks((prev) => upsertTask(prev, result.data!.task))
         }
-        setFormError(null)
+    setFormError(null)
         resetForm()
         setShowTaskForm(false)
         router.refresh()
@@ -481,7 +481,8 @@ export function TasksAdmin({
       if (result.data?.task) {
         setTasks((prev) => upsertTask(prev, result.data!.task))
       }
-      setFormError(null)
+    console.log('DEBUG taskAttachment', taskAttachment)
+    setFormError(null)
       resetForm()
       setShowTaskForm(false)
       router.refresh()
@@ -1205,17 +1206,42 @@ export function TasksAdmin({
                             aceita remover, e remover é justamente a limpeza que
                             faz sentido com a casa desligada. */}
                         {attachmentsOn ? (
-                          <div className="flex flex-col gap-1.5">
-                            <span className="text-xs text-slate-500">Anexo</span>
-                            <TaskAttachmentInput
-                              ownerId={houseId}
-                              chestSource
-                              url={task.image_url}
-                              name={task.attachment_name}
-                              type={task.attachment_type}
-                              onChange={(attachment) => changeAttachment(task, attachment)}
-                            />
-                          </div>
+                          task.attachment_chest_item_id ? (
+                            <div className="flex flex-col gap-2">
+                              <span className="text-xs text-slate-500">
+                                Anexo espelhado do baú (edite no baú).
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="min-h-9 w-fit px-3 text-xs"
+                                onClick={() =>
+                                  changeAttachment(task, {
+                                    url: null,
+                                    name: null,
+                                    type: null,
+                                    chestItemId: null,
+                                  })
+                                }
+                                disabled={isPending(task.id)}
+                              >
+                                Remover espelho
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500">Anexo</span>
+                              <TaskAttachmentInput
+                                ownerId={houseId}
+                                chestSource
+                                url={task.image_url}
+                                name={task.attachment_name}
+                                type={task.attachment_type}
+                                onChange={(attachment) => changeAttachment(task, attachment)}
+                              />
+                            </div>
+                          )
                         ) : null}
 
                         <div className="grid gap-3 md:grid-cols-[1fr_auto]">

@@ -15,6 +15,9 @@ alter table public.tasks
 alter table public.tasks
   add column if not exists attachment_type text;
 
+alter table public.tasks
+  add column if not exists attachment_chest_item_id uuid references public.chest_items(id) on delete set null;
+
 -- O anexo é sempre da casa (bucket público `casasync-media`, pasta `tasks/`),
 -- então filtrar por casa é o índice natural de uma listagem futura.
 create index if not exists tasks_house_attachment_idx

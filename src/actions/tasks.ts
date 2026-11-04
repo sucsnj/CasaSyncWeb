@@ -326,16 +326,17 @@ export async function createTask(
   // Anexo (opcional): a URL precisa ser do bucket da casa, na pasta `tasks/`, e
   // o tipo precisa estar na lista fechada — validação fail-closed, porque a URL
   // e o MIME chegam do cliente.
-  const attachment = input.imageUrl
-    ? validateTaskAttachment(
-        input.imageUrl,
-        input.attachmentName,
-        input.attachmentType
-      )
-    : null
+  const attachment =
+    !input.attachmentChestItemId && input.imageUrl
+      ? validateTaskAttachment(
+          input.imageUrl,
+          input.attachmentName,
+          input.attachmentType
+        )
+      : null
   if (attachment) return { ok: false, error: attachment }
 
-  if (input.imageUrl) {
+  if (!input.attachmentChestItemId && input.imageUrl) {
     // Teto de 5 MB por anexo + "o objeto existe no storage?" — **fail closed**
     // (ADR-0027). O `accept` e o `file.size` do browser são conveniência; quem
     // barra a gravação é a leitura do objeto, porque a URL chega do cliente.
@@ -443,7 +444,7 @@ export async function createTask(
     title: 'Nova tarefa',
     // Com anexo, avisa: é o que faz o dependente abrir o app para ver o arquivo.
     body: `Você recebeu a tarefa "${title}" (${input.points} pts).${
-      input.imageUrl ? ' Há um anexo para ver.' : ''
+       input.imageUrl || input.attachmentChestItemId ? ' Há um anexo para ver.' : ''
     }`,
     link: '/tasks',
   }
@@ -676,7 +677,7 @@ export async function updateTask(
       updates.attachment_chest_item_id = null
     }
 
-    if (nextUrl) {
+    if (nextUrl && !('attachment_chest_item_id' in patch && patch.attachment_chest_item_id)) {
       // A casa desligou os anexos? (ADR-0026) — mesmo getter, custo zero de
       // round-trip. Conferido antes da validação da URL para a mensagem dizer o
       // que aconteceu, e não "URL inválida" num anexo que nem podia ser anexado.

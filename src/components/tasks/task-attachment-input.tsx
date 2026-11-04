@@ -375,6 +375,7 @@ export function TaskAttachmentInput({
           open
           onClose={() => setChestOpen(false)}
           onPick={(next) => {
+            console.log('DEBUG onPick', next)
             setError(null)
             onChange(next)
           }}

@@ -153,6 +153,15 @@ lendo o bucket. A coluna pode ficar desatualizada em reenvio/órfão, então o
 valor é tratado como rótulo de UI ("tamanho indisponível" quando `null`), nunca
 como barreira. `tasks` segue sem `file_size`.
 
+## Emenda — anexo do baú em espelho na tarefa
+
+O anexo do baú deixou de ser **réplica** (cópia para `tasks/`) e passou a ser
+**espelho**: a tarefa guarda `attachment_chest_item_id` e resolve url/nome/tipo
+do item do baú no render. Editar ou excluir o item no baú reflete na tarefa;
+excluir o item limpa o anexo das tarefas afetadas. O anexo espelhado não
+consome budget próprio (o arquivo segue contando em `chest/`) e não é apagado
+quando a tarefa remove o anexo.
+
 ## Consequências
 
 - **Leitura nova no caminho de escrita** (1–2 leituras de storage por anexo
