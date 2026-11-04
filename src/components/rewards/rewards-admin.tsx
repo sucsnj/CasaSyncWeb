@@ -89,6 +89,19 @@ export function RewardsAdmin({
     initialSuggestions
   )
   const [pending, startTransition] = useTransition()
+  // Pending por item: o card clicado trava, os demais continuam clicáveis
+  // (mesmo padrão de `tasks-admin`). `pending` fica só para os forms.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+
+  function setPendingId(id: string, on: boolean) {
+    setPendingIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
   const [showRewardForm, setShowRewardForm] = useState(false)
 
   useKeyAction('Escape', () => setShowRewardForm(false), { enabled: showRewardForm })
@@ -262,6 +275,8 @@ export function RewardsAdmin({
   }
 
   function handleToggleActive(reward: Reward) {
+    if (pendingIds.has(reward.id)) return
+    setPendingId(reward.id, true)
     setFormError(null)
     const nextActive = !reward.active
     // Feedback imediato (otimista), como em tasks: o card muda no mesmo quadro.
@@ -271,23 +286,29 @@ export function RewardsAdmin({
       )
     )
     startTransition(async () => {
-      const result = await setRewardActive(reward.id, nextActive)
-      if (!result.ok) {
-        setRewards((prev) =>
-          prev.map((item) =>
-            item.id === reward.id ? { ...item, active: reward.active } : item
+      try {
+        const result = await setRewardActive(reward.id, nextActive)
+        if (!result.ok) {
+          setRewards((prev) =>
+            prev.map((item) =>
+              item.id === reward.id ? { ...item, active: reward.active } : item
+            )
           )
-        )
-        setFormError(result.error)
-        toast.error(result.error)
-        return
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
+        toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
+        router.refresh()
+      } finally {
+        setPendingId(reward.id, false)
       }
-      toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
-      router.refresh()
     })
   }
 
   function handleResolve(redemption: RedemptionView, approve: boolean) {
+    if (pendingIds.has(redemption.id)) return
+    setPendingId(redemption.id, true)
     const nextStatus = approve ? 'APPROVED' : 'REJECTED'
     const resolvedAt = new Date().toISOString()
     // Feedback imediato (otimista).
@@ -299,34 +320,40 @@ export function RewardsAdmin({
       )
     )
     startTransition(async () => {
-      const result = approve
-        ? await approveRedemption(redemption.id)
-        : await rejectRedemption(redemption.id)
+      try {
+        const result = approve
+          ? await approveRedemption(redemption.id)
+          : await rejectRedemption(redemption.id)
 
-      if (!result.ok) {
-        setRedemptions((prev) =>
-          prev.map((item) =>
-            item.id === redemption.id
-              ? { ...item, status: redemption.status, resolved_at: redemption.resolved_at }
-              : item
+        if (!result.ok) {
+          setRedemptions((prev) =>
+            prev.map((item) =>
+              item.id === redemption.id
+                ? { ...item, status: redemption.status, resolved_at: redemption.resolved_at }
+                : item
+            )
           )
-        )
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
 
-      if (approve) {
-        toast.success('Resgate aprovado e pontos debitados!')
-      } else {
-        toast.info('Resgate rejeitado.')
-      }
+        if (approve) {
+          toast.success('Resgate aprovado e pontos debitados!')
+        } else {
+          toast.info('Resgate rejeitado.')
+        }
 
-      router.refresh()
+        router.refresh()
+      } finally {
+        setPendingId(redemption.id, false)
+      }
     })
   }
 
   function handleResolveSuggestion(suggestion: SuggestionView, approve: boolean) {
+    if (pendingIds.has(suggestion.id)) return
+    setPendingId(suggestion.id, true)
     setFormError(null)
     const nextStatus = approve ? 'APPROVED' : 'REJECTED'
     // Feedback imediato (otimista).
@@ -336,25 +363,29 @@ export function RewardsAdmin({
       )
     )
     startTransition(async () => {
-      const result = await resolveRewardSuggestion(suggestion.id, approve)
-      if (!result.ok) {
-        setSuggestions((prev) =>
-          prev.map((item) =>
-            item.id === suggestion.id ? { ...item, status: suggestion.status } : item
+      try {
+        const result = await resolveRewardSuggestion(suggestion.id, approve)
+        if (!result.ok) {
+          setSuggestions((prev) =>
+            prev.map((item) =>
+              item.id === suggestion.id ? { ...item, status: suggestion.status } : item
+            )
           )
-        )
-        setFormError(result.error)
-        toast.error(result.error)
-        return
-      }
+          setFormError(result.error)
+          toast.error(result.error)
+          return
+        }
 
-      if (approve) {
-        toast.success('Sugestão aprovada e recompensa criada!')
-      } else {
-        toast.info('Sugestão rejeitada.')
-      }
+        if (approve) {
+          toast.success('Sugestão aprovada e recompensa criada!')
+        } else {
+          toast.info('Sugestão rejeitada.')
+        }
 
-      router.refresh()
+        router.refresh()
+      } finally {
+        setPendingId(suggestion.id, false)
+      }
     })
   }
 
@@ -646,8 +677,8 @@ export function RewardsAdmin({
                               variant="ghost"
                               size="sm"
                               className="min-h-8 px-2 text-xs"
-                              onClick={() => handleToggleActive(reward)}
-                              disabled={pending}
+                               onClick={() => handleToggleActive(reward)}
+                               disabled={pendingIds.has(reward.id)}
                             >
                               {reward.active ? 'Desativar' : 'Reativar'}
                             </Button>
@@ -759,14 +790,14 @@ export function RewardsAdmin({
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
-                    onClick={() => handleResolveSuggestion(suggestion, false)}
-                    disabled={pending}
+                     onClick={() => handleResolveSuggestion(suggestion, false)}
+                     disabled={pendingIds.has(suggestion.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
-                    onClick={() => handleResolveSuggestion(suggestion, true)}
-                    disabled={pending}
+                     onClick={() => handleResolveSuggestion(suggestion, true)}
+                     disabled={pendingIds.has(suggestion.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e criar
@@ -845,14 +876,14 @@ export function RewardsAdmin({
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
-                    onClick={() => handleResolve(redemption, false)}
-                    disabled={pending}
+                     onClick={() => handleResolve(redemption, false)}
+                     disabled={pendingIds.has(redemption.id)}
                   >
                     Rejeitar
                   </Button>
                   <Button
-                    onClick={() => handleResolve(redemption, true)}
-                    disabled={pending}
+                     onClick={() => handleResolve(redemption, true)}
+                     disabled={pendingIds.has(redemption.id)}
                     className="bg-emerald-500 shadow-lg shadow-emerald-500/25 hover:bg-emerald-600"
                   >
                     Aprovar e debitar
