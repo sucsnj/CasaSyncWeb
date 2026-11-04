@@ -26,6 +26,8 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -102,6 +104,7 @@ export function RewardsAdmin({
   const [editingReward, setEditingReward] = useState<Reward | null>(null)
   const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('title:asc')
 
   const { isExpanded, isHydrated, toggle, expand } = useExpandedIds({
     storageKey: `casasync:expanded:rewards-admin:${houseId}`,
@@ -122,6 +125,21 @@ export function RewardsAdmin({
         (reward.description ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term)
     )
   }, [rewards, search])
+
+  const sortedRewards = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (reward: Reward) => {
+      switch (key) {
+        case 'points':
+          return reward.points_cost
+        case 'created':
+          return reward.created_at
+        default:
+          return reward.title
+      }
+    }
+    return sortBy(filteredRewards, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [filteredRewards, sort])
   const dependentNameById = useMemo(
     () => new Map(dependents.map((dependent) => [dependent.id, dependent.full_name])),
     [dependents]
@@ -522,11 +540,25 @@ export function RewardsAdmin({
               placeholder="Buscar recompensa..."
               aria-label="Buscar recompensa"
               className="pl-10"
-            />
-          </div>
-        </div>
-
-        <Card>
+             />
+           </div>
+           <div className="w-full sm:w-48">
+             <SortSelect
+               value={sort}
+               onChange={setSort}
+               options={[
+                 { value: 'title:asc', label: 'Título (A-Z)' },
+                 { value: 'title:desc', label: 'Título (Z-A)' },
+                 { value: 'points:asc', label: 'Pontos (menor)' },
+                 { value: 'points:desc', label: 'Pontos (maior)' },
+                 { value: 'created:desc', label: 'Mais recentes' },
+                 { value: 'created:asc', label: 'Mais antigas' },
+               ]}
+             />
+           </div>
+         </div>
+ 
+         <Card>
           <CardHeader>
             <button
               type="button"
@@ -557,7 +589,7 @@ export function RewardsAdmin({
                 title="Nenhuma recompensa criada ainda"
                 message="Crie a primeira recompensa para os dependentes. 🎁"
               />
-            ) : filteredRewards.length === 0 ? (
+            ) : sortedRewards.length === 0 ? (
               <p
                 className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
                 role="status"
@@ -566,7 +598,7 @@ export function RewardsAdmin({
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {filteredRewards.map((reward) => {
+                {sortedRewards.map((reward) => {
                   const limitLabel = rewardLimitLabel(
                     reward.daily_limit,
                     reward.monthly_limit
@@ -671,7 +703,7 @@ export function RewardsAdmin({
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {filteredRewards.slice(0, 5).map((reward) => (
+                  {sortedRewards.slice(0, 5).map((reward) => (
                     <button
                       type="button"
                       key={reward.id}

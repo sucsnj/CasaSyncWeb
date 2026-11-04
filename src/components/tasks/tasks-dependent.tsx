@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
@@ -65,6 +67,7 @@ export function TasksDependent({
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  const [sort, setSort] = useState('created:desc')
   const [error, setError] = useState<string | null>(null)
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)
@@ -175,14 +178,32 @@ export function TasksDependent({
     }).finally(() => setSendingExtension(false))
   }
 
-  const openTasks = tasks.filter(
+  const sortedTasks = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (task: Task) => {
+      switch (key) {
+        case 'title':
+          return task.title
+        case 'points':
+          return task.points
+        case 'due':
+          return task.due_date
+        case 'created':
+        default:
+          return task.created_at
+      }
+    }
+    return sortBy(tasks, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [tasks, sort])
+
+  const openTasks = sortedTasks.filter(
     (task) =>
       task.status === 'PENDING' ||
       task.status === 'IN_PROGRESS' ||
       task.status === 'NOT_DELIVERED'
   )
-  const awaitingTasks = tasks.filter((task) => task.status === 'COMPLETED')
-  const doneTasks = tasks.filter((task) => task.status === 'APPROVED')
+  const awaitingTasks = sortedTasks.filter((task) => task.status === 'COMPLETED')
+  const doneTasks = sortedTasks.filter((task) => task.status === 'APPROVED')
 
   return (
     <div className="flex flex-col gap-6">
@@ -194,6 +215,23 @@ export function TasksDependent({
           {error}
         </p>
       ) : null}
+
+      <div className="flex justify-end">
+        <SortSelect
+          value={sort}
+          onChange={setSort}
+          options={[
+            { value: 'created:desc', label: 'Mais recentes' },
+            { value: 'created:asc', label: 'Mais antigas' },
+            { value: 'title:asc', label: 'Título (A-Z)' },
+            { value: 'title:desc', label: 'Título (Z-A)' },
+            { value: 'points:desc', label: 'Mais pontos' },
+            { value: 'points:asc', label: 'Menos pontos' },
+            { value: 'due:asc', label: 'Prazo (próximo)' },
+            { value: 'due:desc', label: 'Prazo (distante)' },
+          ]}
+        />
+      </div>
 
       <section className="flex flex-col gap-3">
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">

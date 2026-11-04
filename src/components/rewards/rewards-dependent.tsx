@@ -26,6 +26,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -102,6 +104,7 @@ export function RewardsDependent({
     null
   )
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('title:asc')
 
   const { isExpanded, isHydrated, toggle } = useExpandedIds({
     storageKey: `casasync:expanded:rewards:${houseId}`,
@@ -119,6 +122,21 @@ export function RewardsDependent({
         (reward.description ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term)
     )
   }, [rewards, search])
+
+  const sortedRewards = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (reward: (typeof rewards)[number]) => {
+      switch (key) {
+        case 'points':
+          return reward.points_cost
+        case 'created':
+          return reward.created_at
+        default:
+          return reward.title
+      }
+    }
+    return sortBy(filteredRewards, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [filteredRewards, sort])
 
   // Saldo ao vivo: quando o ADMIN aprova uma tarefa ou um resgate, o
   // `profiles.points` muda e este listener atualiza o contador na hora.
@@ -326,11 +344,25 @@ export function RewardsDependent({
             onClear={() => setSearch('')}
             placeholder="Buscar recompensa..."
             aria-label="Buscar recompensa"
-            className="pl-10"
-          />
-        </div>
-
-        {showSuggestionModal ? (
+           className="pl-10"
+         />
+       </div>
+       <div className="flex justify-end">
+         <SortSelect
+           value={sort}
+           onChange={setSort}
+           options={[
+             { value: 'title:asc', label: 'Título (A-Z)' },
+             { value: 'title:desc', label: 'Título (Z-A)' },
+             { value: 'points:asc', label: 'Pontos (menor)' },
+             { value: 'points:desc', label: 'Pontos (maior)' },
+             { value: 'created:desc', label: 'Mais recentes' },
+             { value: 'created:asc', label: 'Mais antigas' },
+           ]}
+         />
+       </div>
+ 
+       {showSuggestionModal ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col gap-3 py-4">
               <form onSubmit={handleSuggest} className="grid gap-3">
@@ -395,7 +427,7 @@ export function RewardsDependent({
             title="Loja vazia por enquanto"
             message="O administrador está preparando novidades para você. 🎁"
           />
-        ) : filteredRewards.length === 0 ? (
+        ) : sortedRewards.length === 0 ? (
           <p
             className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
             role="status"
@@ -404,7 +436,7 @@ export function RewardsDependent({
           </p>
         ) : (
           <CardColumns className="gap-x-3 sm:columns-2 xl:columns-3 [&>*]:mb-3">
-            {filteredRewards.map((reward) => {
+            {sortedRewards.map((reward) => {
               const inactive = !reward.active
               const usage = usageByReward.get(reward.id)
               const dailyReached = isRewardLimitReached(

@@ -22,6 +22,8 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { cn } from '@/lib/utils'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { useKeyAction } from '@/hooks/use-key-action'
 import {
   CHEST_ITEM_FOLDER,
@@ -79,6 +81,7 @@ export function ChestAdmin({
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('created:desc')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -144,6 +147,20 @@ export function ChestAdmin({
       item.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term)
     )
   }, [items, search])
+
+  const sortedItems = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (item: (typeof items)[number]) => {
+      switch (key) {
+        case 'title':
+          return item.title
+        case 'created':
+        default:
+          return item.created_at
+      }
+    }
+    return sortBy(filtered, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [filtered, sort])
 
   // Limite da casa **por peso** (ADR-0027). Os bytes vêm do servidor e o
   // predicado é o mesmo (`attachmentBudgetState`), então a cor daqui não pode
@@ -432,9 +449,21 @@ export function ChestAdmin({
           onClear={() => setSearch('')}
           placeholder="Buscar item pelo título..."
           aria-label="Buscar item do baú pelo título"
-          className="pl-10"
-        />
-      </div>
+           className="pl-10"
+         />
+       </div>
+       <div className="flex justify-end">
+         <SortSelect
+           value={sort}
+           onChange={setSort}
+           options={[
+             { value: 'created:desc', label: 'Mais recentes' },
+             { value: 'created:asc', label: 'Mais antigas' },
+             { value: 'title:asc', label: 'Título (A-Z)' },
+             { value: 'title:desc', label: 'Título (Z-A)' },
+           ]}
+         />
+       </div>
 
       {items.length === 0 ? (
         <EmptyState
@@ -443,7 +472,7 @@ export function ChestAdmin({
           title="Baú vazio por enquanto"
           message="Adicione o primeiro arquivo para os dependentes da casa."
         />
-      ) : filtered.length === 0 ? (
+      ) : sortedItems.length === 0 ? (
         <p
           className="rounded-xl bg-slate-100 px-3 py-6 text-center text-sm text-slate-500"
           role="status"
@@ -452,7 +481,7 @@ export function ChestAdmin({
         </p>
       ) : (
         <CardColumns className="gap-x-3 sm:columns-2 xl:columns-3 [&>*]:mb-3">
-          {filtered.map((item) => (
+          {sortedItems.map((item) => (
             <Card key={item.id}>
               <CardContent className="flex flex-col gap-3 py-4">
                 <p className="text-base font-bold text-slate-900">{item.title}</p>

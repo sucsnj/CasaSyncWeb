@@ -15,6 +15,8 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -127,6 +129,7 @@ export function TasksAdmin({
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  const [sort, setSort] = useState('created:desc')
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
 
@@ -258,16 +261,34 @@ export function TasksAdmin({
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
 
-  const pendingTasks = tasks.filter(
+  const sortedTasks = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (task: Task) => {
+      switch (key) {
+        case 'title':
+          return task.title
+        case 'points':
+          return task.points
+        case 'due':
+          return task.due_date
+        case 'created':
+        default:
+          return task.created_at
+      }
+    }
+    return sortBy(tasks, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [tasks, sort])
+
+  const pendingTasks = sortedTasks.filter(
     (task) =>
       task.status === 'PENDING' ||
       task.status === 'IN_PROGRESS' ||
       task.status === 'NOT_DELIVERED'
   )
-  const completedTasks = tasks.filter((task) => task.status === 'COMPLETED')
-  const approvedTasks = tasks.filter((task) => task.status === 'APPROVED')
+  const completedTasks = sortedTasks.filter((task) => task.status === 'COMPLETED')
+  const approvedTasks = sortedTasks.filter((task) => task.status === 'APPROVED')
   // "Em espera" (ON_HOLD): pausada pelo ADMIN, invisível para o dependente.
-  const heldTasks = tasks.filter((task) => task.status === 'ON_HOLD')
+  const heldTasks = sortedTasks.filter((task) => task.status === 'ON_HOLD')
 
   // Autocomplete "Você quis dizer...": combinação de palavras do catálogo todo
   // da casa, independente da ordem, aceitando trechos (inclusive de 1
@@ -981,12 +1002,29 @@ export function TasksAdmin({
             </form>
           </CardContent>
         ) : null}
-      </Card>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-          <ListTodo className="size-4 text-blue-600" />
-          Pendentes
+       </Card>
+ 
+       <div className="flex justify-end">
+         <SortSelect
+           value={sort}
+           onChange={setSort}
+           options={[
+             { value: 'created:desc', label: 'Mais recentes' },
+             { value: 'created:asc', label: 'Mais antigas' },
+             { value: 'title:asc', label: 'Título (A-Z)' },
+             { value: 'title:desc', label: 'Título (Z-A)' },
+             { value: 'points:desc', label: 'Mais pontos' },
+             { value: 'points:asc', label: 'Menos pontos' },
+             { value: 'due:asc', label: 'Prazo (próximo)' },
+             { value: 'due:desc', label: 'Prazo (distante)' },
+           ]}
+         />
+       </div>
+ 
+       <section className="flex flex-col gap-3">
+         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+           <ListTodo className="size-4 text-blue-600" />
+           Pendentes
         </h2>
         {pendingTasks.length === 0 ? (
           <EmptyState

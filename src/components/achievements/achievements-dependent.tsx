@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
@@ -44,6 +46,7 @@ export function AchievementsDependent({
   const router = useRouter()
   const [views, setViews] = useState<AchievementView[]>(initialViews)
   const [claimingId, setClaimingId] = useState<string | null>(null)
+  const [sort, setSort] = useState('title:asc')
 
   // Realtime: quando o ADMIN aprova uma tarefa em outra aba, o progresso aqui
   // acompanha sozinho (e a página re-sincroniza o saldo no `router.refresh`).
@@ -86,6 +89,23 @@ export function AchievementsDependent({
       ),
     [views]
   )
+
+  const sortedViews = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (view: AchievementView) => {
+      switch (key) {
+        case 'points':
+          return view.achievement.reward_points
+        case 'target':
+          return view.achievement.target_count
+        case 'created':
+          return view.achievement.created_at
+        default:
+          return view.achievement.title
+      }
+    }
+    return sortBy(views, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [views, sort])
 
   useEffect(() => {
     setClaimableAchievements(hasClaimable)
@@ -151,8 +171,25 @@ export function AchievementsDependent({
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {views.map((view) => {
+    <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <SortSelect
+          value={sort}
+          onChange={setSort}
+          options={[
+            { value: 'title:asc', label: 'Título (A-Z)' },
+            { value: 'title:desc', label: 'Título (Z-A)' },
+            { value: 'points:desc', label: 'Mais pontos' },
+            { value: 'points:asc', label: 'Menos pontos' },
+            { value: 'target:asc', label: 'Meta (menor)' },
+            { value: 'target:desc', label: 'Meta (maior)' },
+            { value: 'created:desc', label: 'Mais recentes' },
+            { value: 'created:asc', label: 'Mais antigas' },
+          ]}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {sortedViews.map((view) => {
         const { achievement, progress } = view
 
         // Sigilosa revela **individualmente**, no desbloqueio dela: todas as
@@ -344,6 +381,7 @@ export function AchievementsDependent({
           </Card>
         )
       })}
+    </div>
     </div>
   )
 }

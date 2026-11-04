@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SortSelect } from '@/components/ui/sort-select'
+import { sortBy } from '@/utils/sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { useKeyAction } from '@/hooks/use-key-action'
@@ -108,6 +110,7 @@ export function AchievementsAdmin({
   const [achievements, setAchievements] = useState<Achievement[]>(
     initialAchievements
   )
+  const [sort, setSort] = useState('title:asc')
   const [progress, setProgress] = useState<AchievementProgressEntry[]>(
     initialProgress
   )
@@ -183,6 +186,23 @@ export function AchievementsAdmin({
     }
     return map
   }, [progress])
+
+  const sortedAchievements = useMemo(() => {
+    const [key, direction] = sort.split(':')
+    const getter = (achievement: Achievement) => {
+      switch (key) {
+        case 'points':
+          return achievement.reward_points
+        case 'target':
+          return achievement.target_count
+        case 'created':
+          return achievement.created_at
+        default:
+          return achievement.title
+      }
+    }
+    return sortBy(achievements, getter, direction === 'desc' ? 'desc' : 'asc')
+  }, [achievements, sort])
 
   // Ao abrir o form (criar ou editar), a tela rola até ele — que fica no topo da
   // lista, longe do card editado — e o foco cai no título, pronto para digitar.
@@ -703,7 +723,24 @@ export function AchievementsAdmin({
         </Card>
       ) : null}
 
-      {achievements.length === 0 ? (
+       <div className="flex justify-end">
+         <SortSelect
+           value={sort}
+           onChange={setSort}
+           options={[
+             { value: 'title:asc', label: 'Título (A-Z)' },
+             { value: 'title:desc', label: 'Título (Z-A)' },
+             { value: 'points:desc', label: 'Mais pontos' },
+             { value: 'points:asc', label: 'Menos pontos' },
+             { value: 'target:asc', label: 'Meta (menor)' },
+             { value: 'target:desc', label: 'Meta (maior)' },
+             { value: 'created:desc', label: 'Mais recentes' },
+             { value: 'created:asc', label: 'Mais antigas' },
+           ]}
+         />
+       </div>
+
+       {achievements.length === 0 ? (
         <Card className="border-dashed text-center">
           <div className="flex flex-col items-center gap-3 p-10">
             <span className="flex size-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
@@ -717,7 +754,7 @@ export function AchievementsAdmin({
         </Card>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          {achievements.map((achievement) => {
+          {sortedAchievements.map((achievement) => {
             const byProfile = progressMap.get(achievement.id)
             // **Ganho atual** de cada dependente: (pts base + nível) × multiplicador
             // (a mesma fórmula de `claimAchievementReward`), arredondado igual no
