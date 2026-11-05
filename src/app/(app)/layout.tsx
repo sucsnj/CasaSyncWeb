@@ -7,6 +7,7 @@ import {
   ADMIN_NAV_ITEMS,
   DEPENDENT_NAV_ITEMS,
 } from '@/components/dashboard/nav-items'
+import { NativeServiceWorkerGuard } from '@/components/pwa/native-sw-guard'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
@@ -119,6 +120,7 @@ export default async function AppLayout({
       />
       <RealtimeToastListener userId={user.id} />
       <PushNotificationsSetup userId={user.id} />
+      <NativeServiceWorkerGuard />
       <PushPermissionPrompt userId={user.id} />
       {!isAdmin ? (
         // Fila bloqueante única do dependente: comunicados publicados e alertas
