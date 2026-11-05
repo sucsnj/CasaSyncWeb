@@ -2,29 +2,35 @@ import webPush from 'web-push'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getApps, initializeApp, cert } from 'firebase-admin/app'
 import { getMessaging } from 'firebase-admin/messaging'
-
 function initFirebaseAdmin() {
   if (getApps().length) return
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY
-  if (privateKey) {
-    privateKey = privateKey.trim()
-    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-      privateKey = privateKey.slice(1, -1)
-    }
-    privateKey = privateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n')
-  }
   const projectId = process.env.FIREBASE_PROJECT_ID
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY ?? ''
+  privateKey = privateKey.trim()
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1)
+  }
+
   if (!projectId || !clientEmail || !privateKey) {
     console.error('[PUSH] Firebase Admin não configurado — push nativo desabilitado.')
     return
   }
-  try {
-    initializeApp({
-      credential: cert({ projectId, clientEmail, privateKey }),
-    })
-  } catch (err) {
-    console.error('[PUSH] Falha ao inicializar Firebase Admin:', err)
+
+  const candidates = [
+    privateKey.replace(/\\n/g, '\n'),
+    privateKey,
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      initializeApp({
+        credential: cert({ projectId, clientEmail, privateKey: candidate }),
+      })
+      return
+    } catch (err) {
+      console.error('[PUSH] Falha ao inicializar Firebase Admin:', err)
+    }
   }
 }
 
