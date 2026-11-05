@@ -12,15 +12,18 @@ function initFirebaseAdmin() {
     privateKey = privateKey.slice(1, -1)
   }
 
+  // Alguns provedores (Vercel) escapam a chave de formas diferentes.
+  const normalized = privateKey
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+
   if (!projectId || !clientEmail || !privateKey) {
     console.error('[PUSH] Firebase Admin não configurado — push nativo desabilitado.')
     return
   }
 
-  const candidates = [
-    privateKey.replace(/\\n/g, '\n'),
-    privateKey,
-  ]
+  const candidates = [normalized, privateKey]
 
   for (const candidate of candidates) {
     try {
