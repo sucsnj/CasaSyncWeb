@@ -5,16 +5,27 @@ import { getMessaging } from 'firebase-admin/messaging'
 
 function initFirebaseAdmin() {
   if (getApps().length) return
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY
+  if (privateKey) {
+    privateKey = privateKey.trim()
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.slice(1, -1)
+    }
+    privateKey = privateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n')
+  }
   const projectId = process.env.FIREBASE_PROJECT_ID
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
   if (!projectId || !clientEmail || !privateKey) {
     console.error('[PUSH] Firebase Admin não configurado — push nativo desabilitado.')
     return
   }
-  initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
-  })
+  try {
+    initializeApp({
+      credential: cert({ projectId, clientEmail, privateKey }),
+    })
+  } catch (err) {
+    console.error('[PUSH] Falha ao inicializar Firebase Admin:', err)
+  }
 }
 
 export type PushPayload = {
