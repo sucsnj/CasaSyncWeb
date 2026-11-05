@@ -35,6 +35,7 @@ export function usePushNotifications(userId: string | undefined) {
 
     // Web Push (fluxo existente)
     if (!('serviceWorker' in navigator)) return
+    if (typeof Notification === 'undefined') return
 
     async function setupPush() {
       try {

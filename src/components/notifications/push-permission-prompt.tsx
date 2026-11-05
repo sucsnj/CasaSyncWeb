@@ -12,6 +12,10 @@ export function PushPermissionPrompt({ userId }: { userId: string | undefined })
 
   if (dismissed || !userId || typeof window === 'undefined') return null
 
+  // No ambiente nativo (Capacitor) não existe `Notification` global da Web;
+  // o prompt nativo é disparado pelo hook de push.
+  if (typeof Notification === 'undefined') return null
+
   // Se já tem permissão concedida ou negada permanentemente, não mostra
   if (Notification.permission !== 'default') return null
 
