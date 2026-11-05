@@ -70,8 +70,54 @@ export async function registerPushSubscription(
 }
 
 /**
- * Remove uma push subscription específica do usuário (logout, revogação).
+ * Registra um token nativo (FCM) do usuário autenticado.
  */
+export async function registerPushToken(
+  provider: 'WEB_PUSH' | 'FCM_NATIVE',
+  token: string
+): Promise<ActionResult> {
+  const { user, profile } = await getSessionProfile()
+  if (!user) return { ok: false, error: 'Autenticação necessária.' }
+
+  const house = await (async () => {
+    if (profile?.user_role === 'ADMIN') {
+      const { getActiveAdminHouse } = await import('@/utils/house')
+      return getActiveAdminHouse()
+    } else {
+      const { getDependentHouse } = await import('@/utils/house')
+      return getDependentHouse(user.id)
+    }
+  })()
+
+  if (!house) return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch {
+    return { ok: false, error: 'Configuração do servidor indisponível.' }
+  }
+
+  await getPushTable(admin).delete().eq('user_id', user.id).eq('token', token)
+
+  const { error } = await getPushTable(admin).insert({
+    user_id: user.id,
+    house_id: house.id,
+    provider,
+    token,
+    endpoint: token,
+    p256dh: null,
+    auth: null,
+    user_agent: null,
+  })
+
+  if (error) {
+    console.error('Push token register error:', error)
+    return { ok: false, error: 'Falha ao registrar token.' }
+  }
+
+  return { ok: true }
+}
 export async function unregisterPushSubscription(endpoint: string): Promise<ActionResult> {
   const { user } = await getSessionProfile()
   if (!user) return { ok: false, error: 'Autenticação necessária.' }

@@ -1,5 +1,21 @@
 import webPush from 'web-push'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { getApps, initializeApp, cert } from 'firebase-admin/app'
+import { getMessaging } from 'firebase-admin/messaging'
+
+function initFirebaseAdmin() {
+  if (getApps().length) return
+  const projectId = process.env.FIREBASE_PROJECT_ID
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error('[PUSH] Firebase Admin não configurado — push nativo desabilitado.')
+    return
+  }
+  initializeApp({
+    credential: cert({ projectId, clientEmail, privateKey }),
+  })
+}
 
 export type PushPayload = {
   title: string
@@ -17,13 +33,15 @@ type PushResult = { sent: number; failed: number }
 type PushSubscriptionRow = {
   id: string
   endpoint: string
-  p256dh: string
-  auth: string
+  p256dh: string | null
+  auth: string | null
+  provider: string | null
+  token: string | null
 }
 
 export const PUSH_TABLE = 'push_subscriptions' as const
 
-const PUSH_TABLE_SELECT = 'id, endpoint, p256dh, auth' as const
+const PUSH_TABLE_SELECT = 'id, endpoint, p256dh, auth, provider, token' as const
 
 const DEFAULT_VAPID_SUBJECT = 'mailto:casasync@example.com'
 
@@ -127,10 +145,34 @@ export async function sendPushNotification(
   const results = await Promise.allSettled(
     subs.map(async (sub) => {
       try {
+        if (sub.provider === 'FCM_NATIVE' && sub.token) {
+          initFirebaseAdmin()
+          const apps = getApps()
+          if (!apps.length) {
+            return { ok: false as const, report: '[PUSH ERROR] Firebase Admin not configured' }
+          }
+          try {
+            const messageId = await getMessaging().send({
+              token: sub.token,
+              notification: {
+                title: JSON.parse(payloadString).title,
+                body: JSON.parse(payloadString).body,
+              },
+              data: JSON.parse(payloadString).data ?? {},
+            })
+            console.log(`[PUSH SUCCESS] FCM ${targetUserId} | MessageId: ${messageId}`)
+            return { ok: true as const, report: '[PUSH SUCCESS] 200' }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error(`[PUSH ERROR] FCM ${targetUserId} | ${message}`)
+            return { ok: false as const, report: `[PUSH ERROR] ${message}` }
+          }
+        }
+
         const result = await webPush.sendNotification(
           {
             endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
+            keys: { p256dh: sub.p256dh ?? '', auth: sub.auth ?? '' },
           },
           payloadString
         )

@@ -1,46 +1,61 @@
 'use client'
 
 import { useEffect } from 'react'
-import { subscribeToPush, subscriptionToJSON } from '@/utils/push'
-import { registerPushSubscription, unregisterAllPushSubscriptions } from '@/actions/push'
+import { Capacitor } from '@capacitor/core'
+import { registerPushSubscription, registerPushToken } from '@/actions/push'
 
 export function usePushNotifications(userId: string | undefined) {
   useEffect(() => {
-    if (!userId || typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return
-    }
+    if (!userId || typeof window === 'undefined') return
 
     let mounted = true
+
+    if (Capacitor.isNativePlatform()) {
+      void (async () => {
+        const { PushNotifications } = await import('@capacitor/push-notifications')
+        const perm = await PushNotifications.requestPermissions()
+        if (!mounted || perm.receive !== 'granted') return
+
+        await PushNotifications.register()
+
+        PushNotifications.addListener('registration', async (token) => {
+          if (!mounted) return
+          await registerPushToken('FCM_NATIVE', token.value)
+        })
+
+        PushNotifications.addListener('pushNotificationReceived', (notification) => {
+          console.log('FCM received:', notification)
+        })
+      })()
+
+      return () => {
+        mounted = false
+      }
+    }
+
+    // Web Push (fluxo existente)
+    if (!('serviceWorker' in navigator)) return
 
     async function setupPush() {
       try {
         const registration = await navigator.serviceWorker.ready
+        const { subscribeToPush, subscriptionToJSON } = await import('@/utils/push')
         const subscription = await subscribeToPush(registration)
-
-        if (!mounted) return
-
-        if (subscription) {
-          const subJson = subscriptionToJSON(subscription)
-          const result = await registerPushSubscription(
-            subJson.endpoint,
-            subJson.keys.p256dh,
-            subJson.keys.auth,
-            navigator.userAgent
-          )
-          if (!result.ok) {
-            console.warn('Failed to register push subscription:', result.error)
-          }
-        }
+        if (!mounted || !subscription) return
+        const subJson = subscriptionToJSON(subscription)
+        await registerPushSubscription(
+          subJson.endpoint,
+          subJson.keys.p256dh,
+          subJson.keys.auth,
+          navigator.userAgent
+        )
       } catch (err) {
         console.error('Push setup error:', err)
       }
     }
 
-    // Só subscreve se a permissão JÁ está concedida. O pedido de permissão
-    // acontece no botão do PushPermissionPrompt (gesto real do usuário) —
-    // no Android, requestPermission() fora de gesto é auto-negado em silêncio.
     if (Notification.permission === 'granted') {
-      setupPush()
+      void setupPush()
     }
 
     return () => {
@@ -48,22 +63,27 @@ export function usePushNotifications(userId: string | undefined) {
     }
   }, [userId])
 
-  // Pede permissão (exige gesto) e subscreve/registra assim que concedida.
-  // Chamado pelo botão "Ativar" do PushPermissionPrompt.
   async function enablePush(): Promise<boolean> {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return false
+    if (typeof window === 'undefined') return false
 
+    if (Capacitor.isNativePlatform()) {
+      const { PushNotifications } = await import('@capacitor/push-notifications')
+      const perm = await PushNotifications.requestPermissions()
+      if (perm.receive !== 'granted') return false
+      await PushNotifications.register()
+      return true
+    }
+
+    if (!('serviceWorker' in navigator)) return false
     try {
       if (Notification.permission !== 'granted') {
         const permission = await Notification.requestPermission()
         if (permission !== 'granted') return false
       }
-
       const registration = await navigator.serviceWorker.ready
+      const { subscribeToPush, subscriptionToJSON } = await import('@/utils/push')
       const subscription = await subscribeToPush(registration)
-
       if (!subscription) return false
-
       const subJson = subscriptionToJSON(subscription)
       const result = await registerPushSubscription(
         subJson.endpoint,
@@ -71,27 +91,26 @@ export function usePushNotifications(userId: string | undefined) {
         subJson.keys.auth,
         navigator.userAgent
       )
-      if (!result.ok) {
-        console.warn('Failed to register push subscription:', result.error)
-        return false
-      }
-      return true
+      return result.ok
     } catch (err) {
       console.error('Enable push error:', err)
       return false
     }
   }
 
-  // Função para o usuário desativar push manualmente (ex: nas configurações)
   async function disablePush() {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
-
+    if (typeof window === 'undefined') return
+    if (Capacitor.isNativePlatform()) {
+      const { PushNotifications } = await import('@capacitor/push-notifications')
+      await PushNotifications.removeAllListeners()
+      return
+    }
+    if (!('serviceWorker' in navigator)) return
     try {
       const registration = await navigator.serviceWorker.ready
       const subscription = await registration.pushManager.getSubscription()
-      if (subscription) {
-        await subscription.unsubscribe()
-      }
+      if (subscription) await subscription.unsubscribe()
+      const { unregisterAllPushSubscriptions } = await import('@/actions/push')
       await unregisterAllPushSubscriptions()
     } catch (err) {
       console.error('Disable push error:', err)
