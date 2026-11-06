@@ -52,44 +52,44 @@ function toHtml(text: string): string {
   for (const part of parts) {
     if (part.length >= 4 && part.startsWith('**') && part.endsWith('**')) {
       html +=
-        `<span style="${MARKER_STYLE}">**</span>` +
+        `<span contenteditable="false" style="${MARKER_STYLE}">**</span>` +
         `<strong>${escapeHtml(part.slice(2, -2))}</strong>` +
-        `<span style="${MARKER_STYLE}">**</span>`
+        `<span contenteditable="false" style="${MARKER_STYLE}">**</span>`
     } else if (part.length >= 3 && part.startsWith('*') && part.endsWith('*')) {
       html +=
-        `<span style="${MARKER_STYLE}">*</span>` +
+        `<span contenteditable="false" style="${MARKER_STYLE}">*</span>` +
         `<strong>${escapeHtml(part.slice(1, -1))}</strong>` +
-        `<span style="${MARKER_STYLE}">*</span>`
+        `<span contenteditable="false" style="${MARKER_STYLE}">*</span>`
     } else if (part.length >= 3 && part.startsWith('_') && part.endsWith('_')) {
       html +=
-        `<span style="${MARKER_STYLE}">_</span>` +
+        `<span contenteditable="false" style="${MARKER_STYLE}">_</span>` +
         `<u>${escapeHtml(part.slice(1, -1))}</u>` +
-        `<span style="${MARKER_STYLE}">_</span>`
+        `<span contenteditable="false" style="${MARKER_STYLE}">_</span>`
     } else if (part.length >= 3 && part.startsWith('-') && part.endsWith('-')) {
       html +=
-        `<span style="${MARKER_STYLE}">-</span>` +
+        `<span contenteditable="false" style="${MARKER_STYLE}">-</span>` +
         `<s>${escapeHtml(part.slice(1, -1))}</s>` +
-        `<span style="${MARKER_STYLE}">-</span>`
+        `<span contenteditable="false" style="${MARKER_STYLE}">-</span>`
     } else if (part.length >= 3 && part.startsWith('`') && part.endsWith('`')) {
       html +=
-        `<span style="${MARKER_STYLE}">\`</span>` +
+        `<span contenteditable="false" style="${MARKER_STYLE}">\`</span>` +
         `<code style="background:#f1f5f9;padding:0 4px;border-radius:4px;font-family:monospace;font-size:0.9em">${escapeHtml(
           part.slice(1, -1)
         )}</code>` +
-        `<span style="${MARKER_STYLE}">\`</span>`
+        `<span contenteditable="false" style="${MARKER_STYLE}">\`</span>`
     } else {
       const colorMatch = part.match(/^&([1-4])([^&]*)&$/)
       if (colorMatch) {
         html +=
-          `<span style="${MARKER_STYLE}">${escapeHtml('&' + colorMatch[1])}</span>` +
+          `<span contenteditable="false" style="${MARKER_STYLE}">${escapeHtml('&' + colorMatch[1])}</span>` +
           `<span style="${COLOR[colorMatch[1]]}">${escapeHtml(colorMatch[2])}</span>` +
-          `<span style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
+          `<span contenteditable="false" style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
       } else if (part.length >= 3 && part.startsWith('%') && part.endsWith('%')) {
         const bg = part[1] === '1' ? '#fecaca' : '#bbf7d0'
         html +=
-          `<span style="${MARKER_STYLE}">%</span>` +
+          `<span contenteditable="false" style="${MARKER_STYLE}">%</span>` +
           `<span style="background-color:${bg};border-radius:4px;padding:0 2px">${escapeHtml(part.slice(2, -1))}</span>` +
-          `<span style="${MARKER_STYLE}">%</span>`
+          `<span contenteditable="false" style="${MARKER_STYLE}">%</span>`
       } else {
         html += escapeHtml(part)
       }
