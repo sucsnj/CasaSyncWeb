@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 
 const TOKEN_RE =
-  /(\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&)/g
+  /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&)/g
 
 const COLOR_CLASS: Record<string, string> = {
   '1': 'text-red-600',
@@ -17,6 +17,9 @@ const COLOR_CLASS: Record<string, string> = {
  */
 export function parseRichText(text: string): ReactNode[] {
   return text.split(TOKEN_RE).map((part, index) => {
+    if (part.length >= 4 && part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>
+    }
     if (part.length >= 3 && part.startsWith('*') && part.endsWith('*')) {
       return <strong key={index}>{part.slice(1, -1)}</strong>
     }

@@ -46,11 +46,16 @@ const COLOR: Record<string, string> = {
 
 function toHtml(text: string): string {
   const TOKEN_RE =
-    /(\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&)/g
+    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&)/g
   const parts = text.split(TOKEN_RE)
   let html = ''
   for (const part of parts) {
-    if (part.length >= 3 && part.startsWith('*') && part.endsWith('*')) {
+    if (part.length >= 4 && part.startsWith('**') && part.endsWith('**')) {
+      html +=
+        `<span style="${MARKER_STYLE}">**</span>` +
+        `<strong>${escapeHtml(part.slice(2, -2))}</strong>` +
+        `<span style="${MARKER_STYLE}">**</span>`
+    } else if (part.length >= 3 && part.startsWith('*') && part.endsWith('*')) {
       html +=
         `<span style="${MARKER_STYLE}">*</span>` +
         `<strong>${escapeHtml(part.slice(1, -1))}</strong>` +
