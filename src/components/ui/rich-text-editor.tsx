@@ -35,7 +35,7 @@ function escapeHtml(text: string): string {
  * Converte o texto com marcação em HTML, ocultando os caracteres especiais
  * (font-size 0) e aplicando a formatação. Quebras de linha são preservadas.
  */
-const MARKER_STYLE = 'font-size:0;line-height:0;display:inline-block;overflow:hidden'
+const MARKER_STYLE = 'font-size:0;line-height:0;display:inline-block;overflow:hidden;user-select:none;pointer-events:none'
 
 const COLOR: Record<string, string> = {
   '1': 'color:#dc2626',
@@ -46,50 +46,51 @@ const COLOR: Record<string, string> = {
 
 function toHtml(text: string): string {
   const TOKEN_RE =
-    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+?%)/g
+    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&1[12][^&\n]*?&|&[1-4][^&\n]*?&)/g
   const parts = text.split(TOKEN_RE)
   let html = ''
   for (const part of parts) {
     if (part.length >= 4 && part.startsWith('**') && part.endsWith('**')) {
       html +=
-        `<span contenteditable="false" style="${MARKER_STYLE}">**</span>` +
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">**</span>` +
         `<strong>${escapeHtml(part.slice(2, -2))}</strong>` +
-        `<span contenteditable="false" style="${MARKER_STYLE}">**</span>`
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">**</span>`
     } else if (part.length >= 3 && part.startsWith('*') && part.endsWith('*')) {
       html +=
-        `<span contenteditable="false" style="${MARKER_STYLE}">*</span>` +
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">*</span>` +
         `<strong>${escapeHtml(part.slice(1, -1))}</strong>` +
-        `<span contenteditable="false" style="${MARKER_STYLE}">*</span>`
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">*</span>`
     } else if (part.length >= 3 && part.startsWith('_') && part.endsWith('_')) {
       html +=
-        `<span contenteditable="false" style="${MARKER_STYLE}">_</span>` +
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">_</span>` +
         `<u>${escapeHtml(part.slice(1, -1))}</u>` +
-        `<span contenteditable="false" style="${MARKER_STYLE}">_</span>`
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">_</span>`
     } else if (part.length >= 3 && part.startsWith('-') && part.endsWith('-')) {
       html +=
-        `<span contenteditable="false" style="${MARKER_STYLE}">-</span>` +
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">-</span>` +
         `<s>${escapeHtml(part.slice(1, -1))}</s>` +
-        `<span contenteditable="false" style="${MARKER_STYLE}">-</span>`
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">-</span>`
     } else if (part.length >= 3 && part.startsWith('`') && part.endsWith('`')) {
       html +=
-        `<span contenteditable="false" style="${MARKER_STYLE}">\`</span>` +
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">\`</span>` +
         `<code style="background:#f1f5f9;padding:0 4px;border-radius:4px;font-family:monospace;font-size:0.9em">${escapeHtml(
           part.slice(1, -1)
         )}</code>` +
-        `<span contenteditable="false" style="${MARKER_STYLE}">\`</span>`
+        `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">\`</span>`
     } else {
+      const bgMatch = part.match(/^&(1[12])([^&]*)&$/)
       const colorMatch = part.match(/^&([1-4])([^&]*)&$/)
-      if (colorMatch) {
+      if (bgMatch) {
+        const bg = bgMatch[1] === '11' ? '#fecaca' : '#bbf7d0'
         html +=
-          `<span contenteditable="false" style="${MARKER_STYLE}">${escapeHtml('&' + colorMatch[1])}</span>` +
+          `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">${escapeHtml('&' + bgMatch[1])}</span>` +
+          `<span style="background-color:${bg};border-radius:4px;padding:0 2px">${escapeHtml(bgMatch[2])}</span>` +
+          `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
+      } else if (colorMatch) {
+        html +=
+          `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">${escapeHtml('&' + colorMatch[1])}</span>` +
           `<span style="${COLOR[colorMatch[1]]}">${escapeHtml(colorMatch[2])}</span>` +
-          `<span contenteditable="false" style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
-      } else if (part.length >= 3 && part.startsWith('%') && part.endsWith('%')) {
-        const bg = part[1] === '1' ? '#fecaca' : '#bbf7d0'
-        html +=
-          `<span contenteditable="false" style="${MARKER_STYLE}">%</span>` +
-          `<span style="background-color:${bg};border-radius:4px;padding:0 2px">${escapeHtml(part.slice(2, -1))}</span>` +
-          `<span contenteditable="false" style="${MARKER_STYLE}">%</span>`
+          `<span contenteditable="false" aria-hidden="true" style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
       } else {
         html += escapeHtml(part)
       }

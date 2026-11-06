@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 
 const TOKEN_RE =
-  /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+?%)/g
+  /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&1[12][^&\n]*?&|&[1-4][^&\n]*?&)/g
 
 const COLOR_CLASS: Record<string, string> = {
   '1': 'text-red-600',
@@ -39,19 +39,20 @@ export function parseRichText(text: string): ReactNode[] {
         </code>
       )
     }
+    const bgMatch = part.match(/^&(1[12])([^&]*)&$/)
+    if (bgMatch) {
+      const color = bgMatch[1] === '11' ? 'bg-red-200' : 'bg-green-200'
+      return (
+        <span key={index} className={`${color} rounded px-0.5`}>
+          {bgMatch[2]}
+        </span>
+      )
+    }
     const colorMatch = part.match(/^&([1-4])([^&]*)&$/)
     if (colorMatch) {
       return (
         <span key={index} className={COLOR_CLASS[colorMatch[1]]}>
           {colorMatch[2]}
-        </span>
-      )
-    }
-    if (part.length >= 3 && part.startsWith('%') && part.endsWith('%')) {
-      const color = part[1] === '1' ? 'bg-red-200' : 'bg-green-200'
-      return (
-        <span key={index} className={`${color} rounded px-0.5`}>
-          {part.slice(2, -1)}
         </span>
       )
     }
