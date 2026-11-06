@@ -6,6 +6,7 @@ import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
@@ -77,8 +78,8 @@ export function TasksDependent({
     setSyncedChestItems(chestItems)
     setChestItemsMap(chestItems)
   }
-  const [sortOpen, setSortOpen] = useState('created:desc')
-  const [sortDone, setSortDone] = useState('created:desc')
+  const [sortOpen, setSortOpen] = usePersistedSort('sort:tasks-dependent:open', 'created:desc')
+  const [sortDone, setSortDone] = usePersistedSort('sort:tasks-dependent:done', 'created:desc')
   const [error, setError] = useState<string | null>(null)
   const [extendingTask, setExtendingTask] = useState<Task | null>(null)
   const [extensionError, setExtensionError] = useState<string | null>(null)

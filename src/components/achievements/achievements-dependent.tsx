@@ -7,6 +7,7 @@ import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { claimAchievementReward } from '@/actions/achievements'
 import {
@@ -46,7 +47,7 @@ export function AchievementsDependent({
   const router = useRouter()
   const [views, setViews] = useState<AchievementView[]>(initialViews)
   const [claimingId, setClaimingId] = useState<string | null>(null)
-  const [sort, setSort] = useState('title:asc')
+  const [sort, setSort] = usePersistedSort('sort:achievements-dependent', 'title:asc')
 
   // Realtime: quando o ADMIN aprova uma tarefa em outra aba, o progresso aqui
   // acompanha sozinho (e a página re-sincroniza o saldo no `router.refresh`).

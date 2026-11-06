@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { Package, Search } from 'lucide-react'
 import { TaskAttachmentView } from '@/components/tasks/task-attachment-view'
 import { CardColumns } from '@/components/ui/card-columns'
@@ -41,7 +42,7 @@ export function ChestDependent({
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('created:desc')
+  const [sort, setSort] = usePersistedSort('sort:chest-dependent', 'created:desc')
 
   // O componente é montado com `key={house.id}`, então a troca de casa já
   // remonta. O que ainda precisa é pegar a prop nova quando ela chega no mesmo

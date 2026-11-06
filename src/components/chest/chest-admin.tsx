@@ -24,6 +24,7 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { useKeyAction } from '@/hooks/use-key-action'
 import {
   CHEST_ITEM_FOLDER,
@@ -81,7 +82,7 @@ export function ChestAdmin({
 }) {
   const [items, setItems] = useState(initialItems)
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('created:desc')
+  const [sort, setSort] = usePersistedSort('sort:chest-admin', 'created:desc')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)

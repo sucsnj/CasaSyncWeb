@@ -6,6 +6,7 @@ import { Minus, Pencil, Plus, RotateCcw, Trash2, Trophy, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { useKeyAction } from '@/hooks/use-key-action'
@@ -110,7 +111,7 @@ export function AchievementsAdmin({
   const [achievements, setAchievements] = useState<Achievement[]>(
     initialAchievements
   )
-  const [sort, setSort] = useState('title:asc')
+  const [sort, setSort] = usePersistedSort('sort:achievements-admin', 'title:asc')
   const [progress, setProgress] = useState<AchievementProgressEntry[]>(
     initialProgress
   )

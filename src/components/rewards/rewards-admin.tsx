@@ -28,6 +28,7 @@ import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'luc
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -104,8 +105,8 @@ export function RewardsAdmin({
   const [editingReward, setEditingReward] = useState<Reward | null>(null)
   const [editImageUrl, setEditImageUrl] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [sortCatalog, setSortCatalog] = useState('title:asc')
-  const [sortHistory, setSortHistory] = useState('created:desc')
+  const [sortCatalog, setSortCatalog] = usePersistedSort('sort:rewards-admin:catalog', 'title:asc')
+  const [sortHistory, setSortHistory] = usePersistedSort('sort:rewards-admin:history', 'created:desc')
 
   const { isExpanded, isHydrated, toggle, expand } = useExpandedIds({
     storageKey: `casasync:expanded:rewards-admin:${houseId}`,

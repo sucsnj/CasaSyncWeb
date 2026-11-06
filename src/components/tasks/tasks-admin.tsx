@@ -15,6 +15,7 @@ import {
 } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { useKeyAction } from '@/hooks/use-key-action'
@@ -139,8 +140,8 @@ export function TasksAdmin({
     setSyncedChestItems(chestItems)
     setChestItemsMap(chestItems)
   }
-  const [sortPending, setSortPending] = useState('created:desc')
-  const [sortApproved, setSortApproved] = useState('created:desc')
+  const [sortPending, setSortPending] = usePersistedSort('sort:tasks-admin:pending', 'created:desc')
+  const [sortApproved, setSortApproved] = usePersistedSort('sort:tasks-admin:approved', 'created:desc')
   const [pending, startTransition] = useTransition()
   const [showTaskForm, setShowTaskForm] = useState(false)
 

@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { parseRichText } from '@/components/ui/rich-text'
 import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -104,7 +105,7 @@ export function RewardsDependent({
     null
   )
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('title:asc')
+  const [sort, setSort] = usePersistedSort('sort:rewards-dependent', 'title:asc')
 
   const { isExpanded, isHydrated, toggle } = useExpandedIds({
     storageKey: `casasync:expanded:rewards:${houseId}`,
