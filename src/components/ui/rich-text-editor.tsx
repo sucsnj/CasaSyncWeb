@@ -46,7 +46,7 @@ const COLOR: Record<string, string> = {
 
 function toHtml(text: string): string {
   const TOKEN_RE =
-    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&)/g
+    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+%)/g
   const parts = text.split(TOKEN_RE)
   let html = ''
   for (const part of parts) {
@@ -84,6 +84,12 @@ function toHtml(text: string): string {
           `<span style="${MARKER_STYLE}">${escapeHtml('&' + colorMatch[1])}</span>` +
           `<span style="${COLOR[colorMatch[1]]}">${escapeHtml(colorMatch[2])}</span>` +
           `<span style="${MARKER_STYLE}">${escapeHtml('&')}</span>`
+      } else if (part.length >= 3 && part.startsWith('%') && part.endsWith('%')) {
+        const bg = part[1] === '1' ? '#fecaca' : '#bbf7d0'
+        html +=
+          `<span style="${MARKER_STYLE}">%</span>` +
+          `<span style="background-color:${bg};border-radius:4px;padding:0 2px">${escapeHtml(part.slice(2, -1))}</span>` +
+          `<span style="${MARKER_STYLE}">%</span>`
       } else {
         html += escapeHtml(part)
       }
