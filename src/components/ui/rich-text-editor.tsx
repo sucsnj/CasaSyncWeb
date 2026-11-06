@@ -46,7 +46,7 @@ const COLOR: Record<string, string> = {
 
 function toHtml(text: string): string {
   const TOKEN_RE =
-    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+%)/g
+    /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+?%)/g
   const parts = text.split(TOKEN_RE)
   let html = ''
   for (const part of parts) {

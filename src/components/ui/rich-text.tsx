@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 
 const TOKEN_RE =
-  /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+%)/g
+  /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|-[^-\n]+-|`[^`\n]+`|&[1-4][^&\n]*?&|%[12][^%\n]+?%)/g
 
 const COLOR_CLASS: Record<string, string> = {
   '1': 'text-red-600',
