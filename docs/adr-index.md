@@ -26,4 +26,4 @@
 | ADR-0024 | Baú da casa — acervo de arquivos por casa | Aceito | docs/adr/0024-bau-da-casa.md |
 | ADR-0025 | Anexo HTML servido em origem opaca, com aviso e fricção antes de abrir | Aceito | docs/adr/0025-html-anexo-aviso-e-fricao.md |
 | ADR-0026 | Anexos da casa ligáveis/desligáveis, com PIN do sistema | Aceito | docs/adr/0026-anexos-da-casa-com-pin-do-sistema.md |
-| ADR-0027 | Anexos por peso (orçamento em bytes), réplica do baú na tarefa e teto de 5 MB no bucket | Aceito | docs/adr/0027-anexos-por-peso-replica-do-bau-e-teto-de-5mb.md |
+| ADR-0028 | Capacitor e push híbrido (Web Push + FCM nativo) | Aceito | docs/adr/0028-capacitor-e-push-hibrido.md |

@@ -20,5 +20,10 @@
 - **Realtime:** Hooks `use-postgres-changes.ts` e `use-profile-points.ts`. Exigem `getSession()` + `realtime.setAuth(access_token)` **antes** de assinar (evita falha silenciosa de RLS).
 - **Datas & Fuso:** Prazos aceitam apenas strings ISO com fuso (`normalizeDueDate`). O cliente usa `datetimeLocalToIso`. Exibição sempre via `FormattedDateTime` para evitar hydration mismatch entre SSR e browser.
 
-## Anexos e Mídia
-- Para detalhes sobre CSP, sandbox, brechas e mitigações de anexos, consulte docs/seguranca-anexos.md.
+## Capacitor & Push Nativo
+- **Empacotamento:** Capacitor aponta para a URL remota da Vercel (`server.url` em `capacitor.config.ts`); `webDir` é `out/` (placeholder).
+- **Push híbrido:** `usePushNotifications` detecta `Capacitor.isNativePlatform()`:
+  - Nativo: FCM via `@capacitor/push-notifications`, token salvo em `push_subscriptions` com `provider = 'FCM_NATIVE'`.
+  - Web: Web Push (VAPID) existente.
+- **Backend:** `push-service.ts` bifurca o envio por `provider`: Web Push (VAPID) e FCM (Firebase Admin HTTP v1).
+- **Android:** permissões `INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE`, `WAKE_LOCK`; `google-services.json` em `android/app/`; ícone de notificação `ic_stat_ic_notification` (vector drawable).
