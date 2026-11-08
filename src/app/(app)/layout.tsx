@@ -8,6 +8,7 @@ import {
   DEPENDENT_NAV_ITEMS,
 } from '@/components/dashboard/nav-items'
 import { NativeServiceWorkerGuard } from '@/components/pwa/native-sw-guard'
+import { AndroidBackButton } from '@/components/pwa/android-back-button'
 import { PullToRefresh } from '@/components/pwa/pull-to-refresh'
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
@@ -122,6 +123,7 @@ export default async function AppLayout({
       <RealtimeToastListener userId={user.id} />
       <PushNotificationsSetup userId={user.id} />
       <NativeServiceWorkerGuard />
+      <AndroidBackButton />
       <PullToRefresh />
       <PushPermissionPrompt userId={user.id} />
       {!isAdmin ? (
