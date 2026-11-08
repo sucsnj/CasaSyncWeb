@@ -647,7 +647,7 @@ export function RewardsDependent({
                     {redemption.rewardTitle}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {redemption.points_cost} pts ·{' '}
+                    {rewardById.get(redemption.reward_id)?.points_cost ?? redemption.points_cost} pts ·{' '}
                     <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
                   </p>
                 </div>

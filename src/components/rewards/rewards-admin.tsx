@@ -879,7 +879,7 @@ export function RewardsAdmin({
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-                      {redemption.points_cost} pts
+                      {rewardById.get(redemption.reward_id)?.points_cost ?? redemption.points_cost} pts
                     </span>{' '}
                     ·{' '}
                     <FormattedDateTime iso={redemption.created_at} />
@@ -945,7 +945,7 @@ export function RewardsAdmin({
                     {redemption.dependentName} · {redemption.rewardTitle}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {redemption.points_cost} pts · tratado em{' '}
+                    {rewardById.get(redemption.reward_id)?.points_cost ?? redemption.points_cost} pts · tratado em{' '}
                     <FormattedDateTime iso={getRedemptionDisplayDate(redemption)} />
                   </p>
                 </div>
