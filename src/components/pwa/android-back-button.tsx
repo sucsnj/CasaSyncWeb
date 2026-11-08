@@ -18,10 +18,12 @@ export function AndroidBackButton() {
           path === '/dashboard/admin' ||
           path === '/dashboard/dependent'
 
-        if (!isRoot && canGoBack) {
-          window.history.back()
-        } else {
+        console.log('[BACK] path=', path, 'canGoBack=', canGoBack, 'isRoot=', isRoot)
+
+        if (isRoot || !canGoBack) {
           App.exitApp()
+        } else {
+          window.history.back()
         }
       })
       remove = () => {
