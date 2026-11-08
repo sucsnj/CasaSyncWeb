@@ -10,28 +10,32 @@ export function AndroidBackButton() {
     let remove: (() => void) | undefined
 
     void (async () => {
-      const { App } = await import('@capacitor/app')
-      const handle = await App.addListener('backButton', ({ canGoBack }) => {
-        const path = window.location.pathname
-        const isRoot =
-          path === '/' ||
-          path === '/login' ||
-          /^\/dashboard\/[^/]+$/.test(path) ||
-          path === '/tasks' ||
-          path === '/rewards' ||
-          path === '/achievements' ||
-          path === '/chest'
+      try {
+        const { App } = await import('@capacitor/app')
+        console.log('[BACK] registering listener')
+        const handle = await App.addListener('backButton', ({ canGoBack }) => {
+          const path = window.location.pathname.replace(/\/$/, '')
+          const isDefaultRoute =
+            path === '' ||
+            path === '/' ||
+            path === '/dashboard/admin' ||
+            path === '/dashboard/dependent'
 
-        console.log('[BACK] path=', path, 'canGoBack=', canGoBack, 'isRoot=', isRoot)
+          console.log('[BACK] path=', path, 'canGoBack=', canGoBack, 'isDefaultRoute=', isDefaultRoute)
 
-        if (isRoot || !canGoBack) {
-          App.exitApp()
-        } else {
-          window.history.back()
+          if (isDefaultRoute) {
+            App.exitApp()
+          } else if (canGoBack) {
+            window.history.back()
+          } else {
+            App.exitApp()
+          }
+        })
+        remove = () => {
+          void handle.remove()
         }
-      })
-      remove = () => {
-        void handle.remove()
+      } catch (err) {
+        console.error('[BACK] failed to register', err)
       }
     })()
 
