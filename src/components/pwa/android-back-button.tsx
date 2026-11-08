@@ -12,7 +12,13 @@ export function AndroidBackButton() {
     void (async () => {
       const { App } = await import('@capacitor/app')
       const handle = await App.addListener('backButton', ({ canGoBack }) => {
-        if (canGoBack) {
+        const path = window.location.pathname
+        const isRoot =
+          path === '/' ||
+          path === '/dashboard/admin' ||
+          path === '/dashboard/dependent'
+
+        if (!isRoot && canGoBack) {
           window.history.back()
         } else {
           App.exitApp()
