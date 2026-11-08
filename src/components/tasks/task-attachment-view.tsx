@@ -11,6 +11,8 @@ import {
   Paperclip,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Capacitor } from '@capacitor/core'
+import { openAttachment } from '@/utils/open-attachment'
 import {
   attachmentKind,
   attachmentKindLabel,
@@ -133,6 +135,12 @@ export function TaskAttachmentView({
     return (
       <a
         {...openProps}
+        onClick={(event) => {
+          if (Capacitor.isNativePlatform()) {
+            event.preventDefault()
+            void openAttachment(openProps.href)
+          }
+        }}
         title={`Abrir ${label} em uma nova aba`}
         className="block w-full overflow-hidden rounded-xl border border-slate-200 transition-opacity hover:opacity-90"
       >
@@ -154,6 +162,12 @@ export function TaskAttachmentView({
   return (
     <a
       {...openProps}
+      onClick={(event) => {
+        if (Capacitor.isNativePlatform()) {
+          event.preventDefault()
+          void openAttachment(openProps.href)
+        }
+      }}
       title={
         kind === 'link'
           ? `${url}\n\nAbrir em uma nova aba`

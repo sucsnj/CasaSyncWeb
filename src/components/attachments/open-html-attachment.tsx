@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Capacitor } from '@capacitor/core'
+import { openAttachment } from '@/utils/open-attachment'
 
 /** Janela de fricção antes de liberar o botão (ADR-0025). */
 const COUNTDOWN_SECONDS = 3
@@ -57,7 +59,17 @@ export function OpenHtmlAttachment({
       <div aria-live="polite">
         {ready ? (
           <Button asChild className="w-full">
-            <a href={href}>🔵 Abrir Arquivo</a>
+            <a
+              href={href}
+              onClick={(event) => {
+                if (Capacitor.isNativePlatform()) {
+                  event.preventDefault()
+                  void openAttachment(href)
+                }
+              }}
+            >
+              📄 Abrir Arquivo
+            </a>
           </Button>
         ) : (
           <Button disabled className="w-full">
