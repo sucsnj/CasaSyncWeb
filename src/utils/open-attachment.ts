@@ -7,11 +7,16 @@ import { Capacitor } from '@capacitor/core'
  * evita a tela "sem retorno" do WebView. Na web/PWA mantemos `window.open`.
  */
 export async function openAttachment(url: string) {
+  const resolved =
+    url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')
+      ? url
+      : `${window.location.origin}${url.startsWith('/') ? url : `/${url}`}`
+
   if (Capacitor.isNativePlatform()) {
     const { Browser } = await import('@capacitor/browser')
-    await Browser.open({ url, presentationStyle: 'popover' })
+    await Browser.open({ url: resolved })
     return
   }
 
-  window.open(url, '_blank', 'noopener,noreferrer')
+  window.open(resolved, '_blank', 'noopener,noreferrer')
 }

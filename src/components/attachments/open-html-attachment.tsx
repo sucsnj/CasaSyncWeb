@@ -80,6 +80,12 @@ export function OpenHtmlAttachment({
 
       <Link
         href={backHref}
+        onClick={(event) => {
+          if (Capacitor.isNativePlatform()) {
+            event.preventDefault()
+            void import('@capacitor/browser').then(({ Browser }) => Browser.close())
+          }
+        }}
         className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 active:scale-95"
       >
         Voltar para o App
