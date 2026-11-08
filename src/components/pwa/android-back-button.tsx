@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Capacitor } from '@capacitor/core'
 
 export function AndroidBackButton() {
   const pathname = usePathname()
+  const router = useRouter()
   const pathnameRef = useRef(pathname)
 
-  // Atualiza a ref para que o listener do Capacitor consulte sempre a rota atualizada sem recriar o event listener
+  // Mantém a referência da rota atual sempre atualizada
   useEffect(() => {
     pathnameRef.current = pathname
   }, [pathname])
@@ -22,11 +23,14 @@ export function AndroidBackButton() {
       try {
         const { App } = await import('@capacitor/app')
 
+        // Prioridade no listener para garantir interrupção do evento nativo
         const handle = await App.addListener('backButton', () => {
-          // Normaliza o pathname removendo barras no final
-          const currentPath = (pathnameRef.current || window.location.pathname).replace(/\/$/, '') || '/'
+          // Normaliza o pathname
+          const currentPath = (pathnameRef.current || window.location.pathname)
+            .replace(/\/$/, '') || '/'
 
           const defaultRoutes = [
+            '',
             '/',
             '/dashboard/admin',
             '/dashboard/dependent',
@@ -38,9 +42,11 @@ export function AndroidBackButton() {
           console.log('[BACK] path=', currentPath, 'isDefaultRoute=', isDefaultRoute)
 
           if (isDefaultRoute) {
+            // Encerra a aplicação nas rotas principais
             void App.exitApp()
           } else {
-            window.history.back()
+            // Usa a navegação do próprio Next.js em vez do window.history.back()
+            router.back()
           }
         })
 
@@ -57,7 +63,7 @@ export function AndroidBackButton() {
     return () => {
       removeListener?.()
     }
-  }, [])
+  }, [router])
 
   return null
 }

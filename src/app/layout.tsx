@@ -4,6 +4,7 @@ import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 import { Toaster } from "sonner";
+import { AndroidBackButton } from "@/components/pwa/android-back-button"; // <-- Importe o componente
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -39,17 +40,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={cn("font-sans", geist.variable)}>
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
+        <AndroidBackButton /> {/* <-- Monte o componente aqui */}
         {children}
         <ServiceWorkerRegistration />
         <Toaster
           position="bottom-right"
           theme="system"
-          // X de dispensar em todos os toasts: é o ATALHO para tirar o aviso da
-          // tela quando ele atrapalha, sem esperar o tempo. Ele remove **só o
-          // toast** — a notificação continua gravada e não lida no sino (nenhum
-          // handler de dismiss foi anexado; ver `realtime-toast-listener.tsx`).
-          // O visual do botão é adjusted em `globals.css` (a folha do sonner é
-          // injetada em runtime e ganha de qualquer classe utilitária).
           closeButton
           toastOptions={{
             closeButtonAriaLabel: 'Dispensar aviso',
