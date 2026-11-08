@@ -15,8 +15,12 @@ export function AndroidBackButton() {
         const path = window.location.pathname
         const isRoot =
           path === '/' ||
-          path === '/dashboard/admin' ||
-          path === '/dashboard/dependent'
+          path === '/login' ||
+          /^\/dashboard\/[^/]+$/.test(path) ||
+          path === '/tasks' ||
+          path === '/rewards' ||
+          path === '/achievements' ||
+          path === '/chest'
 
         console.log('[BACK] path=', path, 'canGoBack=', canGoBack, 'isRoot=', isRoot)
 
