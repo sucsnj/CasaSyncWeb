@@ -1,46 +1,61 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import { Capacitor } from '@capacitor/core'
 
 export function AndroidBackButton() {
+  const pathname = usePathname()
+  const pathnameRef = useRef(pathname)
+
+  // Atualiza a ref para que o listener do Capacitor consulte sempre a rota atualizada sem recriar o event listener
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
 
-    let remove: (() => void) | undefined
+    let removeListener: (() => void) | undefined
 
-    void (async () => {
+    const setupListener = async () => {
       try {
         const { App } = await import('@capacitor/app')
-        console.log('[BACK] registering listener')
-        const handle = await App.addListener('backButton', ({ canGoBack }) => {
-          const path = window.location.pathname.replace(/\/$/, '')
-          const isDefaultRoute =
-            path === '' ||
-            path === '/' ||
-            path === '/dashboard/admin' ||
-            path === '/dashboard/dependent'
 
-          console.log('[BACK] path=', path, 'canGoBack=', canGoBack, 'isDefaultRoute=', isDefaultRoute)
+        const handle = await App.addListener('backButton', () => {
+          // Normaliza o pathname removendo barras no final
+          const currentPath = (pathnameRef.current || window.location.pathname).replace(/\/$/, '') || '/'
+
+          const defaultRoutes = [
+            '/',
+            '/dashboard/admin',
+            '/dashboard/dependent',
+            '/login'
+          ]
+
+          const isDefaultRoute = defaultRoutes.includes(currentPath)
+
+          console.log('[BACK] path=', currentPath, 'isDefaultRoute=', isDefaultRoute)
 
           if (isDefaultRoute) {
-            App.exitApp()
-          } else if (canGoBack) {
-            window.history.back()
+            void App.exitApp()
           } else {
-            App.exitApp()
+            window.history.back()
           }
         })
-        remove = () => {
+
+        removeListener = () => {
           void handle.remove()
         }
       } catch (err) {
-        console.error('[BACK] failed to register', err)
+        console.error('[BACK] Erro ao registrar listener do botão voltar:', err)
       }
-    })()
+    }
+
+    void setupListener()
 
     return () => {
-      remove?.()
+      removeListener?.()
     }
   }, [])
 
