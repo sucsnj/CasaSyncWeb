@@ -4,7 +4,7 @@ import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 import { Toaster } from "sonner";
-import { AndroidBackButton } from "@/components/pwa/android-back-button"; // <-- Importe o componente
+import { AndroidBackButton } from "@/components/pwa/android-back-button"; // Importe do componente de botão de voltar
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
