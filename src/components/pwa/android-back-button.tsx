@@ -9,7 +9,6 @@ export function AndroidBackButton() {
   const router = useRouter()
   const pathnameRef = useRef(pathname)
 
-  // Mantém a referência da rota atual sempre atualizada
   useEffect(() => {
     pathnameRef.current = pathname
   }, [pathname])
@@ -23,29 +22,30 @@ export function AndroidBackButton() {
       try {
         const { App } = await import('@capacitor/app')
 
-        // Prioridade no listener para garantir interrupção do evento nativo
         const handle = await App.addListener('backButton', () => {
-          // Normaliza o pathname
-          const currentPath = (pathnameRef.current || window.location.pathname)
+          // 1. Pega a rota atual (via Next.js pathname ou fallback para window.location)
+          const rawPath = pathnameRef.current || window.location.pathname
+
+          // 2. Remove query params (?redirectedFrom=...) e a barra final se houver
+          const currentPath = rawPath
+            .split('?')[0]
             .replace(/\/$/, '') || '/'
 
-          const defaultRoutes = [
-            '',
-            '/',
-            '/dashboard/admin',
-            '/dashboard/dependent',
-            '/login'
-          ]
+          // 3. Define as rotas exatas e prefixos onde o app deve FECHAR
+          const exactRoutes = ['', '/', '/dashboard/admin', '/dashboard/dependent']
+          const prefixRoutes = ['/login']
 
-          const isDefaultRoute = defaultRoutes.includes(currentPath)
+          const isDefaultRoute =
+            exactRoutes.includes(currentPath) ||
+            prefixRoutes.some(
+              (prefix) => currentPath === prefix || currentPath.startsWith(`${prefix}/`)
+            )
 
           console.log('[BACK] path=', currentPath, 'isDefaultRoute=', isDefaultRoute)
 
           if (isDefaultRoute) {
-            // Encerra a aplicação nas rotas principais
             void App.exitApp()
           } else {
-            // Usa a navegação do próprio Next.js em vez do window.history.back()
             router.back()
           }
         })
