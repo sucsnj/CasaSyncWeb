@@ -103,7 +103,7 @@ export function TaskAttachmentInput({
   const [linkDraft, setLinkDraft] = useState('')
   const [chestOpen, setChestOpen] = useState(false)
   const { prefetch: prefetchChest } = usePrefetch(
-    'chest-attachments',
+    `chest-attachments:${ownerId}`,
     listChestAttachmentsForTask
   )
 
@@ -374,6 +374,7 @@ export function TaskAttachmentInput({
       {chestSource && chestOpen ? (
         <ChestAttachmentPicker
           open
+          ownerId={ownerId}
           onClose={() => setChestOpen(false)}
           onPick={(next) => {
             setError(null)

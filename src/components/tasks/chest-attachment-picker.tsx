@@ -34,12 +34,14 @@ export function ChestAttachmentPicker({
   onClose,
   onPick,
   disabled,
+  ownerId,
 }: {
   open: boolean
   onClose: () => void
   /** Recebe os campos do anexo. */
   onPick: (attachment: AttachmentSelection) => void
   disabled?: boolean
+  ownerId?: string
 }) {
   const [copyingId, setCopyingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -49,7 +51,7 @@ export function ChestAttachmentPicker({
     loading,
     load,
   } = usePrefetch<ChestAttachmentOption[]>(
-    'chest-attachments',
+    `chest-attachments:${ownerId ?? 'default'}`,
     listChestAttachmentsForTask
   )
 
