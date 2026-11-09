@@ -833,47 +833,63 @@ export function HousesManager({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Link href="/dashboard/admin/settings">
-          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
-            <CardHeader className="gap-3">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                <SlidersHorizontal className="size-5" />
+      <Card>
+        <CardHeader>
+          <CardTitle>Acesso rápido</CardTitle>
+          <CardDescription>
+            Configurações, comunicados e baú da casa ativa.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <Link href="/dashboard/admin/settings">
+          <Card className="py-0 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 sm:size-11 sm:rounded-xl">
+                <SlidersHorizontal className="size-4 sm:size-5" />
               </span>
-              <CardTitle>Configurações</CardTitle>
-              <CardDescription className="hidden sm:block">
-                Economia de pontos, mensagem rápida e anexos.
-              </CardDescription>
+              <div className="min-w-0">
+                <CardTitle className="text-sm sm:text-base">Configurações</CardTitle>
+                <CardDescription className="text-xs sm:block sm:text-sm">
+                  Economia de pontos, mensagem rápida e anexos.
+                </CardDescription>
+              </div>
             </CardHeader>
           </Card>
         </Link>
         <Link href="/dashboard/admin/comunicados">
-          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
-            <CardHeader className="gap-3">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                <Megaphone className="size-5" />
+          <Card className="py-2 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-700 sm:size-11 sm:rounded-xl">
+                <Megaphone className="size-4 sm:size-5" />
               </span>
-              <CardTitle>Comunicados</CardTitle>
-              <CardDescription className="hidden sm:block">
-                Avisos que os dependentes confirmam.
-              </CardDescription>
+              <div className="min-w-0">
+                <CardTitle className="text-sm sm:text-base">Comunicados</CardTitle>
+                <CardDescription className="text-xs sm:block sm:text-sm">
+                  Avisos que os dependentes confirmam.
+                </CardDescription>
+              </div>
             </CardHeader>
           </Card>
         </Link>
         <Link href="/chest">
-          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
-            <CardHeader className="gap-3">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                <Package className="size-5" />
+          <Card className="py-0 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 sm:size-11 sm:rounded-xl">
+                <Package className="size-4 sm:size-5" />
               </span>
-              <CardTitle>Baú</CardTitle>
-              <CardDescription>
-                Arquivos que os dependentes podem consultar.
-              </CardDescription>
+              <div className="min-w-0">
+                <CardTitle className="text-sm sm:text-base">Baú</CardTitle>
+                <CardDescription className="text-xs sm:block sm:text-sm">
+                  Arquivos que os dependentes podem consultar.
+                </CardDescription>
+              </div>
             </CardHeader>
           </Card>
         </Link>
       </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
