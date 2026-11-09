@@ -843,7 +843,7 @@ export function HousesManager({
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Link href="/dashboard/admin/settings">
-          <Card className="py-0 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+          <Card className="py-1 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
             <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 sm:size-11 sm:rounded-xl">
                 <SlidersHorizontal className="size-4 sm:size-5" />
@@ -858,7 +858,7 @@ export function HousesManager({
           </Card>
         </Link>
         <Link href="/dashboard/admin/comunicados">
-          <Card className="py-2 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+          <Card className="py-1 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
             <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-700 sm:size-11 sm:rounded-xl">
                 <Megaphone className="size-4 sm:size-5" />
@@ -873,7 +873,7 @@ export function HousesManager({
           </Card>
         </Link>
         <Link href="/chest">
-          <Card className="py-0 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+          <Card className="py-1 h-full transition-all rounded-xl duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
             <CardHeader className="flex flex-row items-center gap-2 p-2 sm:flex-col sm:items-start sm:gap-3 sm:p-6">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 sm:size-11 sm:rounded-xl">
                 <Package className="size-4 sm:size-5" />
