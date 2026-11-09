@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { parseRichText } from '@/components/ui/rich-text'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -45,8 +46,11 @@ import {
   Coins,
   Copy,
   Key,
+  Megaphone,
+  Package,
   Pencil,
   RefreshCw,
+  SlidersHorizontal,
   Trash2,
   TriangleAlert,
   UserMinus,
@@ -828,6 +832,48 @@ export function HousesManager({
           )}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Link href="/dashboard/admin/settings">
+          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="gap-3">
+              <span className="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                <SlidersHorizontal className="size-5" />
+              </span>
+              <CardTitle>Configurações</CardTitle>
+              <CardDescription className="hidden sm:block">
+                Economia de pontos, mensagem rápida e anexos.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/dashboard/admin/comunicados">
+          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="gap-3">
+              <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Megaphone className="size-5" />
+              </span>
+              <CardTitle>Comunicados</CardTitle>
+              <CardDescription className="hidden sm:block">
+                Avisos que os dependentes confirmam.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/chest">
+          <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md active:scale-[0.98]">
+            <CardHeader className="gap-3">
+              <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Package className="size-5" />
+              </span>
+              <CardTitle>Baú</CardTitle>
+              <CardDescription>
+                Arquivos que os dependentes podem consultar.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+      </div>
 
       <Card>
         <CardHeader>
