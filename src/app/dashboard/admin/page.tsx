@@ -61,9 +61,14 @@ export default async function AdminDashboardPage() {
         <p className="text-sm font-medium text-white/80">Área do administrador</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Visão geral</h1>
         <p className="mt-1 text-sm text-white/85">
-          {activeHouse
-            ? `Casa ativa: ${activeHouse.name}`
-            : 'Nenhuma casa ativa ainda — crie a primeira.'}
+          Casa ativa: 
+          {activeHouse ? (
+            <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-sm font-semibold text-white">
+              {activeHouse.name}
+            </span>
+          ) : (
+            'Nenhuma casa ativa ainda — crie a primeira.'
+          )}
         </p>
       </header>
 
