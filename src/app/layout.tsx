@@ -3,8 +3,9 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
+import { PullToRefresh } from "@/components/pwa/pull-to-refresh";
+import { AndroidBackButton } from "@/components/pwa/android-back-button";
 import { Toaster } from "sonner";
-import { AndroidBackButton } from "@/components/pwa/android-back-button"; // Importe do componente de botão de voltar
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AndroidBackButton /> {/* <-- Monte o componente aqui */}
         {children}
         <ServiceWorkerRegistration />
+        <PullToRefresh />
         <Toaster
           position="bottom-right"
           theme="system"
