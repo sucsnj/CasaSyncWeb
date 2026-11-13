@@ -2,62 +2,62 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { Capacitor } from '@capacitor/core'
-import { Loader2, RefreshCw } from 'lucide-react' // ou outro ícone de spinner
+import { queryScopeForPath } from '@/lib/query-keys'
 
+/**
+ * Gesto de "arrastar para baixo" que atualiza a tela — só no app nativo
+ * (Capacitor), onde não existe o pull-to-refresh do browser.
+ *
+ * **O que ele atualiza:**
+ * 1. o cache da rota ativa (`invalidateQueries` do escopo) — as listas que
+ *    migraram para o React Query revalidam em segundo plano, sem recarregar a
+ *    página e sem perder o cache das outras telas;
+ * 2. o shell do servidor (`router.refresh()`) — badges da nav, ícone de castigo,
+ *    comunicados e sino continuam sendo renderizados no servidor.
+ *
+ * Antes disso era `window.location.reload()`, que limpava o cache inteiro da
+ * sessão a cada gesto (e recarregava a webview).
+ */
 export function PullToRefresh() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const startY = useRef<number | null>(null)
-  const [pullDistance, setPullDistance] = useState(0)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const isRefreshingRef = useRef(false)
-
-  const THRESHOLD = 90 // Distância em pixels para disparar o refresh
+  const pullingRef = useRef(false)
+  const [pulling, setPulling] = useState(false)
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
 
     function handleTouchStart(event: TouchEvent) {
-      if ((window.scrollY === 0 || document.documentElement.scrollTop === 0) && event.touches.length === 1) {
+      if (window.scrollY === 0 && event.touches.length === 1) {
         startY.current = event.touches[0].clientY
       }
     }
 
     function handleTouchMove(event: TouchEvent) {
-      if (startY.current === null || isRefreshingRef.current) return
-
-      const currentY = event.touches[0].clientY
-      const delta = currentY - startY.current
-
-      if (delta > 0) {
-        // Aplica resistência ao arrastar (amortecimento)
-        const distance = Math.min(delta * 0.5, THRESHOLD + 20)
-        setPullDistance(distance)
+      if (startY.current === null) return
+      const delta = event.touches[0].clientY - startY.current
+      if (delta > 80 && !pullingRef.current) {
+        pullingRef.current = true
+        setPulling(true)
       }
     }
 
-    function handleTouchEnd() {
-      if (startY.current === null) return
-
-      if (pullDistance >= THRESHOLD && !isRefreshingRef.current) {
-        isRefreshingRef.current = true
-        setIsRefreshing(true)
-        setPullDistance(THRESHOLD)
-
-        // Executa a atualização do Next.js
-        router.refresh()
-
-        // Simula o tempo do indicador girando antes de recolher
-        setTimeout(() => {
-          setIsRefreshing(false)
-          isRefreshingRef.current = false
-          setPullDistance(0)
-        }, 1200)
-      } else {
-        setPullDistance(0)
-      }
-
+    async function handleTouchEnd() {
+      const shouldRefresh = pullingRef.current
+      pullingRef.current = false
       startY.current = null
+      if (!shouldRefresh) return
+
+      const scope = queryScopeForPath(window.location.pathname)
+      if (scope) {
+        await queryClient.invalidateQueries({ queryKey: [scope] })
+      }
+      // O shell é renderizado no servidor: só ele precisa do refresh.
+      router.refresh()
+      setPulling(false)
     }
 
     document.addEventListener('touchstart', handleTouchStart, { passive: true })
@@ -69,31 +69,14 @@ export function PullToRefresh() {
       document.removeEventListener('touchmove', handleTouchMove)
       document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [pullDistance, router])
+  }, [queryClient, router])
 
-  if (pullDistance === 0 && !isRefreshing) return null
-
-  // Calcula a rotação da seta conforme o usuário arrasta para baixo
-  const progress = Math.min(pullDistance / THRESHOLD, 1)
-  const rotation = progress * 180
+  if (!pulling) return null
 
   return (
-    <div
-      className="fixed inset-x-0 top-0 z-[200] flex justify-center transition-transform duration-75 ease-out pointer-events-none"
-      style={{
-        transform: `translateY(${pullDistance}px)`,
-      }}
-    >
-      {/* Círculo branco clássico do Android com sombra nativa */}
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-slate-100">
-        {isRefreshing ? (
-          <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-        ) : (
-          <RefreshCw
-            className="h-5 w-5 text-slate-600 transition-transform duration-75"
-            style={{ transform: `rotate(${rotation}deg)` }}
-          />
-        )}
+    <div className="fixed inset-x-0 top-0 z-[200] flex justify-center py-3">
+      <div className="rounded-full bg-white/90 px-4 py-1.5 text-sm font-medium text-slate-700 shadow-md backdrop-blur-sm">
+        Atualizando…
       </div>
     </div>
   )

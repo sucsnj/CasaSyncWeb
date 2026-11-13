@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 import { PullToRefresh } from "@/components/pwa/pull-to-refresh";
 import { AndroidBackButton } from "@/components/pwa/android-back-button";
+import { QueryProvider } from "@/components/providers/query-provider";
 import { Toaster } from "sonner";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -41,10 +42,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={cn("font-sans", geist.variable)}>
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
-        <AndroidBackButton /> {/* <-- Monte o componente aqui */}
-        {children}
-        <ServiceWorkerRegistration />
-        <PullToRefresh />
+        {/* O provider envolve TUDO: o pull-to-refresh usa o cache (invalidate
+            por escopo) e, por isso, precisa estar dentro dele. */}
+        <QueryProvider>
+          <AndroidBackButton />
+          {children}
+          <ServiceWorkerRegistration />
+          <PullToRefresh />
+        </QueryProvider>
         <Toaster
           position="bottom-right"
           theme="system"
