@@ -34,21 +34,24 @@ export const queryKeys = {
       [queryScope.tasks, 'dependent', userId] as const,
   },
 
-  /** Recompensas, resgates e sugestões de recompensa da casa. */
+  /**
+   * Recompensas: catálogo, resgates e sugestões da casa — **uma** chave (e
+   * portanto **uma** Server Action) para a tela inteira. As três listas mudam
+   * juntas (uma aprovação cria/atualiza resgate, sugestão e catálogo), então
+   * separá-las só criaria ações concorrentes na revalidação.
+   */
   rewards: {
-    catalog: (houseId: string) => [queryScope.rewards, 'catalog', houseId] as const,
-    redemptions: (houseId: string) =>
-      [queryScope.rewards, 'redemptions', houseId] as const,
-    suggestions: (houseId: string) =>
-      [queryScope.rewards, 'suggestions', houseId] as const,
+    screen: (houseId: string) => [queryScope.rewards, houseId] as const,
   },
 
-  /** Conquistas da casa e progresso por dependente. */
+  /**
+   * Conquistas + progresso — **uma** chave (e **uma** Server Action) para a
+   * tela. O `userId` entra porque o progresso do ADMIN é o da casa toda e o do
+   * dependente é só o dele: a mesma casa, conteúdos diferentes.
+   */
   achievements: {
-    house: (houseId: string) =>
-      [queryScope.achievements, 'house', houseId] as const,
-    dependent: (userId: string) =>
-      [queryScope.achievements, 'dependent', userId] as const,
+    screen: (houseId: string, userId: string) =>
+      [queryScope.achievements, houseId, userId] as const,
   },
 
   /** Baú da casa. */

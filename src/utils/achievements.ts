@@ -1,3 +1,5 @@
+import type { Tables } from '@/types/database'
+
 export type AchievementMetricType =
   | 'TASKS_APPROVED'
   | 'TASKS_REJECTED'
@@ -144,4 +146,32 @@ export function isAchievementClaimable(
 ): boolean {
   if (!progress?.unlocked_at) return false
   return isRepeatable || (progress.level ?? 1) === 1
+}
+/** Progresso de uma conquista para um dependente (linha de dependent_achievements). */
+export type AchievementProgressEntry = {
+  id: string
+  achievement_id: string
+  profile_id: string
+  level: number
+  current_progress: number
+  unlocked_at: string | null
+}
+
+/** Progresso como a tela do DEPENDENTE consome (sem os ids de ligaço). */
+export type DependentAchievementProgress = {
+  level: number
+  current_progress: number
+  unlocked_at: string | null
+}
+
+/** Conquista + progresso, como a tela do dependente monta. */
+export type AchievementView = {
+  achievement: Tables<'achievements'>
+  progress: DependentAchievementProgress | null
+}
+
+/** Payload da tela de conquistas (conquistas + progresso). */
+export type AchievementsCacheData = {
+  achievements: Tables<'achievements'>[]
+  progress: AchievementProgressEntry[]
 }

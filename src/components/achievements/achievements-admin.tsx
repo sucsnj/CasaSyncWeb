@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Minus, Pencil, Plus, RotateCcw, Trash2, Trophy, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,8 @@ import {
   ACHIEVEMENT_ICONS,
   METRIC_LABELS,
   type AchievementMetricType,
+  type AchievementProgressEntry,
+  type AchievementsCacheData,
   achievementRewardAtLevel,
   applyAchievementProgress,
   capAchievementProgress,
@@ -40,19 +42,17 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useQueryScreen } from '@/hooks/use-query-screen'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchAchievementsForCache } from '@/actions/achievements'
 import type { Tables } from '@/types/database'
 
 type Achievement = Tables<'achievements'>
 type DependentAchievement = Tables<'dependent_achievements'>
 
-type AchievementProgressEntry = {
-  id: string
-  achievement_id: string
-  profile_id: string
-  level: number
-  current_progress: number
-  unlocked_at: string | null
-}
+const EMPTY_ACHIEVEMENTS: Achievement[] = []
+const EMPTY_PROGRESS: AchievementProgressEntry[] = []
 
 type AchievementForm = {
   title: string
@@ -95,6 +95,7 @@ const METRIC_OPTIONS: Array<{ value: AchievementMetricType; label: string }> = [
 
 export function AchievementsAdmin({
   houseId,
+  userId,
   initialAchievements,
   dependents,
   initialProgress,
@@ -102,19 +103,49 @@ export function AchievementsAdmin({
 }: {
   houseId: string
   initialAchievements: Achievement[]
+  /** Dono da sessão — personaliza a chave do cache (o progresso lido depende do papel). */
+  userId: string
   dependents: { id: string; full_name: string }[]
   initialProgress: AchievementProgressEntry[]
   /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const [achievements, setAchievements] = useState<Achievement[]>(
-    initialAchievements
+  // Conquistas + progresso: UMA query de tela (uma Server Action só).
+  const { data: screen, setData: setScreen } = useQueryScreen<AchievementsCacheData>({
+    queryKey: queryKeys.achievements.screen(houseId, userId),
+    queryFn: () => unwrapAction(fetchAchievementsForCache),
+    initialData: { achievements: initialAchievements, progress: initialProgress },
+  })
+  const achievements = screen?.achievements ?? EMPTY_ACHIEVEMENTS
+  const progress = screen?.progress ?? EMPTY_PROGRESS
+  const setAchievements = useCallback(
+    (
+      next:
+        | Achievement[]
+        | ((previous: Achievement[]) => Achievement[])
+    ) =>
+      setScreen((previous) => ({
+        ...previous,
+        achievements:
+          typeof next === 'function' ? next(previous.achievements) : next,
+      })),
+    [setScreen]
+  )
+  const setProgress = useCallback(
+    (
+      next:
+        | AchievementProgressEntry[]
+        | ((previous: AchievementProgressEntry[]) => AchievementProgressEntry[])
+    ) =>
+      setScreen((previous) => ({
+        ...previous,
+        progress:
+          typeof next === 'function' ? next(previous.progress) : next,
+      })),
+    [setScreen]
   )
   const [sort, setSort] = usePersistedSort('sort:achievements-admin', 'title:asc')
-  const [progress, setProgress] = useState<AchievementProgressEntry[]>(
-    initialProgress
-  )
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 

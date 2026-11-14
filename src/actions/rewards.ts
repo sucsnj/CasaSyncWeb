@@ -28,6 +28,11 @@ import {
 } from '@/utils/reward-limits'
 import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import type { RewardPricingSettings } from '@/utils/settings'
+import type {
+  RedemptionView,
+  RewardsCacheData,
+  RewardsSuggestionView,
+} from '@/utils/redemptions'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
 import type { ActionResult } from './types'
@@ -79,6 +84,120 @@ async function assertAdminCanManage(
   }
 
   return { ok: true, adminId: user.id }
+}
+
+/**
+ * LEITURA da tela de recompensas para o cache do cliente (React Query).
+ *
+ * **Uma action para a tela inteira** (catálogo + resgates + sugestões): o
+ * `queryFn` é chamado na revalidação em background e o Next.js **enfileira** as
+ * Server Actions — várias actions concorrentes na mesma tela viram fila
+ * sequencial. Uma só, com o papel resolvido dentro, evita isso.
+ *
+ * Mesma leitura do RSC de antes (service-role + escopo da sessão, ADR-0006): o
+ * dependente vê só os próprios resgates/sugestões, o ADMIN vê a casa inteira.
+ */
+export async function fetchRewardsForCache(): Promise<ActionResult<RewardsCacheData>> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || !profile) {
+    return { ok: false, error: 'Sessão expirada. Entre novamente.' }
+  }
+
+  const admin = createAdminClient()
+  const isAdmin = profile.user_role === 'ADMIN'
+  const house = isAdmin ? await getActiveAdminHouse() : await getDependentHouse(user.id)
+  if (!house) {
+    return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
+  }
+
+  const [rewardsRes, redemptionsRes, suggestionsRes, membersRes] = await Promise.all([
+    admin
+      .from('rewards')
+      .select('*')
+      .eq('house_id', house.id)
+      .order('created_at', { ascending: true }),
+    admin
+      .from('reward_redemptions')
+      .select('*')
+      .eq('house_id', house.id)
+      .order('created_at', { ascending: true }),
+    admin
+      .from('reward_suggestions')
+      .select('*')
+      .eq('house_id', house.id)
+      .order('created_at', { ascending: false }),
+    admin
+      .from('house_members')
+      .select('profile_id')
+      .eq('house_id', house.id)
+      .eq('role', 'DEPENDENT'),
+  ])
+
+  if (rewardsRes.error || redemptionsRes.error || suggestionsRes.error) {
+    console.error('[rewards] Falha ao carregar a tela de recompensas')
+    return { ok: false, error: 'Falha ao carregar as recompensas.' }
+  }
+
+  // O dependente só enxerga os PROPRIOS resgates e sugestões.
+  const isMine = (row: { profile_id: string }) => row.profile_id === user.id
+  const redemptions = (redemptionsRes.data ?? []).filter(
+    (row) => isAdmin || isMine(row)
+  )
+  const suggestions = (suggestionsRes.data ?? []).filter(
+    (row) => isAdmin || isMine(row)
+  )
+
+  const rewards = rewardsRes.data ?? []
+
+  const profileIds = [
+    ...new Set(
+      [
+        ...(membersRes.data ?? []).map((member) => member.profile_id),
+        ...redemptions.map((redemption) => redemption.profile_id),
+        ...suggestions.map((suggestion) => suggestion.profile_id),
+      ].filter(Boolean)
+    ),
+  ]
+
+  const nameById = new Map<string, string>()
+  if (profileIds.length > 0) {
+    const { data: profiles } = await admin
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', profileIds)
+    ;(profiles ?? []).forEach((profile) =>
+      nameById.set(profile.id, profile.full_name ?? 'Sem nome')
+    )
+  }
+
+  const rewardTitleById = new Map(rewards.map((reward) => [reward.id, reward.title]))
+
+  const redemptionViews: RedemptionView[] = redemptions.map((redemption) => ({
+    id: redemption.id,
+    status: redemption.status,
+    points_cost: redemption.points_cost,
+    created_at: redemption.created_at,
+    resolved_at: redemption.resolved_at,
+    reward_id: redemption.reward_id,
+    rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
+    dependentName: nameById.get(redemption.profile_id) ?? 'Dependente',
+  }))
+
+  const suggestionViews: RewardsSuggestionView[] = suggestions.map((suggestion) => ({
+    id: suggestion.id,
+    title: suggestion.title,
+    description: suggestion.description,
+    points_cost: suggestion.points_cost,
+    image_url: suggestion.image_url,
+    status: suggestion.status,
+    created_at: suggestion.created_at,
+    profileName: nameById.get(suggestion.profile_id) ?? 'Dependente',
+  }))
+
+  return {
+    ok: true,
+    data: { rewards, redemptions: redemptionViews, suggestions: suggestionViews },
+  }
 }
 
 export async function createReward(input: CreateRewardInput): Promise<ActionResult> {

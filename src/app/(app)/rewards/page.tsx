@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { fetchRewardsForCache } from '@/actions/rewards'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -10,15 +14,12 @@ import { getHouseTextLimitsSettings, getHouseTimezoneSettings } from '@/utils/ho
 import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
-import type { Tables } from '@/types/database'
 
 export const metadata: Metadata = {
   title: 'Recompensas',
 }
 
 export const dynamic = 'force-dynamic'
-
-type Redemption = Tables<'reward_redemptions'>
 
 export default async function RewardsPage() {
   const { user, profile } = await getSessionProfile()
@@ -62,29 +63,22 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
-        await Promise.all([
-          admin
-            .from('rewards')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_redemptions')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('house_members')
-            .select('profile_id')
-            .eq('house_id', activeHouse.id)
-            .eq('role', 'DEPENDENT'),
-          admin
-            .from('reward_suggestions')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: false }),
-        ])
+      // UMA leitura para a tela inteira (a action devolve catálogo, resgates e
+      // sugestões): o mesmo resultado vira prop e o estado do cache — zero
+      // requisição duplicada no primeiro paint.
+      const queryClient = new QueryClient()
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.rewards.screen(activeHouse.id),
+        queryFn: () => unwrapAction(fetchRewardsForCache),
+      })
+      const { rewards, redemptions, suggestions } = data
+
+      // Membros da casa: só para o mapa de nomes que o ADMIN usa nos cards.
+      const { data: members } = await admin
+        .from('house_members')
+        .select('profile_id')
+        .eq('house_id', activeHouse.id)
+        .eq('role', 'DEPENDENT')
 
       const profileIds = members?.map((member) => member.profile_id) ?? []
       const nameById = new Map<string, string>()
@@ -93,55 +87,29 @@ export default async function RewardsPage() {
           .from('profiles')
           .select('id, full_name')
           .in('id', profileIds)
-          ; (profiles ?? []).forEach((p) =>
-            nameById.set(p.id, p.full_name ?? 'Sem nome')
-          )
+        ;(profiles ?? []).forEach((p) =>
+          nameById.set(p.id, p.full_name ?? 'Sem nome')
+        )
       }
 
-      const rewardTitleById = new Map(
-        (rewards ?? []).map((reward) => [reward.id, reward.title])
-      )
-
-      const redemptionViews = (redemptions ?? []).map(
-        (redemption: Redemption) => ({
-          id: redemption.id,
-          status: redemption.status,
-          points_cost: redemption.points_cost,
-          created_at: redemption.created_at,
-          resolved_at: redemption.resolved_at,
-          reward_id: redemption.reward_id,
-          rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
-          dependentName: nameById.get(redemption.profile_id) ?? 'Dependente',
-        })
-      )
-
-      const suggestionViews = (suggestions ?? []).map((suggestion) => ({
-        id: suggestion.id,
-        title: suggestion.title,
-        description: suggestion.description,
-        points_cost: suggestion.points_cost,
-        image_url: suggestion.image_url,
-        status: suggestion.status,
-        created_at: suggestion.created_at,
-        profileName: nameById.get(suggestion.profile_id) ?? 'Dependente',
-      }))
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <RewardsAdmin
-          key={`${activeHouse.id}:${(redemptions ?? [])
-            .map((redemption) => `${redemption.id}-${redemption.status}`)
-            .join(',')}`}
-          houseId={activeHouse.id}
-          userId={user.id}
-          initialRewards={rewards ?? []}
-          initialRedemptions={redemptionViews}
-          initialSuggestions={suggestionViews}
-          dependents={Array.from(nameById, ([id, full_name]) => ({
-            id,
-            full_name,
-          }))}
-          textLimits={textLimitsSettings}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <RewardsAdmin
+            key={activeHouse.id}
+            houseId={activeHouse.id}
+            userId={user.id}
+            initialRewards={rewards}
+            initialRedemptions={redemptions}
+            initialSuggestions={suggestions}
+            dependents={Array.from(nameById, ([id, full_name]) => ({
+              id,
+              full_name,
+            }))}
+            textLimits={textLimitsSettings}
+          />
+        </HydrationBoundary>
       )
     }
   } else {
@@ -152,42 +120,13 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
-        await Promise.all([
-          admin
-            .from('rewards')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_redemptions')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .eq('profile_id', user.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_suggestions')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .eq('profile_id', user.id)
-            .order('created_at', { ascending: false }),
-        ])
-
-      const rewardTitleById = new Map(
-        (rewards ?? []).map((reward) => [reward.id, reward.title])
-      )
-
-      const redemptionViews = (redemptions ?? []).map(
-        (redemption: Redemption) => ({
-          id: redemption.id,
-          status: redemption.status,
-          points_cost: redemption.points_cost,
-          created_at: redemption.created_at,
-          resolved_at: redemption.resolved_at,
-          reward_id: redemption.reward_id,
-          rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
-        })
-      )
+      // Mesma leitura única do ADMIN (a action resolve o papel).
+      const queryClient = new QueryClient()
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.rewards.screen(dependentHouse.id),
+        queryFn: () => unwrapAction(fetchRewardsForCache),
+      })
+      const { rewards, redemptions, suggestions } = data
 
       // Fronteiras das janelas do limitador de resgate (dia/mês corrente no fuso
       // da CASA) — calculadas no servidor para o client só comparar instantes.
@@ -196,26 +135,22 @@ export default async function RewardsPage() {
       const dayStartIso = zonedDayStart(timezone, now).toISOString()
       const monthStartIso = zonedMonthStart(timezone, now).toISOString()
 
+      const dehydratedState = dehydrate(queryClient)
       content = (
-        <RewardsDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          myId={user.id}
-          initialPoints={profile.points}
-          initialRewards={rewards ?? []}
-          initialRedemptions={redemptionViews}
-          dayStartIso={dayStartIso}
-          monthStartIso={monthStartIso}
-          initialSuggestions={(suggestions ?? []).map((suggestion) => ({
-            id: suggestion.id,
-            title: suggestion.title,
-            description: suggestion.description,
-            points_cost: suggestion.points_cost,
-            status: suggestion.status,
-            created_at: suggestion.created_at,
-          }))}
-          textLimits={textLimitsSettings}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <RewardsDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            myId={user.id}
+            initialPoints={profile.points}
+            initialRewards={rewards}
+            initialRedemptions={redemptions}
+            dayStartIso={dayStartIso}
+            monthStartIso={monthStartIso}
+            initialSuggestions={suggestions}
+            textLimits={textLimitsSettings}
+          />
+        </HydrationBoundary>
       )
     }
   }

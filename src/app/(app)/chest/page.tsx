@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
+import { fetchChestForCache } from '@/actions/chest'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
@@ -13,7 +17,6 @@ import {
   getHouseAttachmentSettings,
 } from '@/utils/house-settings'
 import { houseAttachmentBytes } from '@/utils/attachment-usage'
-import type { ChestItemView } from '@/components/chest/chest-types'
 
 export const metadata: Metadata = {
   title: 'Baú',
@@ -68,30 +71,34 @@ export default async function ChestPage() {
       // não 3). O peso é 1 leitura de storage a mais nesta tela — o número que o
       // form mostra é do arquivo real, não de uma coluna que o app não tem
       // (ADR-0027). Já `/tasks` e `/dashboard/dependent` não pagam nada disso.
-      const [{ data: items }, attachmentBudget, attachments, usageBytes] =
-        await Promise.all([
-          admin
-            .from('chest_items')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: false }),
-          getHouseAttachmentBudgetSettings(activeHouse.id),
-          getHouseAttachmentSettings(activeHouse.id),
-          houseAttachmentBytes(admin, activeHouse.id).catch(() => 0),
-        ])
+      const queryClient = new QueryClient()
+      const items = await queryClient.fetchQuery({
+        queryKey: queryKeys.chest.items(activeHouse.id),
+        queryFn: () => unwrapAction(fetchChestForCache),
+      })
+      const [attachmentBudget, attachments, usageBytes] = await Promise.all([
+        getHouseAttachmentBudgetSettings(activeHouse.id),
+        getHouseAttachmentSettings(activeHouse.id),
+        houseAttachmentBytes(admin, activeHouse.id).catch(() => 0),
+      ])
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <ChestAdmin
-          key={activeHouse.id}
-          initialItems={(items ?? []) satisfies ChestItemView[]}
-          houseId={activeHouse.id}
-          houseName={activeHouse.name}
-          maxMb={attachmentBudget.maxMb}
-          usageBytes={usageBytes}
-          attachmentsAllowed={attachments.chestAllowed}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <ChestAdmin
+            key={activeHouse.id}
+            initialItems={items}
+            houseId={activeHouse.id}
+            houseName={activeHouse.name}
+            maxMb={attachmentBudget.maxMb}
+            usageBytes={usageBytes}
+            attachmentsAllowed={attachments.chestAllowed}
+          />
+        </HydrationBoundary>
       )
     }
+
+
   } else {
     const house = await getDependentHouse(user.id)
 
@@ -102,23 +109,28 @@ export default async function ChestPage() {
         </p>
       )
     } else {
-      const { data: items } = await admin
-        .from('chest_items')
-        .select('*')
-        .eq('house_id', house.id)
-        .order('created_at', { ascending: false })
+      // Mesma leitura única do ADMIN (a action resolve o papel).
+      const queryClient = new QueryClient()
+      const items = await queryClient.fetchQuery({
+        queryKey: queryKeys.chest.items(house.id),
+        queryFn: () => unwrapAction(fetchChestForCache),
+      })
 
       // A casa desligou os anexos do baú? (ADR-0026) — o item continua listado,
       // mas o arquivo não abre. Sai do mesmo mapa por casa das outras leituras.
       const { chestAllowed } = await getHouseAttachmentSettings(house.id)
 
+      const dehydratedState = dehydrate(queryClient)
+
       content = (
-        <ChestDependent
-          key={house.id}
-          houseId={house.id}
-          attachmentsAllowed={chestAllowed}
-          initialItems={items ?? []}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <ChestDependent
+            key={house.id}
+            houseId={house.id}
+            attachmentsAllowed={chestAllowed}
+            initialItems={items ?? []}
+          />
+        </HydrationBoundary>
       )
     }
   }

@@ -2,7 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
+import {
+  getActiveAdminHouse,
+  getDependentHouse,
+  getSessionProfile,
+} from '@/utils/house'
 import {
   attachmentTypeFromName,
   CHEST_ITEM_FOLDER,
@@ -23,6 +27,7 @@ import {
 } from '@/utils/house-settings'
 import type { ActionResult } from './types'
 import type { Tables } from '@/types/database'
+import type { ChestItemView } from '@/components/chest/chest-types'
 
 /**
  * BAÚ DA CASA (ADR-0024) — acervo de arquivos que o ADMIN disponibiliza para os
@@ -371,6 +376,43 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
 /* -------------------------------------------------------------------------- */
 /* Réplica do baú para o anexo da tarefa (ADR-0027)                            */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * LEITURA do acervo do baú para o cache do cliente (React Query).
+ *
+ * **Uma action para a tela inteira** (o baú é uma lista só): o `queryFn` é
+ * chamado na revalidação em background e o Next.js **enfileira** as Server
+ * Actions — várias actions concorrentes na mesma tela viram fila sequencial.
+ *
+ * Mesma leitura do RSC de antes (service-role + escopo da sessão, ADR-0006): o
+ * ADMIN vê o acervo da **casa ativa** e o dependente o da **própria** casa.
+ */
+export async function fetchChestForCache(): Promise<ActionResult<ChestItemView[]>> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || !profile) {
+    return { ok: false, error: 'Sessão expirada. Entre novamente.' }
+  }
+
+  const admin = createAdminClient()
+  const isAdmin = profile.user_role === 'ADMIN'
+  const house = isAdmin ? await getActiveAdminHouse() : await getDependentHouse(user.id)
+  if (!house) {
+    return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
+  }
+
+  const { data, error } = await admin
+    .from('chest_items')
+    .select('*')
+    .eq('house_id', house.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('[chest] Falha ao carregar o baú:', error)
+    return { ok: false, error: 'Não foi possível carregar o baú da casa.' }
+  }
+
+  return { ok: true, data: (data ?? []) satisfies ChestItemView[] }
+}
 
 /**
  * Opção do seletor "usar do baú" — só o **mínimo** que a tela precisa. O rótulo

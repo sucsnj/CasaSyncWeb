@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, PartyPopper, Trophy } from 'lucide-react'
@@ -15,9 +15,16 @@ import {
   capAchievementProgress,
   isAchievementClaimable,
   maxAchievementLevel,
+  type AchievementProgressEntry,
+  type AchievementsCacheData,
+  type AchievementView,
 } from '@/utils/achievements'
 import { setClaimableAchievements } from '@/hooks/use-claimable-achievement'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useQueryScreen } from '@/hooks/use-query-screen'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchAchievementsForCache } from '@/actions/achievements'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -25,27 +32,57 @@ import type { Tables } from '@/types/database'
 
 type Achievement = Tables<'achievements'>
 
-export type DependentAchievementProgress = {
-  level: number
-  current_progress: number
-  unlocked_at: string | null
-}
-
-export type AchievementView = {
-  achievement: Achievement
-  progress: DependentAchievementProgress | null
-}
+const EMPTY_ACHIEVEMENTS: Achievement[] = []
+const EMPTY_PROGRESS: AchievementProgressEntry[] = []
 
 export function AchievementsDependent({
   houseId,
-  initialViews,
+  userId,
+  initialAchievements,
+  initialProgress,
 }: {
   houseId: string
   userId: string
-  initialViews: AchievementView[]
+  initialAchievements: Achievement[]
+  initialProgress: AchievementProgressEntry[]
 }) {
   const router = useRouter()
-  const [views, setViews] = useState<AchievementView[]>(initialViews)
+  // Conquistas + progresso: UMA query de tela (uma Server Action só). O
+  // `views` é derivado do cache — não é mais uma cópia em `useState`.
+  const { data: screen, setData: setScreen } = useQueryScreen<AchievementsCacheData>({
+    queryKey: queryKeys.achievements.screen(houseId, userId),
+    queryFn: () => unwrapAction(fetchAchievementsForCache),
+    initialData: { achievements: initialAchievements, progress: initialProgress },
+  })
+  const achievements = screen?.achievements ?? EMPTY_ACHIEVEMENTS
+  const progressRows = screen?.progress ?? EMPTY_PROGRESS
+  const views = useMemo<AchievementView[]>(
+    () =>
+      achievements.map((achievement) => {
+        const entry = progressRows.find(
+          (row) => row.achievement_id === achievement.id
+        )
+        return {
+          achievement,
+          progress: entry
+            ? {
+                level: entry.level,
+                current_progress: entry.current_progress,
+                unlocked_at: entry.unlocked_at,
+              }
+            : null,
+        }
+      }),
+    [achievements, progressRows]
+  )
+  const setProgress = useCallback(
+    (updater: (previous: AchievementProgressEntry[]) => AchievementProgressEntry[]) =>
+      setScreen((previous) => ({
+        ...previous,
+        progress: updater(previous.progress),
+      })),
+    [setScreen]
+  )
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [sort, setSort] = usePersistedSort('sort:achievements-dependent', 'title:asc')
 
@@ -62,20 +99,26 @@ export function AchievementsDependent({
     event: 'UPDATE',
     filter: `house_id=eq.${houseId}`,
     onUpsert: (row) => {
-      setViews((prev) =>
-        prev.map((view) =>
-          view.achievement.id === row.achievement_id
-            ? {
-                ...view,
-                progress: {
-                  level: row.level,
-                  current_progress: row.current_progress,
-                  unlocked_at: row.unlocked_at,
-                },
-              }
-            : view
+      // O evento traz o progresso de UMA conquista: entra direto na fatia de
+      // progresso do cache (o `views` é derivado dela).
+      setProgress((prev) => {
+        const exists = prev.some(
+          (item) => item.achievement_id === row.achievement_id
         )
-      )
+        const next: AchievementProgressEntry = {
+          id: row.id,
+          achievement_id: row.achievement_id,
+          profile_id: userId,
+          level: row.level,
+          current_progress: row.current_progress,
+          unlocked_at: row.unlocked_at,
+        }
+        return exists
+          ? prev.map((item) =>
+              item.achievement_id === row.achievement_id ? next : item
+            )
+          : [...prev, next]
+      })
     },
   })
 
@@ -123,26 +166,17 @@ export function AchievementsDependent({
       }
       const { nextLevel } = res.data
 
-      setViews((prev) =>
+      // Otimista: o progresso da conquista resgatada muda na hora (o card sai
+      // de "resgatável" sem esperar o round-trip).
+      setProgress((prev) =>
         prev.map((entry) => {
-          if (entry.achievement.id !== view.achievement.id || !entry.progress) {
-            return entry
-          }
+          if (entry.achievement_id !== view.achievement.id) return entry
           const { is_repeatable } = view.achievement
           // Resgate consumiu o ciclo inteiro: o próximo começa em 0 (o
           // progresso era travado no objetivo, não havia excedente).
-          const progress = is_repeatable
-            ? {
-                level: nextLevel,
-                current_progress: 0,
-                unlocked_at: null as string | null,
-              }
-            : {
-                level: nextLevel,
-                current_progress: entry.progress.current_progress,
-                unlocked_at: entry.progress.unlocked_at,
-              }
-          return { ...entry, progress }
+          return is_repeatable
+            ? { ...entry, level: nextLevel, current_progress: 0, unlocked_at: null }
+            : { ...entry, level: nextLevel }
         })
       )
 

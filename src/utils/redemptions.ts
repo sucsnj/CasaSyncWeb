@@ -18,6 +18,30 @@ export type GroupedRedemption = RedemptionView & {
   totalCount: number
 }
 
+/** Sugestão de recompensa como a tela a consome (nome do autor já resolvido). */
+export type RewardsSuggestionView = {
+  id: string
+  title: string
+  description: string | null
+  points_cost: number | null
+  image_url: string | null
+  status: Tables<'reward_suggestions'>['status']
+  created_at: string
+  profileName: string
+}
+
+/**
+ * Payload da tela de recompensas (catálogo + resgates + sugestões).
+ *
+ * Fica num único tipo porque a tela inteira é **uma** query no cache e **uma**
+ * Server Action na revalidação — dividi-la criaria ações concorrentes.
+ */
+export type RewardsCacheData = {
+  rewards: Tables<'rewards'>[]
+  redemptions: RedemptionView[]
+  suggestions: RewardsSuggestionView[]
+}
+
 /**
  * Retorna a data em que o resgate foi efetivamente resolvido/tratado,
  * usando 'created_at' como fallback apenas para itens pendentes.

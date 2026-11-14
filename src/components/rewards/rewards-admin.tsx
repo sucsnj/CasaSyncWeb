@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useCallback, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   approveRedemption,
@@ -49,21 +49,20 @@ import {
   groupRedemptionsByStatus,
   getRedemptionDisplayDate,
   type RedemptionView,
+  type RewardsCacheData,
+  type RewardsSuggestionView,
 } from '@/utils/redemptions'
+import { useQueryScreen } from '@/hooks/use-query-screen'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchRewardsForCache } from '@/actions/rewards'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
 
-type SuggestionView = {
-  id: string
-  title: string
-  description: string | null
-  points_cost: number | null
-  image_url: string | null
-  status: Tables<'reward_suggestions'>['status']
-  created_at: string
-  profileName: string
-}
+const EMPTY_REWARDS: Reward[] = []
+const EMPTY_REDEMPTIONS: RedemptionView[] = []
+const EMPTY_SUGGESTIONS: RewardsSuggestionView[] = []
 
 export function RewardsAdmin({
   houseId,
@@ -78,19 +77,50 @@ export function RewardsAdmin({
   userId: string
   initialRewards: Reward[]
   initialRedemptions: RedemptionView[]
-  initialSuggestions: SuggestionView[]
+  initialSuggestions: RewardsSuggestionView[]
   dependents: { id: string; full_name: string }[]
   /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const router = useRouter()
-  const [rewards, setRewards] = useState<Reward[]>(initialRewards)
-  const [redemptions, setRedemptions] = useState<RedemptionView[]>(
-    initialRedemptions
+  // Catálogo + resgates + sugestões: UMA query de tela (o `queryFn` é uma Server
+  // Action só). As escritas continuam com a forma `setX(prev => next)` — agora
+  // cada uma fatia o payload da tela no cache.
+  const { data: screen, setData: setScreen } = useQueryScreen<RewardsCacheData>({
+    queryKey: queryKeys.rewards.screen(houseId),
+    queryFn: () => unwrapAction(fetchRewardsForCache),
+    initialData: {
+      rewards: initialRewards,
+      redemptions: initialRedemptions,
+      suggestions: initialSuggestions,
+    },
+  })
+  // Arrays vazios **constantes**: um `?? []` inline criaria uma identidade nova a
+  // cada render e quebraria a memoização das listas derivadas.
+  const rewards = screen?.rewards ?? EMPTY_REWARDS
+  const redemptions = screen?.redemptions ?? EMPTY_REDEMPTIONS
+  const suggestions = screen?.suggestions ?? EMPTY_SUGGESTIONS
+  const setRewards = useCallback(
+    (updater: (previous: Reward[]) => Reward[]) =>
+      setScreen((previous) => ({ ...previous, rewards: updater(previous.rewards) })),
+    [setScreen]
   )
-  const [suggestions, setSuggestions] = useState<SuggestionView[]>(
-    initialSuggestions
+  const setRedemptions = useCallback(
+    (updater: (previous: RedemptionView[]) => RedemptionView[]) =>
+      setScreen((previous) => ({
+        ...previous,
+        redemptions: updater(previous.redemptions),
+      })),
+    [setScreen]
+  )
+  const setSuggestions = useCallback(
+    (updater: (previous: RewardsSuggestionView[]) => RewardsSuggestionView[]) =>
+      setScreen((previous) => ({
+        ...previous,
+        suggestions: updater(previous.suggestions),
+      })),
+    [setScreen]
   )
   const [pending, startTransition] = useTransition()
   // Pending/otimista por item compartilhado com tasks. `pending` fica só para
@@ -211,7 +241,7 @@ export function RewardsAdmin({
     onUpsert: (row) => {
       markServer(row.id)
       setSuggestions((prev) => {
-        const view: SuggestionView = {
+        const view: RewardsSuggestionView = {
           id: row.id,
           title: row.title,
           description: row.description,
@@ -343,9 +373,9 @@ export function RewardsAdmin({
     })
   }
 
-  function handleResolveSuggestion(suggestion: SuggestionView, approve: boolean) {
+  function handleResolveSuggestion(suggestion: RewardsSuggestionView, approve: boolean) {
     setFormError(null)
-    const nextStatus: SuggestionView['status'] = approve ? 'APPROVED' : 'REJECTED'
+    const nextStatus: RewardsSuggestionView['status'] = approve ? 'APPROVED' : 'REJECTED'
     void runOptimistic({
       current: suggestion,
       optimistic: { ...suggestion, status: nextStatus },

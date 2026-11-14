@@ -4,6 +4,10 @@ import { useMemo, useState } from 'react'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
+import { useQueryList } from '@/hooks/use-query-list'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchChestForCache } from '@/actions/chest'
 import { Package, Search } from 'lucide-react'
 import { TaskAttachmentView } from '@/components/tasks/task-attachment-view'
 import { CardColumns } from '@/components/ui/card-columns'
@@ -40,20 +44,16 @@ export function ChestDependent({
    */
   attachmentsAllowed?: boolean
 }) {
-  const [items, setItems] = useState(initialItems)
+  // O acervo vem do CACHE (o RSC já hidratou a chave): a tela abre instantânea
+  // e a revalidação acontece em background. Realtime e mutações escrevem no
+  // mesmo cache — uma verdade só.
+  const { data: items, setData: setItems } = useQueryList<ChestItemView>({
+    queryKey: queryKeys.chest.items(houseId),
+    queryFn: () => unwrapAction(fetchChestForCache),
+    initialData: initialItems,
+  })
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-dependent', 'created:desc')
-
-  // O componente é montado com `key={house.id}`, então a troca de casa já
-  // remonta. O que ainda precisa é pegar a prop nova quando ela chega no mesmo
-  // mount — um `router.refresh()` posterior a uma escrita (as actions revalidam
-  // `/chest`). Ajustar o estado **durante o render** é o padrão do React para
-  // "prop mudou": sem efeito, sem cascata de render.
-  const [syncedProp, setSyncedProp] = useState(initialItems)
-  if (initialItems !== syncedProp) {
-    setSyncedProp(initialItems)
-    setItems(initialItems)
-  }
 
   // Realtime: o baú é catálogo, então item novo aparece sem F5 (ADR-0024, item
   // 12). Sem notificação — a lista é o canal.

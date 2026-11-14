@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
+import { fetchAchievementsForCache } from '@/actions/achievements'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
 import Link from 'next/link'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -57,7 +60,6 @@ export default async function AchievementsPage() {
     redirect('/login')
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -79,65 +81,58 @@ export default async function AchievementsPage() {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const [achievements, progress, dependents] = await Promise.all([
-        admin
-          .from('achievements')
-          .select('*')
-          .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('dependent_achievements')
-          .select(
-            'id, achievement_id, profile_id, level, current_progress, unlocked_at'
-          )
-          .eq('house_id', activeHouse.id),
-        getHouseAssignees(activeHouse.id),
-      ])
+      // UMA leitura para a tela inteira: o mesmo resultado vira prop e o estado
+      // do cache — zero requisição duplicada no primeiro paint.
+      const queryClient = new QueryClient()
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.achievements.screen(activeHouse.id, user.id),
+        queryFn: () => unwrapAction(fetchAchievementsForCache),
+      })
+
+      const dependents = await getHouseAssignees(activeHouse.id)
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <AchievementsAdmin
-          key={activeHouse.id}
-          houseId={activeHouse.id}
-          initialAchievements={achievements?.data ?? []}
-          dependents={dependents}
-          initialProgress={progress?.data ?? []}
-          textLimits={textLimitsSettings}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <AchievementsAdmin
+            key={activeHouse.id}
+            houseId={activeHouse.id}
+            userId={user.id}
+            initialAchievements={data.achievements}
+            dependents={dependents}
+            initialProgress={data.progress}
+            textLimits={textLimitsSettings}
+          />
+        </HydrationBoundary>
       )
     }
+
+
   } else {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const [achievements, progress] = await Promise.all([
-        admin
-          .from('achievements')
-          .select('*')
-          .eq('house_id', dependentHouse.id)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('dependent_achievements')
-          .select('id, achievement_id, level, current_progress, unlocked_at')
-          .eq('house_id', dependentHouse.id)
-          .eq('profile_id', user.id),
-      ])
+      // Mesma leitura única do ADMIN (a action resolve o papel).
+      const queryClient = new QueryClient()
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.achievements.screen(dependentHouse.id, user.id),
+        queryFn: () => unwrapAction(fetchAchievementsForCache),
+      })
 
-      const views = (achievements?.data ?? []).map((achievement) => ({
-        achievement,
-        progress:
-          progress?.data?.find(
-            (entry) => entry.achievement_id === achievement.id
-          ) ?? null,
-      }))
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <AchievementsDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          userId={user.id}
-          initialViews={views}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <AchievementsDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            userId={user.id}
+            initialAchievements={data.achievements}
+            initialProgress={data.progress}
+          />
+        </HydrationBoundary>
       )
+
     }
   }
 

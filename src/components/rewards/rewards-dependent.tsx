@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Coins, ChevronDown, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
@@ -44,19 +44,20 @@ import {
   groupRedemptionsByStatus,
   getRedemptionDisplayDate,
   type RedemptionView,
+  type RewardsCacheData,
+  type RewardsSuggestionView,
 } from '@/utils/redemptions'
+import { useQueryScreen } from '@/hooks/use-query-screen'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchRewardsForCache } from '@/actions/rewards'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
 
-type SuggestionView = {
-  id: string
-  title: string
-  description: string | null
-  points_cost: number | null
-  status: Tables<'reward_suggestions'>['status']
-  created_at: string
-}
+const EMPTY_REWARDS: Reward[] = []
+const EMPTY_REDEMPTIONS: RedemptionView[] = []
+const EMPTY_SUGGESTIONS: RewardsSuggestionView[] = []
 
 export function RewardsDependent({
   houseId,
@@ -81,7 +82,7 @@ export function RewardsDependent({
    */
   dayStartIso?: string
   monthStartIso?: string
-  initialSuggestions: SuggestionView[]
+  initialSuggestions: RewardsSuggestionView[]
   /**
    * Teto de caracteres da descrição da sugestão (0 = sem limite) - settings.casa.
    * Mesmo teto da recompensa, porque a sugestão vira recompensa na aprovação.
@@ -91,12 +92,39 @@ export function RewardsDependent({
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const router = useRouter()
   const [points, setPoints] = useState(initialPoints)
-  const [rewards, setRewards] = useState<Reward[]>(initialRewards)
-  const [redemptions, setRedemptions] = useState<RedemptionView[]>(
-    initialRedemptions
+  // Catálogo + resgates + sugestões: UMA query de tela (uma Server Action só).
+  const { data: screen, setData: setScreen } = useQueryScreen<RewardsCacheData>({
+    queryKey: queryKeys.rewards.screen(houseId),
+    queryFn: () => unwrapAction(fetchRewardsForCache),
+    initialData: {
+      rewards: initialRewards,
+      redemptions: initialRedemptions,
+      suggestions: initialSuggestions,
+    },
+  })
+  const rewards = screen?.rewards ?? EMPTY_REWARDS
+  const redemptions = screen?.redemptions ?? EMPTY_REDEMPTIONS
+  const suggestions = screen?.suggestions ?? EMPTY_SUGGESTIONS
+  const setRewards = useCallback(
+    (updater: (previous: Reward[]) => Reward[]) =>
+      setScreen((previous) => ({ ...previous, rewards: updater(previous.rewards) })),
+    [setScreen]
   )
-  const [suggestions, setSuggestions] = useState<SuggestionView[]>(
-    initialSuggestions
+  const setRedemptions = useCallback(
+    (updater: (previous: RedemptionView[]) => RedemptionView[]) =>
+      setScreen((previous) => ({
+        ...previous,
+        redemptions: updater(previous.redemptions),
+      })),
+    [setScreen]
+  )
+  const setSuggestions = useCallback(
+    (updater: (previous: RewardsSuggestionView[]) => RewardsSuggestionView[]) =>
+      setScreen((previous) => ({
+        ...previous,
+        suggestions: updater(previous.suggestions),
+      })),
+    [setScreen]
   )
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -208,13 +236,15 @@ export function RewardsDependent({
     onUpsert: (row) => {
       if (row.profile_id !== myId) return
       setSuggestions((prev) => {
-        const view: SuggestionView = {
+        const view: RewardsSuggestionView = {
           id: row.id,
           title: row.title,
           description: row.description,
           points_cost: row.points_cost,
+          image_url: row.image_url,
           status: row.status,
           created_at: row.created_at,
+          profileName: 'Você',
         }
         const exists = prev.some((item) => item.id === row.id)
         return exists

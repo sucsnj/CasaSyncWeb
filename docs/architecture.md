@@ -36,3 +36,8 @@
 - **Escrita:** Realtime e mutações otimistas escrevem no **mesmo cache** (`setQueryData`) — uma verdade só, sem espelho em `useState`.
 - **Shell continua no servidor:** badges da nav, ícone de castigo, comunicados e sino são RSC e se atualizam com `router.refresh()`.
 - **Pull-to-refresh (Android):** invalida o escopo da rota ativa + `router.refresh()` do shell — não limpa mais o cache da sessão.
+
+**Rotas migradas (F1):** `/tasks`, `/rewards`, `/achievements`, `/chest` — cada uma com **uma** Server Action de leitura (`fetchTasksForCache`, `fetchRewardsForCache`, `fetchAchievementsForCache`, `fetchChestForCache`), `HydrationBoundary` no RSC (o mesmo array vira prop e estado do cache → zero requisição duplicada no primeiro paint) e as listas como verdade única no cache (Realtime e mutações otimistas escrevem nele via `setQueryData`).
+
+- `useQueryList` (`src/hooks/use-query-list.ts`): lista única (baú, tarefas) — API `setData(prev => next)` compatível com o `useState` anterior.
+- `useQueryScreen` (`src/hooks/use-query-screen.ts`): tela com várias listas que mudam juntas (catálogo + resgates + sugestões; conquistas + progresso) — **uma** chave → **uma** Server Action na revalidação (o Next enfileira actions concorrentes na mesma tela).

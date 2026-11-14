@@ -25,6 +25,10 @@ import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
+import { useQueryList } from '@/hooks/use-query-list'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchChestForCache } from '@/actions/chest'
 import { useKeyAction } from '@/hooks/use-key-action'
 import {
   CHEST_ITEM_FOLDER,
@@ -80,7 +84,14 @@ export function ChestAdmin({
    */
   attachmentsAllowed?: boolean
 }) {
-  const [items, setItems] = useState(initialItems)
+  // O acervo vem do CACHE (o RSC já hidratou a chave): a tela abre instantânea e
+  // a revalidação acontece em background. Realtime e mutações escrevem no mesmo
+  // cache — uma verdade só.
+  const { data: items, setData: setItems } = useQueryList<ChestItemView>({
+    queryKey: queryKeys.chest.items(houseId),
+    queryFn: () => unwrapAction(fetchChestForCache),
+    initialData: initialItems,
+  })
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-admin', 'created:desc')
 
@@ -120,10 +131,10 @@ export function ChestAdmin({
     busyRef.current = pending || Boolean(editingId) || deleting
   })
 
-  useEffect(() => {
-    if (busyRef.current) return
-    setItems(initialItems)
-  }, [initialItems])
+  // A lista NÃO volta mais da prop do servidor: quem manda é o cache (o RSC
+  // hidrata a chave, o Realtime e as mutações escrevem nela). Sobrescrever com a
+  // prop traria o estado ANTERIOR do servidor por cima de um item que acabou de
+  // mudar.
 
   // Realtime: o baú é catálogo (como a loja de recompensas), então item novo,
   // edição e exclusão chegam sem F5. O filtro é pela **casa ativa** — o acervo é

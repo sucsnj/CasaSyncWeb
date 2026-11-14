@@ -11,6 +11,7 @@ import {
   ACHIEVEMENT_ICONS,
   ACHIEVEMENT_METRIC_TYPES,
   type AchievementMetricType,
+  type AchievementsCacheData,
   achievementRewardAtLevel,
   applyAchievementProgress,
   maxAchievementLevel,
@@ -116,6 +117,60 @@ function validateAchievementFields(input: {
  * concessão manual (`MANUAL`). Pontos da conquista são apenas "marca de
  * recompensa" — o `task_decay` não os reduz.
  */
+/**
+ * LEITURA da tela de conquistas para o cache do cliente (React Query).
+ *
+ * **Uma action para a tela inteira** (conquistas + progresso): o `queryFn` é
+ * chamado na revalidação em background e o Next.js **enfileira** as Server
+ * Actions — várias actions concorrentes na mesma tela viram fila sequencial.
+ *
+ * Mesma leitura do RSC de antes (service-role + escopo da sessão, ADR-0006): o
+ * dependente vê o progresso **dele**, o ADMIN vê o da casa inteira.
+ */
+export async function fetchAchievementsForCache(): Promise<
+  ActionResult<AchievementsCacheData>
+> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || !profile) {
+    return { ok: false, error: 'Sessão expirada. Entre novamente.' }
+  }
+
+  const admin = createAdminClient()
+  const isAdmin = profile.user_role === 'ADMIN'
+  const house = isAdmin ? await getActiveAdminHouse() : await getDependentHouse(user.id)
+  if (!house) {
+    return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
+  }
+
+  let progressQuery = admin
+    .from('dependent_achievements')
+    .select('id, achievement_id, profile_id, level, current_progress, unlocked_at')
+    .eq('house_id', house.id)
+  if (!isAdmin) progressQuery = progressQuery.eq('profile_id', user.id)
+
+  const [achievementsRes, progressRes] = await Promise.all([
+    admin
+      .from('achievements')
+      .select('*')
+      .eq('house_id', house.id)
+      .order('created_at', { ascending: true }),
+    progressQuery,
+  ])
+
+  if (achievementsRes.error || progressRes.error) {
+    console.error('[achievements] Falha ao carregar a tela de conquistas')
+    return { ok: false, error: 'Falha ao carregar as conquistas.' }
+  }
+
+  return {
+    ok: true,
+    data: {
+      achievements: achievementsRes.data ?? [],
+      progress: progressRes.data ?? [],
+    },
+  }
+}
+
 export async function createAchievement(
   input: {
     title: string
