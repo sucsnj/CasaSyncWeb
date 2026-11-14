@@ -75,6 +75,19 @@ export function DashboardNav({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  /**
+   * F4 — prefetch por intenção (hover/focus/touchstart). Em produção as 4
+   * rotas da nav já têm `loading.tsx`, então o shell (layout→loading boundary)
+   * é prefetched no viewport automaticamente; o intent cobre o caso do toque/
+   * mouse aparecer antes da fila de agendamento. O dado continua fluindo no
+   * click: as páginas são `force-dynamic` e refazem as leituras no servidor,
+   * então prefetch de dado no cliente seria sempre stale-por-construção.
+   */
+  const prefetchOnIntent = (href: string) => {
+    if (href !== pathname) {
+      router.prefetch(href)
+    }
+  }
   const [showAccount, setShowAccount] = useState(false)
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const claimable = useClaimableAchievement(hasClaimableAchievement)
@@ -165,6 +178,9 @@ export function DashboardNav({
                   key={item.href}
                   href={item.href}
                   data-active={active}
+                  onMouseEnter={() => prefetchOnIntent(item.href)}
+                  onFocus={() => prefetchOnIntent(item.href)}
+                  onTouchStart={() => prefetchOnIntent(item.href)}
                   className={cn(
                     'rounded-xl px-3 py-2 text-sm font-medium text-blue-100 transition-all duration-200',
                     'hover:bg-white/10 hover:text-white active:scale-95',
@@ -236,6 +252,9 @@ export function DashboardNav({
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 data-active={active}
+                onMouseEnter={() => prefetchOnIntent(item.href)}
+                onFocus={() => prefetchOnIntent(item.href)}
+                onTouchStart={() => prefetchOnIntent(item.href)}
                 className={cn(
                   'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition-all duration-200 active:scale-95',
                   gold
