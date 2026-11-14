@@ -74,7 +74,7 @@ const getRawHouseSettingsForHouse = (houseId: string) =>
       return record
     },
     ['casasync:house-settings'],
-    { tags: [dataTags.houseSettings(houseId)] }
+    { tags: [dataTags.houseSettings(houseId)], revalidate: 300 }
   )(houseId)
 
 const getHouseSettingsMap = cache(

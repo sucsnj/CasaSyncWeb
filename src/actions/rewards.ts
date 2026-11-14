@@ -1,6 +1,6 @@
 'use server'
 
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
@@ -33,7 +33,7 @@ import type {
   RewardsCacheData,
   RewardsSuggestionView,
 } from '@/utils/redemptions'
-import { getCachedRewardsForHouse, dataTags } from '@/utils/data-cache'
+import { getCachedRewardsForHouse, invalidateHouseCache } from '@/utils/data-cache'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
 import type { ActionResult } from './types'
@@ -211,7 +211,7 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     link: '/rewards',
   })
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: `Recompensa "${title}" criada.` }
 }
@@ -418,7 +418,7 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
     console.error('[PUSH] Falha ao disparar push na solicitação de resgate:', err)
   }
 
-  updateTag(dataTags.rewards(house.id))
+  invalidateHouseCache(house.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: `Resgate de "${reward.title}" solicitado.` }
 }
@@ -579,7 +579,7 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     auth.adminId
   )
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
   revalidatePath('/tasks')
@@ -639,7 +639,7 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
     console.error('[PUSH] Falha ao disparar push na rejeição de resgate:', err)
   }
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }
 }
@@ -718,7 +718,7 @@ export async function updateReward(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: 'Recompensa atualizada.' }
 }
@@ -756,7 +756,7 @@ export async function setRewardActive(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   return {
     ok: true,
@@ -826,7 +826,7 @@ export async function createRewardSuggestion(
     link: '/rewards',
   })
 
-  updateTag(dataTags.rewards(house.id))
+  invalidateHouseCache(house.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: 'Sugestão enviada para aprovação.' }
 }
@@ -912,7 +912,7 @@ export async function resolveRewardSuggestion(
     )
   }
 
-  updateTag(dataTags.rewards(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'rewards')
   revalidatePath('/rewards')
   return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }
 }

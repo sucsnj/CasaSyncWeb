@@ -16,8 +16,9 @@ ser invalidado por tag).
   `'use server'`), envelopadas com `unstable_cache` com **tags por casa**
   (`tasks:{houseId}`, `rewards:{houseId}`, `chest:{houseId}`,
   `house-settings:{houseId}`, `house-members:{houseId}`,
-  `storage:chest:{houseId}`). Sem TTL, exceto `storage:chest` (`revalidate: 300`
-  — anexos entram no storage pelas actions sem invalidar a contagem).
+  `storage:chest:{houseId}`). **TTL de fallback de 300s (SWR) em todas** —
+  `updateTag` continua expirando imediatamente; o TTL só limita a staleness de
+  escrita invisível a ~5 minutos.
 - Dois níveis: `unstable_cache` (cross-request, Data Cache) + `React.cache`
   (dedupe no request). Nenhum `cookies()`/`headers()` dentro dos escopos —
   apenas `houseId` como argumento serializável; service-role por dentro
@@ -47,9 +48,12 @@ ser invalidado por tag).
   ~6 no dependente; `/tasks` ~3–5; `/chest` ~2 + ~170ms de storage;
   `house-settings` deixa de ir ao banco a cada request.
 - **Escritas fora de ações não invalidam** (edição direta no banco, SQL manual,
-  webhooks): dado permanece até a próxima escrita legítima (sem TTL). Toda
-  escrita nova **deve** chamar `updateTag`. Exceção aceita e documentada:
-  `storage:chest` com TTL 300s.
+  webhooks): o dado pode permanecer stale — no máximo até o **TTL de fallback
+  de 300s** presente em todas as entradas. Toda escrita nova **deve** chamar
+  `updateTag` (via `invalidateHouseCache`).
+- **Helper único** `invalidateHouseCache(houseId, ...escopos)` em
+  `data-cache.ts` concentra os `updateTag` — uma linha por action, sem arrays de
+  tags soltos.
 - Efeito combinado com ADR-0028/F4: navegação instantânea continua limitada
   pelo RSC `force-dynamic` refazer as leituras (agora do cache) — o ganho é de
   latência de DB, não de bytes do payload.

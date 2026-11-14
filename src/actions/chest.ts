@@ -1,10 +1,10 @@
 'use server'
 
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getCachedChestItemsForHouse,
-  dataTags,
+  invalidateHouseCache,
 } from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
@@ -116,7 +116,7 @@ async function loadManagedItem(
 
 /** Rebaixa a tela do dependente e a do baú depois de qualquer escrita. */
 function revalidateChest(houseId: string) {
-  updateTag(dataTags.chest(houseId))
+  invalidateHouseCache(houseId, 'chest')
   revalidatePath('/chest')
   revalidatePath('/dashboard/dependent')
 }
@@ -373,7 +373,7 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
 
   await removeStorageFile(admin, item.file_url, CHEST_ITEM_FOLDER, 'CHEST')
 
-  updateTag(dataTags.tasks(item.house_id))
+  invalidateHouseCache(item.house_id, 'tasks')
   revalidateChest(item.house_id)
   revalidatePath('/tasks')
   return { ok: true, message: `Item "${item.title}" excluído.` }
@@ -537,7 +537,7 @@ export async function listChestAttachmentsForTask(): Promise<
           .is('file_size', null)
       })
     )
-    updateTag(dataTags.chest(activeHouse.id))
+    invalidateHouseCache(activeHouse.id, 'chest')
   }
 
   const options: ChestAttachmentOption[] = rawItems.map((item) => {

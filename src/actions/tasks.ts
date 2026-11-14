@@ -1,8 +1,11 @@
 'use server'
 
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { getCachedTasksForHouse, dataTags } from '@/utils/data-cache'
+import {
+  getCachedTasksForHouse,
+  invalidateHouseCache,
+} from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -513,7 +516,7 @@ export async function createTask(
     console.error('[PUSH] Falha ao disparar push na criação de tarefa:', err)
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   return {
     ok: true,
@@ -836,7 +839,7 @@ export async function updateTask(
     }
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -946,7 +949,7 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     console.error('[PUSH] Falha ao disparar push na conclusão de tarefa:', err)
   }
 
-  updateTag(dataTags.tasks(house.id))
+  invalidateHouseCache(house.id, 'tasks')
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -1046,7 +1049,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/achievements')
@@ -1126,7 +1129,7 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
     )
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1216,7 +1219,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     link: '/tasks',
   })
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -1325,7 +1328,7 @@ export async function setTaskOnHold(
       })
     }
 
-    updateTag(dataTags.tasks(activeHouse.id))
+    invalidateHouseCache(activeHouse.id, 'tasks')
     revalidatePath('/tasks')
     revalidatePath('/dashboard/dependent')
 
@@ -1397,7 +1400,7 @@ export async function setTaskOnHold(
     })
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1484,7 +1487,7 @@ export async function restoreTask(
     })
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1587,7 +1590,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/achievements')
@@ -1692,7 +1695,7 @@ export async function requestTaskExtension(
     link: '/tasks',
   })
 
-  updateTag(dataTags.tasks(house.id))
+  invalidateHouseCache(house.id, 'tasks')
   revalidatePath('/tasks')
   return { ok: true, message: 'Pedido de adiamento enviado.' }
 }
@@ -1831,7 +1834,7 @@ export async function resolveTaskExtension(
     })
   }
 
-  updateTag(dataTags.tasks(activeHouse.id))
+  invalidateHouseCache(activeHouse.id, 'tasks')
   revalidatePath('/tasks')
   if (approve && isNotDelivered) {
     revalidatePath('/rewards')

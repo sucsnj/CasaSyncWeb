@@ -1,4 +1,4 @@
-import { unstable_cache } from 'next/cache'
+import { unstable_cache, updateTag } from 'next/cache'
 import { cache } from 'react'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { houseAttachmentBytes } from '@/utils/attachment-usage'
@@ -10,15 +10,23 @@ import type { Tables } from '@/types/database'
  * colateral dentro dos escopos cacheados — tudo é `houseId` como argumento
  * serializável e service-role por dentro (ADR-0006).
  *
+ * **Regra de ouro: `revalidatePath()` NÃO invalida este cache** — ele só purga
+ * o Router/RSC cache. A consistência do Data Cache depende 100% de
+ * `updateTag()` dentro de Server Actions. Toda action que escreve em `tasks`,
+ * `rewards`, `chest_items`, `house_settings`, `house_members` ou `profiles`
+ * deve chamar `invalidateHouseCache(houseId, ...escopos)` no caminho de
+ * sucesso. Escrita fora de action fica stale até o TTL de fallback (300s) que
+ * todas as entradas têm.
+ *
  * Dois níveis:
  * - `unstable_cache` (cross-request, tags por casa) — invalidado com
  *   `updateTag` nas Server Actions;
  * - `React.cache` por cima (dedupe dentro do request) — as telas chamam as
  *   mesmas leituras por vários caminhos (layout → página → action).
  *
- * Sem TTL: o dado só muda por escrita nossa, e toda escrita invalida a tag.
- * Exceção: `storage:chest:{houseId}` usa `revalidate: 300` como teto de
- * segurança, porque anexos são gravados pelas actions sem invalidar a contagem.
+ * Escopos nunca sem `houseId` (isolamento multi-tenant). TTL 300s de fallback
+ * (SWR) limita a staleness de escrita invisível a 5 minutos — o resto da
+ * semântica de tags (expiração imediata por `updateTag`) continua como antes.
  */
 
 export const dataTags = {
@@ -57,7 +65,7 @@ export const getCachedTasksForHouse = cache((houseId: string) =>
       return data ?? []
     },
     ['casasync:tasks'],
-    { tags: [dataTags.tasks(houseId)] }
+    { tags: [dataTags.tasks(houseId)], revalidate: 300 }
   )(houseId)
 )
 
@@ -130,7 +138,7 @@ export const getCachedRewardsForHouse = cache((houseId: string) =>
       }
     },
     ['casasync:rewards'],
-    { tags: [dataTags.rewards(houseId)] }
+    { tags: [dataTags.rewards(houseId)], revalidate: 300 }
   )(houseId)
 )
 
@@ -147,7 +155,7 @@ export const getCachedChestItemsForHouse = cache((houseId: string) =>
       return data ?? []
     },
     ['casasync:chest-items'],
-    { tags: [dataTags.chest(houseId)] }
+    { tags: [dataTags.chest(houseId)], revalidate: 300 }
   )(houseId)
 )
 
@@ -165,7 +173,7 @@ export const getCachedChestItemsByIds = cache(
         return data ?? []
       },
       ['casasync:chest-items-by-ids'],
-      { tags: [dataTags.chest(houseId)] }
+      { tags: [dataTags.chest(houseId)], revalidate: 300 }
     )(houseId, ids)
 )
 
@@ -204,7 +212,7 @@ export const getCachedHouseMembers = cache((houseId: string) =>
       }
     },
     ['casasync:house-members'],
-    { tags: [dataTags.houseMembers(houseId)] }
+    { tags: [dataTags.houseMembers(houseId)], revalidate: 300 }
   )(houseId)
 )
 
@@ -222,3 +230,30 @@ export const getCachedChestStorageBytes = cache((houseId: string) =>
     { tags: [dataTags.chestStorage(houseId)], revalidate: 300 }
   )(houseId)
 )
+
+const scopeTag = {
+  tasks: dataTags.tasks,
+  rewards: dataTags.rewards,
+  chest: dataTags.chest,
+  houseSettings: dataTags.houseSettings,
+  houseMembers: dataTags.houseMembers,
+  storageChest: dataTags.chestStorage,
+} as const
+
+/** Escopo de cache da casa afetado por uma escrita. */
+export type CacheScope = keyof typeof scopeTag
+
+/**
+ * Expira os escopos de cache da casa após uma escrita. Chamar **apenas de
+ * dentro de Server Actions** — `updateTag` exige esse escopo (a action é o
+ * "read-your-writes" do request). Antes de chamar, a escrita já aconteceu:
+ * esta função não escreve no banco, só invalida.
+ */
+export function invalidateHouseCache(
+  houseId: string,
+  ...scopes: CacheScope[]
+): void {
+  for (const scope of scopes) {
+    updateTag(scopeTag[scope](houseId))
+  }
+}

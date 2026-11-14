@@ -1,10 +1,10 @@
 'use server'
 
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { dataTags } from '@/utils/data-cache'
+import { invalidateHouseCache } from '@/utils/data-cache'
 import {
   ACTIVE_HOUSE_COOKIE,
   getSessionProfile,
@@ -186,7 +186,7 @@ export async function createHouse(name: string): Promise<ActionResult> {
     path: '/',
   })
 
-  updateTag(dataTags.houseMembers(house.id))
+  invalidateHouseCache(house.id, 'houseMembers')
   revalidateHouseContext()
 
   return { ok: true, message: `Casa "${houseName}" criada.` }
@@ -275,7 +275,7 @@ export async function joinHouseByPin(pin: string): Promise<ActionResult> {
     path: '/',
   })
 
-  updateTag(dataTags.houseMembers(house.id))
+  invalidateHouseCache(house.id, 'houseMembers')
   revalidateHouseContext()
 
   return { ok: true, message: `Você agora controla a casa "${house.name}".` }
@@ -425,8 +425,7 @@ export async function createDependent(
     return { ok: false, error: 'Falha ao vincular o dependente à casa.' }
   }
 
-  updateTag(dataTags.houseMembers(targetHouseId))
-  updateTag(dataTags.tasks(targetHouseId))
+  invalidateHouseCache(targetHouseId, 'houseMembers', 'tasks')
   revalidateHouseContext()
 
   return {
@@ -579,7 +578,7 @@ export async function updateDependentProfile(
     .eq('id', dependentId)
   if (error) return { ok: false, error: 'Falha ao atualizar o dependente.' }
 
-  updateTag(dataTags.houseMembers(member.house_id))
+  invalidateHouseCache(member.house_id, 'houseMembers')
   revalidateHouseContext()
 
   return { ok: true, message: 'Dependente atualizado.' }
@@ -904,9 +903,7 @@ export async function expelMember(
     return { ok: false, error: 'Falha ao remover o vínculo do membro.' }
   }
 
-  updateTag(dataTags.houseMembers(houseId))
-  updateTag(dataTags.tasks(houseId))
-  updateTag(dataTags.rewards(houseId))
+  invalidateHouseCache(houseId, 'houseMembers', 'tasks', 'rewards')
   revalidateHouseContext()
 
   const roleLabel = membership.role === 'ADMIN' ? 'Administrador' : 'Dependente'
@@ -1119,9 +1116,7 @@ export async function deleteDependentAccount(
     return { ok: false, error: 'Falha ao remover a conta de login.' }
   }
 
-  updateTag(dataTags.houseMembers(houseId))
-  updateTag(dataTags.tasks(houseId))
-  updateTag(dataTags.rewards(houseId))
+  invalidateHouseCache(houseId, 'houseMembers', 'tasks', 'rewards')
   revalidateHouseContext()
 
   return {
@@ -1343,11 +1338,7 @@ export async function deleteHouse(houseId: string): Promise<ActionResult> {
     cookieStore.set(ACTIVE_HOUSE_COOKIE, '', { maxAge: 0, path: '/' })
   }
 
-  updateTag(dataTags.houseMembers(houseId))
-  updateTag(dataTags.tasks(houseId))
-  updateTag(dataTags.rewards(houseId))
-  updateTag(dataTags.chest(houseId))
-  updateTag(dataTags.houseSettings(houseId))
+  invalidateHouseCache(houseId, 'houseMembers', 'tasks', 'rewards', 'chest', 'houseSettings')
   revalidateHouseContext()
 
   return { ok: true, message: `Casa "${house.name}" excluída.` }

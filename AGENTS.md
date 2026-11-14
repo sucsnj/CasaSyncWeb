@@ -42,6 +42,10 @@ Rode estritamente nesta ordem antes de entregar qualquer código:
   - Senha e `masterPin` **nunca** em `useState` ou inputs controlados (inputs usam `name` puro + `reset()` no submit).
   - Formulários de senha exigem `<Input suppressHydrationWarning>`.
   - Server Actions de credenciais **não podem lançar exceção**; use `try/catch` retornando `ActionResult { ok: false, error: '...' }`.
+- **Cache de Servidor & Invalidação (ADR-0029):**
+  - Toda Server Action que **escreve** em `tasks`, `rewards`, `reward_redemptions`, `reward_suggestions`, `chest_items`, `house_settings` ou `house_members`/`profiles` deve invalidar o Data Cache com `invalidateHouseCache(houseId, ...escopos)` de `src/utils/data-cache.ts` (`updateTag` exige o escopo de Server Action).
+  - `revalidatePath()` **não** invalida o Data Cache — confiar nele deixa a tela stale indefinidamente.
+  - Dados de `/rewards`, `/tasks`, `/chest`, `house-settings` e `house-members` têm TTL de fallback de 300s; escritas fora de Server Action (SQL manual, webhook) não invalidam — ao editar o banco diretamente, aguarde/espere o TTL ou expire por `updateTag` de uma ação vizinha.
 - **Service Worker (`public/sw.js`):**
   - Cache-first **somente** para `STATIC_ASSETS` e `/_next/static/`.
   - Qualquer outro GET same-origin (incluindo RSC e Realtime) vai **direto para a rede, sem cache**. Incremente `CACHE_NAME` ao alterar o SW.

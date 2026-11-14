@@ -1,9 +1,9 @@
 'use server'
 
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
-import { dataTags } from '@/utils/data-cache'
+import { invalidateHouseCache } from '@/utils/data-cache'
 import {
   ATTACHMENT_SETTING_FIELDS,
   DEFAULT_ATTACHMENTS,
@@ -128,7 +128,7 @@ export async function updateHouseSettings(
   const written = await writeHouseSetting(guard.houseId, guard.userId, key, value.value)
   if (!written.ok) return written
 
-  updateTag(dataTags.houseSettings(guard.houseId))
+  invalidateHouseCache(guard.houseId, 'houseSettings')
   revalidatePath('/dashboard/admin/settings')
   if (key === 'quick_message') {
     revalidatePath('/tasks')
@@ -583,7 +583,7 @@ export async function updateAttachmentSettings(
     )
     if (!written.ok) return written
 
-    updateTag(dataTags.houseSettings(guard.houseId))
+    invalidateHouseCache(guard.houseId, 'houseSettings')
     revalidatePath('/dashboard/admin/settings')
     // O toggle decide se o input de anexo aparece (form do ADMIN) e se o chip
     // abre (cards dos dois papéis) — em `/tasks` e no `/chest`.
