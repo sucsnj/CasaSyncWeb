@@ -35,6 +35,7 @@
 - **Hidratação sem dupla busca:** o Server Component busca **uma vez**, passa o mesmo resultado como prop e o `dehydrate` no `HydrationBoundary` — o client já nasce com o dado (SWR) e **não** refaz a requisição no primeiro paint.
 - **Escrita:** Realtime e mutações otimistas escrevem no **mesmo cache** (`setQueryData`) — uma verdade só, sem espelho em `useState`.
 - **Shell continua no servidor:** badges da nav, ícone de castigo, comunicados e sino são RSC e se atualizam com `router.refresh()`.
+- **Mutações (F3):** os componentes das rotas migradas nunca chamam `router.refresh()` — ações que alteram os dados da tela chamam `useInvalidateScope(scope)()` (`src/hooks/use-invalidate-scope.ts`), que invalida o prefixo da tela (`['tasks']` etc.) e o React Query re-sincroniza em background, sem reload. O saldo é reconciliado pelo `useProfilePoints` (Realtime + `refetchOnWindowFocus`) e o badge de conquistas resgatáveis pelo `useClaimableAchievement` (Realtime).
 - **Pull-to-refresh (Android):** invalida o escopo da rota ativa + `router.refresh()` do shell — não limpa mais o cache da sessão.
 
 **Rotas migradas (F1):** `/tasks`, `/rewards`, `/achievements`, `/chest` — cada uma com **uma** Server Action de leitura (`fetchTasksForCache`, `fetchRewardsForCache`, `fetchAchievementsForCache`, `fetchChestForCache`), `HydrationBoundary` no RSC (o mesmo array vira prop e estado do cache → zero requisição duplicada no primeiro paint) e as listas como verdade única no cache (Realtime e mutações otimistas escrevem nele via `setQueryData`).

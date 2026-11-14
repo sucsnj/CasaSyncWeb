@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -22,6 +21,7 @@ import {
 import { setClaimableAchievements } from '@/hooks/use-claimable-achievement'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useQueryScreen } from '@/hooks/use-query-screen'
+import { useInvalidateScope } from '@/hooks/use-invalidate-scope'
 import { queryKeys } from '@/lib/query-keys'
 import { unwrapAction } from '@/lib/unwrap-action'
 import { fetchAchievementsForCache } from '@/actions/achievements'
@@ -46,9 +46,9 @@ export function AchievementsDependent({
   initialAchievements: Achievement[]
   initialProgress: AchievementProgressEntry[]
 }) {
-  const router = useRouter()
   // Conquistas + progresso: UMA query de tela (uma Server Action só). O
   // `views` é derivado do cache — não é mais uma cópia em `useState`.
+  const invalidateAchievements = useInvalidateScope('achievements')
   const { data: screen, setData: setScreen } = useQueryScreen<AchievementsCacheData>({
     queryKey: queryKeys.achievements.screen(houseId, userId),
     queryFn: () => unwrapAction(fetchAchievementsForCache),
@@ -87,7 +87,7 @@ export function AchievementsDependent({
   const [sort, setSort] = usePersistedSort('sort:achievements-dependent', 'title:asc')
 
   // Realtime: quando o ADMIN aprova uma tarefa em outra aba, o progresso aqui
-  // acompanha sozinho (e a página re-sincroniza o saldo no `router.refresh`).
+  // acompanha sozinho (e a página re-sincroniza o saldo no `a invalidação do cache`).
   usePostgresChanges<{
     id: string
     achievement_id: string
@@ -125,7 +125,7 @@ export function AchievementsDependent({
   // Publica "há resgate disponível?" para o badge dourado do item "Conquistas"
   // da nav: é esta tela que tem a lista completa (inclusive `is_repeatable`),
   // então o valor é exato e muda junto com o resgate (otimista) e com o
-  // Realtime — sem esperar `router.refresh()`.
+  // Realtime — sem esperar `invalidateAchievements()`.
   const hasClaimable = useMemo(
     () =>
       views.some((view) =>
@@ -181,7 +181,7 @@ export function AchievementsDependent({
       )
 
       toast.success(res.message)
-      router.refresh()
+      invalidateAchievements()
     } catch {
       toast.error('Falha ao resgatar a conquista.')
     } finally {

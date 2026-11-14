@@ -1,13 +1,13 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
+import { useInvalidateScope } from '@/hooks/use-invalidate-scope'
 import { sortBy } from '@/utils/sort'
 import { useQueryList } from '@/hooks/use-query-list'
 import { queryKeys } from '@/lib/query-keys'
@@ -77,7 +77,7 @@ export function TasksDependent({
   attachmentsAllowed?: boolean
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
-  const router = useRouter()
+  const invalidateTasks = useInvalidateScope('tasks')
   const { data: tasks, setData: setTasks } = useQueryList<Task>({
     queryKey: queryKeys.tasks.dependent(userId),
     queryFn: () => unwrapAction(fetchTasksForCache),
@@ -142,7 +142,7 @@ export function TasksDependent({
       action: () => completeTask(task.id),
       onSuccess: () => {
         toast.success('Tarefa concluída! Aguardando aprovação.')
-        router.refresh()
+        invalidateTasks()
       },
       onError: (message) => {
         setError(message)
@@ -152,7 +152,7 @@ export function TasksDependent({
         // Erro de rede é ambíguo: o servidor pode ter gravado e só a resposta
         // não ter chegado. O `refresh` traz a linha real de volta (ver o efeito
         // de sincronização da prop) e o Realtime confirma.
-        router.refresh()
+        invalidateTasks()
         setError(message)
         toast.error(message)
       },
@@ -180,14 +180,14 @@ export function TasksDependent({
       onSuccess: () => {
         toast.success('Pedido de adiamento enviado!')
         setExtendingTask(null)
-        router.refresh()
+        invalidateTasks()
       },
       onError: (message) => {
         setExtensionError(message)
         toast.error(message)
       },
       onNetworkError: (message) => {
-        router.refresh()
+        invalidateTasks()
         setExtensionError(message)
         toast.error(message)
       },

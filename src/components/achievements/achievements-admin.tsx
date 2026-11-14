@@ -168,7 +168,7 @@ export function AchievementsAdmin({
   const titleRef = useRef<HTMLInputElement>(null)
 
   // Realtime: conquistas/progresso criados/alterados por outro ADMIN ou pelas
-  // aprovações de tarefas chegam ao vivo (confere também no `router.refresh`).
+  // aprovações de tarefas chegam ao vivo (confere também no `a invalidação do cache`).
   usePostgresChanges<Achievement>({
     table: 'achievements',
     filter: `house_id=eq.${houseId}`,

@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Coins, ChevronDown, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
@@ -26,6 +25,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useInvalidateScope } from '@/hooks/use-invalidate-scope'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
@@ -90,9 +90,9 @@ export function RewardsDependent({
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const router = useRouter()
   const [points, setPoints] = useState(initialPoints)
   // Catálogo + resgates + sugestões: UMA query de tela (uma Server Action só).
+  const invalidateRewards = useInvalidateScope('rewards')
   const { data: screen, setData: setScreen } = useQueryScreen<RewardsCacheData>({
     queryKey: queryKeys.rewards.screen(houseId),
     queryFn: () => unwrapAction(fetchRewardsForCache),
@@ -277,7 +277,7 @@ export function RewardsDependent({
         form.reset()
         setShowSuggestionModal(false)
         setSuggestionImageUrl(null)
-        router.refresh()
+        invalidateRewards()
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)
@@ -300,7 +300,7 @@ export function RewardsDependent({
         }
         toast.success('Resgate solicitado! Aguardando aprovação.')
         // O INSERT chega também via Realtime; refresh é a rede de segurança.
-        router.refresh()
+        invalidateRewards()
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)

@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   adminCompleteTask,
   approveTask,
@@ -17,6 +16,7 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
+import { useInvalidateScope } from '@/hooks/use-invalidate-scope'
 import { sortBy } from '@/utils/sort'
 import { useQueryList } from '@/hooks/use-query-list'
 import { queryKeys } from '@/lib/query-keys'
@@ -134,12 +134,12 @@ export function TasksAdmin({
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const attachmentsOn = attachmentsAllowed ?? true
-  const router = useRouter()
-  // Casas com um único dependente: ele é sempre pré-selecionado na criação.
+// Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   // A lista vem do CACHE do React Query (o RSC já hidratou a chave): a tela
   // abre instantânea e a revalidação acontece em background (SWR). O Realtime e
   // as mutações otimistas escrevem no MESMO cache — uma verdade só.
+  const invalidateTasks = useInvalidateScope('tasks')
   const { data: tasks, setData: setTasks } = useQueryList<Task>({
     queryKey: queryKeys.tasks.house(houseId),
     queryFn: () => unwrapAction(fetchTasksForCache),
@@ -231,7 +231,7 @@ export function TasksAdmin({
         if (options?.successToast === 'warning') toast.warning(message)
         else if (options?.successToast === 'info') toast.info(message)
         else toast.success(message)
-        router.refresh()
+        invalidateTasks()
       },
       onError: (message) => {
         // NÃO mexe em `formError`: o erro da transição sai pelo toast, perto do card.
@@ -240,7 +240,7 @@ export function TasksAdmin({
       onNetworkError: () => {
         // Erro de rede é ambíguo: o refresh traz a linha real de volta (ver o
         // efeito de sincronização da prop) e o Realtime confirma.
-        router.refresh()
+        invalidateTasks()
         toast.error('Falha de conexão. Tente novamente.')
       },
     })
@@ -284,7 +284,7 @@ export function TasksAdmin({
    * cima de um card que acabou de mudar — o que o cache do cliente evita.
    *
    * Antes isso era um `useEffect` que fazia `setTasks(initialTasks)`: ele
-   * reconciliava o `router.refresh()` (o `useState` de um client component já
+   * reconciliava o `invalidateTasks()` (o `useState` de um client component já
    * montado ignora a prop nova), mas às custas de sobrescrever o card que tinha
    * acabado de mudar. Agora quem reconcilia é o próprio cache.
    */
@@ -426,14 +426,14 @@ export function TasksAdmin({
 
         toast.success(result.message ?? 'Tarefa reativada')
         // Otimista: reabre o card na seção de pendentes na hora, mesmo que o
-        // router.refresh() ou o Realtime estejam atrasados/indisponíveis.
+        // a invalidação ou o Realtime estejam atrasados/indisponíveis.
         if (result.data?.task) {
           setTasks((prev) => upsertTask(prev, result.data!.task))
         }
     setFormError(null)
         resetForm()
         setShowTaskForm(false)
-        router.refresh()
+        invalidateTasks()
       })
       return
     }
@@ -480,16 +480,15 @@ export function TasksAdmin({
 
       toast.success(result.message ?? 'Tarefa criada')
       // Otimista: exibe a nova tarefa na seção de pendentes na hora, mesmo que
-      // o router.refresh() ou o Realtime estejam atrasados/indisponíveis.
+      // o a invalidação ou o Realtime estejam atrasados/indisponíveis.
       // Se o Realtime entregar o mesmo INSERT depois, o upsert deduplica por id.
       if (result.data?.task) {
         setTasks((prev) => upsertTask(prev, result.data!.task))
       }
-    console.log('DEBUG taskAttachment', taskAttachment)
     setFormError(null)
       resetForm()
       setShowTaskForm(false)
-      router.refresh()
+      invalidateTasks()
     })
   }
 
@@ -523,7 +522,7 @@ export function TasksAdmin({
   function handleAdminComplete(task: Task) {
     // O servidor também grava `completed_by`/`completed_at`; não é preciso no
     // otimista porque o card já sai da seção de pendentes — o Realtime e o
-    // `router.refresh()` completam o resto.
+    // `invalidateTasks()` completam o resto.
     void runTaskTransition(
       task,
       () => ({ ...task, status: 'APPROVED' }),
@@ -741,7 +740,7 @@ export function TasksAdmin({
         }
       })
     )
-    router.refresh()
+    invalidateTasks()
     return result
   }
 

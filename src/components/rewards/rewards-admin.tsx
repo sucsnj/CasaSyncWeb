@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   approveRedemption,
   createReward,
@@ -26,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Gift, ClipboardList, Layers, Lightbulb, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useInvalidateScope } from '@/hooks/use-invalidate-scope'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
@@ -83,10 +83,10 @@ export function RewardsAdmin({
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const router = useRouter()
   // Catálogo + resgates + sugestões: UMA query de tela (o `queryFn` é uma Server
   // Action só). As escritas continuam com a forma `setX(prev => next)` — agora
   // cada uma fatia o payload da tela no cache.
+  const invalidateRewards = useInvalidateScope('rewards')
   const { data: screen, setData: setScreen } = useQueryScreen<RewardsCacheData>({
     queryKey: queryKeys.rewards.screen(houseId),
     queryFn: () => unwrapAction(fetchRewardsForCache),
@@ -215,7 +215,7 @@ export function RewardsAdmin({
     event: 'INSERT',
     onUpsert: (notification) => {
       if (notification.type === 'REDEMPTION_REQUESTED') {
-        router.refresh()
+        invalidateRewards()
       }
     },
   })
@@ -287,7 +287,7 @@ export function RewardsAdmin({
       setShowRewardForm(false)
       setRewardEmoji(null)
       setRewardImageUrl(null)
-      router.refresh()
+      invalidateRewards()
     })
   }
 
@@ -318,7 +318,7 @@ export function RewardsAdmin({
       toast.success('Recompensa atualizada!')
       setEditingReward(null)
       setEditImageUrl(null)
-      router.refresh()
+      invalidateRewards()
     })
   }
 
@@ -335,7 +335,7 @@ export function RewardsAdmin({
       action: () => setRewardActive(reward.id, nextActive),
       onSuccess: () => {
         toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
-        router.refresh()
+        invalidateRewards()
       },
       onError: (message) => {
         setFormError(message)
@@ -364,7 +364,7 @@ export function RewardsAdmin({
         } else {
           toast.info('Resgate rejeitado.')
         }
-        router.refresh()
+        invalidateRewards()
       },
       onError: (message) => {
         setFormError(message)
@@ -390,7 +390,7 @@ export function RewardsAdmin({
         } else {
           toast.info('Sugestão rejeitada.')
         }
-        router.refresh()
+        invalidateRewards()
       },
       onError: (message) => {
         setFormError(message)
