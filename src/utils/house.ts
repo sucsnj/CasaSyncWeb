@@ -3,6 +3,7 @@ import { cache } from 'react'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import type { Database } from '@/types/database'
+import { getCachedHouseMembers } from '@/utils/data-cache'
 
 export type SessionProfile = {
   id: string
@@ -193,28 +194,15 @@ export const getDependentHouse = cache(
 export async function getHouseAssignees(houseId: string): Promise<
   { id: string; full_name: string }[]
 > {
-  const admin = createAdminClient()
-
-  const { data: members } = await admin
-    .from('house_members')
-    .select('profile_id')
-    .eq('house_id', houseId)
-    .eq('role', 'DEPENDENT')
-
-  const profileIds = members?.map((member) => member.profile_id) ?? []
-  if (profileIds.length === 0) return []
-
-  const { data: profiles } = await admin
-    .from('profiles')
-    .select('id, full_name')
-    .in('id', profileIds)
-
-  return (
-    profiles?.map((p) => ({
-      id: p.id,
-      full_name: p.full_name ?? 'Sem nome',
-    })) ?? []
-  )
+  // Sai do diretório de membros cacheado por casa (Data Cache) — antes eram 2
+  // round-trips por request, repetidos por página. Ver `data-cache.ts`.
+  const { members, nameById } = await getCachedHouseMembers(houseId)
+  return members
+    .filter((member) => member.role === 'DEPENDENT')
+    .map((member) => ({
+      id: member.profileId,
+      full_name: nameById[member.profileId] ?? 'Sem nome',
+    }))
 }
 
 export type Tutor = {

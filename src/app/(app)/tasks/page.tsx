@@ -3,9 +3,9 @@ import type { Tables } from '@/types/database'
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createAdminClient } from '@/utils/supabase/admin'
 import { fetchTasksForCache } from '@/actions/tasks'
 import { queryKeys } from '@/lib/query-keys'
+import { getCachedChestItemsByIds } from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -41,7 +41,7 @@ type TaskRow = Tables<'tasks'>
 
 /** Carrega o mapa id → item do baú para as tarefas que usam espelho. */
 async function loadChestItems(
-  admin: ReturnType<typeof createAdminClient>,
+  houseId: string,
   rows: TaskRow[]
 ): Promise<Record<string, ChestItemView>> {
   const ids = [
@@ -52,11 +52,8 @@ async function loadChestItems(
     ),
   ]
   if (ids.length === 0) return {}
-  const { data } = await admin
-    .from('chest_items')
-    .select('*')
-    .in('id', ids)
-  return Object.fromEntries((data ?? []).map((item) => [item.id, item]))
+  const items = await getCachedChestItemsByIds(houseId, ids)
+  return Object.fromEntries(items.map((item) => [item.id, item]))
 }
 
 function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
@@ -94,7 +91,6 @@ export default async function TasksPage() {
   // Service-role: a visibilidade é decidida pela posse/co-controle da casa
   // (sessão), não por policies RLS — o co-gerente precisa ver as tarefas da
   // casa mesmo não sendo o `owner_id`.
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -150,7 +146,7 @@ export default async function TasksPage() {
       })
       const [assignees, chestItems] = await Promise.all([
         getHouseAssignees(activeHouse.id),
-        loadChestItems(admin, tasks ?? []),
+        loadChestItems(activeHouse.id, tasks ?? []),
       ])
       const dehydratedState = dehydrate(queryClient)
 
@@ -188,7 +184,7 @@ export default async function TasksPage() {
         },
       })
       const [chestItems, creatorNames] = await Promise.all([
-        loadChestItems(admin, taskList ?? []),
+        loadChestItems(dependentHouse.id, taskList ?? []),
         getProfileNames((taskList ?? []).map((task) => task.created_by)),
       ])
       const dehydratedState = dehydrate(queryClient)

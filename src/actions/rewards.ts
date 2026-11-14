@@ -1,6 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
@@ -33,6 +33,7 @@ import type {
   RewardsCacheData,
   RewardsSuggestionView,
 } from '@/utils/redemptions'
+import { getCachedRewardsForHouse, dataTags } from '@/utils/data-cache'
 import { sendPushToHouseAdmins, sendPushToUser } from './push'
 import { registerAchievementProgress } from './achievements'
 import type { ActionResult } from './types'
@@ -103,72 +104,27 @@ export async function fetchRewardsForCache(): Promise<ActionResult<RewardsCacheD
     return { ok: false, error: 'Sessão expirada. Entre novamente.' }
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
   const house = isAdmin ? await getActiveAdminHouse() : await getDependentHouse(user.id)
   if (!house) {
     return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
   }
 
-  const [rewardsRes, redemptionsRes, suggestionsRes, membersRes] = await Promise.all([
-    admin
-      .from('rewards')
-      .select('*')
-      .eq('house_id', house.id)
-      .order('created_at', { ascending: true }),
-    admin
-      .from('reward_redemptions')
-      .select('*')
-      .eq('house_id', house.id)
-      .order('created_at', { ascending: true }),
-    admin
-      .from('reward_suggestions')
-      .select('*')
-      .eq('house_id', house.id)
-      .order('created_at', { ascending: false }),
-    admin
-      .from('house_members')
-      .select('profile_id')
-      .eq('house_id', house.id)
-      .eq('role', 'DEPENDENT'),
-  ])
-
-  if (rewardsRes.error || redemptionsRes.error || suggestionsRes.error) {
-    console.error('[rewards] Falha ao carregar a tela de recompensas')
+  let raw
+  try {
+    raw = await getCachedRewardsForHouse(house.id)
+  } catch (error) {
+    console.error('[rewards] Falha ao carregar a tela de recompensas:', error)
     return { ok: false, error: 'Falha ao carregar as recompensas.' }
   }
 
   // O dependente só enxerga os PROPRIOS resgates e sugestões.
   const isMine = (row: { profile_id: string }) => row.profile_id === user.id
-  const redemptions = (redemptionsRes.data ?? []).filter(
-    (row) => isAdmin || isMine(row)
-  )
-  const suggestions = (suggestionsRes.data ?? []).filter(
-    (row) => isAdmin || isMine(row)
-  )
+  const redemptions = raw.redemptions.filter((row) => isAdmin || isMine(row))
+  const suggestions = raw.suggestions.filter((row) => isAdmin || isMine(row))
 
-  const rewards = rewardsRes.data ?? []
-
-  const profileIds = [
-    ...new Set(
-      [
-        ...(membersRes.data ?? []).map((member) => member.profile_id),
-        ...redemptions.map((redemption) => redemption.profile_id),
-        ...suggestions.map((suggestion) => suggestion.profile_id),
-      ].filter(Boolean)
-    ),
-  ]
-
-  const nameById = new Map<string, string>()
-  if (profileIds.length > 0) {
-    const { data: profiles } = await admin
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', profileIds)
-    ;(profiles ?? []).forEach((profile) =>
-      nameById.set(profile.id, profile.full_name ?? 'Sem nome')
-    )
-  }
+  const rewards = raw.rewards
+  const nameById = raw.nameById
 
   const rewardTitleById = new Map(rewards.map((reward) => [reward.id, reward.title]))
 
@@ -180,7 +136,7 @@ export async function fetchRewardsForCache(): Promise<ActionResult<RewardsCacheD
     resolved_at: redemption.resolved_at,
     reward_id: redemption.reward_id,
     rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
-    dependentName: nameById.get(redemption.profile_id) ?? 'Dependente',
+    dependentName: nameById[redemption.profile_id] ?? 'Dependente',
   }))
 
   const suggestionViews: RewardsSuggestionView[] = suggestions.map((suggestion) => ({
@@ -191,7 +147,7 @@ export async function fetchRewardsForCache(): Promise<ActionResult<RewardsCacheD
     image_url: suggestion.image_url,
     status: suggestion.status,
     created_at: suggestion.created_at,
-    profileName: nameById.get(suggestion.profile_id) ?? 'Dependente',
+    profileName: nameById[suggestion.profile_id] ?? 'Dependente',
   }))
 
   return {
@@ -255,6 +211,7 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     link: '/rewards',
   })
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   return { ok: true, message: `Recompensa "${title}" criada.` }
 }
@@ -461,6 +418,7 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
     console.error('[PUSH] Falha ao disparar push na solicitação de resgate:', err)
   }
 
+  updateTag(dataTags.rewards(house.id))
   revalidatePath('/rewards')
   return { ok: true, message: `Resgate de "${reward.title}" solicitado.` }
 }
@@ -621,6 +579,7 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     auth.adminId
   )
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
   revalidatePath('/tasks')
@@ -680,6 +639,7 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
     console.error('[PUSH] Falha ao disparar push na rejeição de resgate:', err)
   }
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }
 }
@@ -758,6 +718,7 @@ export async function updateReward(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   return { ok: true, message: 'Recompensa atualizada.' }
 }
@@ -795,6 +756,7 @@ export async function setRewardActive(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   return {
     ok: true,
@@ -864,6 +826,7 @@ export async function createRewardSuggestion(
     link: '/rewards',
   })
 
+  updateTag(dataTags.rewards(house.id))
   revalidatePath('/rewards')
   return { ok: true, message: 'Sugestão enviada para aprovação.' }
 }
@@ -949,6 +912,7 @@ export async function resolveRewardSuggestion(
     )
   }
 
+  updateTag(dataTags.rewards(activeHouse.id))
   revalidatePath('/rewards')
   return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }
 }

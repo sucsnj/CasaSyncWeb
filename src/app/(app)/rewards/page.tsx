@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/utils/supabase/admin'
 import { fetchRewardsForCache } from '@/actions/rewards'
 import { queryKeys } from '@/lib/query-keys'
 import { unwrapAction } from '@/lib/unwrap-action'
+import { getCachedHouseMembers } from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -28,10 +28,7 @@ export default async function RewardsPage() {
     redirect('/login')
   }
 
-  // Service-role: a visibilidade é decidida pela posse/co-controle da casa
-  // (sessão), não por policies RLS — o co-gerente precisa ver a loja/resgates
-  // da casa mesmo não sendo o `owner_id`.
-  const admin = createAdminClient()
+  // Visibilidade por posse/co-controle da casa (sessão), não por policies RLS.
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -73,24 +70,14 @@ export default async function RewardsPage() {
       })
       const { rewards, redemptions, suggestions } = data
 
-      // Membros da casa: só para o mapa de nomes que o ADMIN usa nos cards.
-      const { data: members } = await admin
-        .from('house_members')
-        .select('profile_id')
-        .eq('house_id', activeHouse.id)
-        .eq('role', 'DEPENDENT')
-
-      const profileIds = members?.map((member) => member.profile_id) ?? []
-      const nameById = new Map<string, string>()
-      if (profileIds.length > 0) {
-        const { data: profiles } = await admin
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', profileIds)
-        ;(profiles ?? []).forEach((p) =>
-          nameById.set(p.id, p.full_name ?? 'Sem nome')
-        )
-      }
+      // Dependentes da casa: nome para os cards (mesmo diretório cacheado).
+      const { members, nameById } = await getCachedHouseMembers(activeHouse.id)
+      const dependents = members
+        .filter((member) => member.role === 'DEPENDENT')
+        .map((member) => ({
+          id: member.profileId,
+          full_name: nameById[member.profileId] ?? 'Sem nome',
+        }))
 
       const dehydratedState = dehydrate(queryClient)
 
@@ -103,10 +90,7 @@ export default async function RewardsPage() {
             initialRewards={rewards}
             initialRedemptions={redemptions}
             initialSuggestions={suggestions}
-            dependents={Array.from(nameById, ([id, full_name]) => ({
-              id,
-              full_name,
-            }))}
+            dependents={dependents}
             textLimits={textLimitsSettings}
           />
         </HydrationBoundary>

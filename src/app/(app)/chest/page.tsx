@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation'
 import { fetchChestForCache } from '@/actions/chest'
 import { queryKeys } from '@/lib/query-keys'
 import { unwrapAction } from '@/lib/unwrap-action'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -16,7 +15,7 @@ import {
   getHouseAttachmentBudgetSettings,
   getHouseAttachmentSettings,
 } from '@/utils/house-settings'
-import { houseAttachmentBytes } from '@/utils/attachment-usage'
+import { getCachedChestStorageBytes } from '@/utils/data-cache'
 
 export const metadata: Metadata = {
   title: 'Baú',
@@ -44,7 +43,6 @@ export default async function ChestPage() {
     redirect('/login')
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   let content: React.ReactNode
@@ -79,7 +77,7 @@ export default async function ChestPage() {
       const [attachmentBudget, attachments, usageBytes] = await Promise.all([
         getHouseAttachmentBudgetSettings(activeHouse.id),
         getHouseAttachmentSettings(activeHouse.id),
-        houseAttachmentBytes(admin, activeHouse.id).catch(() => 0),
+        getCachedChestStorageBytes(activeHouse.id),
       ])
       const dehydratedState = dehydrate(queryClient)
 

@@ -43,3 +43,10 @@
 
 - `useQueryList` (`src/hooks/use-query-list.ts`): lista única (baú, tarefas) — API `setData(prev => next)` compatível com o `useState` anterior.
 - `useQueryScreen` (`src/hooks/use-query-screen.ts`): tela com várias listas que mudam juntas (catálogo + resgates + sugestões; conquistas + progresso) — **uma** chave → **uma** Server Action na revalidação (o Next enfileira actions concorrentes na mesma tela).
+
+## Cache de Servidor (Next Data Cache) — "opção A" (ADR-0029)
+- **Módulo:** `src/utils/data-cache.ts` (sem `'use server'`). Leituras puras (POJOs serializáveis) envelopadas em `unstable_cache` com **tags por casa** (`tasks:{hid}`, `rewards:{hid}`, `chest:{hid}`, `house-settings:{hid}`, `house-members:{hid}`) — nunca sem `houseId` (isolamento multi-tenant). `React.cache` por cima deduplica dentro do request.
+- **Sem TTL** (exceto `storage:chest`, `revalidate: 300`); invalidado por `updateTag()` **apenas dentro de Server Actions** (read-your-writes). Achievements **fora** de cache de propósito; shell **continua RSC**.
+- **`revalidatePath` ≠ invalidação de cache de dados** — purga Router/RSC cache apenas. A consistência do Data Cache depende 100% das tags: **toda nova escrita em `tasks`, `rewards`, `chest_items`, `house_settings`, `house_members`/`profiles` deve chamar `updateTag` correspondente**.
+- Escritas fora de actions não invalidam (SQL direto/webhooks): editar o banco manualmente exige expiração manual ou espera da próxima escrita legítima.
+- Efeito: house-settings deixa de ir ao banco por request; as leituras das 4 telas passam a bater no cache da casa; refetch de background do React Query custa ~0 em cache quente.

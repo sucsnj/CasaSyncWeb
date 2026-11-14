@@ -1,7 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { getCachedTasksForHouse, dataTags } from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -277,43 +278,37 @@ export async function fetchTasksForCache(): Promise<ActionResult<Task[]>> {
     return { ok: false, error: 'Sessão expirada. Entre novamente.' }
   }
 
-  const admin = createAdminClient()
-
   if (profile.user_role === 'ADMIN') {
     const house = await getActiveAdminHouse()
     if (!house) {
       return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
     }
-    const { data, error } = await admin
-      .from('tasks')
-      .select('*')
-      .eq('house_id', house.id)
-      .order('created_at', { ascending: false })
-    if (error) {
+    try {
+      return { ok: true, data: await getCachedTasksForHouse(house.id) }
+    } catch (error) {
       console.error('[tasks] Falha ao carregar as tarefas da casa:', error)
       return { ok: false, error: 'Falha ao carregar as tarefas.' }
     }
-    return { ok: true, data: data ?? [] }
   }
 
   const house = await getDependentHouse(user.id)
   if (!house) {
     return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
   }
-  const { data, error } = await admin
-    .from('tasks')
-    .select('*')
-    .eq('house_id', house.id)
-    .eq('assigned_to', user.id)
+  try {
+    const tasks = await getCachedTasksForHouse(house.id)
     // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
     // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
-    .neq('status', 'ON_HOLD')
-    .order('created_at', { ascending: false })
-  if (error) {
+    return {
+      ok: true,
+      data: tasks.filter(
+        (task) => task.assigned_to === user.id && task.status !== 'ON_HOLD'
+      ),
+    }
+  } catch (error) {
     console.error('[tasks] Falha ao carregar as tarefas do dependente:', error)
     return { ok: false, error: 'Falha ao carregar as tarefas.' }
   }
-  return { ok: true, data: data ?? [] }
 }
 
 export async function createTask(
@@ -518,6 +513,7 @@ export async function createTask(
     console.error('[PUSH] Falha ao disparar push na criação de tarefa:', err)
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   return {
     ok: true,
@@ -840,6 +836,7 @@ export async function updateTask(
     }
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -949,6 +946,7 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     console.error('[PUSH] Falha ao disparar push na conclusão de tarefa:', err)
   }
 
+  updateTag(dataTags.tasks(house.id))
   revalidatePath('/tasks')
   return { ok: true }
 }
@@ -1048,6 +1046,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/achievements')
@@ -1127,6 +1126,7 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
     )
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1216,6 +1216,7 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     link: '/tasks',
   })
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
@@ -1324,6 +1325,7 @@ export async function setTaskOnHold(
       })
     }
 
+    updateTag(dataTags.tasks(activeHouse.id))
     revalidatePath('/tasks')
     revalidatePath('/dashboard/dependent')
 
@@ -1395,6 +1397,7 @@ export async function setTaskOnHold(
     })
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1481,6 +1484,7 @@ export async function restoreTask(
     })
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
@@ -1583,6 +1587,7 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   revalidatePath('/rewards')
   revalidatePath('/achievements')
@@ -1687,6 +1692,7 @@ export async function requestTaskExtension(
     link: '/tasks',
   })
 
+  updateTag(dataTags.tasks(house.id))
   revalidatePath('/tasks')
   return { ok: true, message: 'Pedido de adiamento enviado.' }
 }
@@ -1825,6 +1831,7 @@ export async function resolveTaskExtension(
     })
   }
 
+  updateTag(dataTags.tasks(activeHouse.id))
   revalidatePath('/tasks')
   if (approve && isNotDelivered) {
     revalidatePath('/rewards')

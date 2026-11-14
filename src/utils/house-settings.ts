@@ -1,5 +1,7 @@
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { dataTags } from '@/utils/data-cache'
 import {
   DEFAULT_ATTACHMENTS,
   DEFAULT_ATTACHMENT_BUDGET,
@@ -54,20 +56,35 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
  * O escopo continua derivado da sessão pelo chamador (casa ativa do ADMIN ou casa
  * do dependente) — aqui só se troca o *como* a linha é buscada.
  */
+type RawHouseSettings = Record<string, Record<string, unknown> | null>
+
+const getRawHouseSettingsForHouse = (houseId: string) =>
+  unstable_cache(
+    async (id: string): Promise<RawHouseSettings> => {
+      const admin = createAdminClient()
+      const { data, error } = await admin
+        .from('house_settings')
+        .select('key, value')
+        .eq('house_id', id)
+      if (error) throw new Error('Falha ao ler as configurações da casa.')
+      const record: RawHouseSettings = {}
+      for (const row of (data ?? []) as SettingsRow[]) {
+        record[row.key] = row.value ?? null
+      }
+      return record
+    },
+    ['casasync:house-settings'],
+    { tags: [dataTags.houseSettings(houseId)] }
+  )(houseId)
+
 const getHouseSettingsMap = cache(
   async (houseId: string): Promise<Map<HouseSettingsKey, Record<string, unknown> | null>> => {
-    const admin = createAdminClient()
-
-    // Uma linha por casa por request (era uma por chave): confirmado em produção
-    // pela instrumentação de latência (`n=21, mediana 82ms, uma por request`).
-    const { data } = await admin
-      .from('house_settings')
-      .select('key, value')
-      .eq('house_id', houseId)
-
+    // Uma linha por casa, lida uma vez por deployment e invalidada por tag —
+    // antes era uma por request (`React.cache`). Ver `data-cache.ts`.
+    const record = await getRawHouseSettingsForHouse(houseId)
     const map = new Map<HouseSettingsKey, Record<string, unknown> | null>()
-    for (const row of (data ?? []) as SettingsRow[]) {
-      map.set(row.key, row.value ?? null)
+    for (const [key, value] of Object.entries(record)) {
+      map.set(key as HouseSettingsKey, value ?? null)
     }
     return map
   }

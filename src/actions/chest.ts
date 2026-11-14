@@ -1,7 +1,11 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
+import {
+  getCachedChestItemsForHouse,
+  dataTags,
+} from '@/utils/data-cache'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -111,7 +115,8 @@ async function loadManagedItem(
 }
 
 /** Rebaixa a tela do dependente e a do baú depois de qualquer escrita. */
-function revalidateChest() {
+function revalidateChest(houseId: string) {
+  updateTag(dataTags.chest(houseId))
   revalidatePath('/chest')
   revalidatePath('/dashboard/dependent')
 }
@@ -216,7 +221,7 @@ export async function createChestItem(input: {
     return { ok: false, error: 'Falha ao adicionar o item ao baú.' }
   }
 
-  revalidateChest()
+  revalidateChest(activeHouse.id)
   return { ok: true, message: 'Item adicionado ao baú.', data }
 }
 
@@ -334,7 +339,7 @@ export async function updateChestItem(
     await removeStorageFile(admin, item.file_url, CHEST_ITEM_FOLDER, 'CHEST')
   }
 
-  revalidateChest()
+  revalidateChest(item.house_id)
   return { ok: true, message: 'Item atualizado.', data }
 }
 
@@ -368,7 +373,8 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
 
   await removeStorageFile(admin, item.file_url, CHEST_ITEM_FOLDER, 'CHEST')
 
-  revalidateChest()
+  updateTag(dataTags.tasks(item.house_id))
+  revalidateChest(item.house_id)
   revalidatePath('/tasks')
   return { ok: true, message: `Item "${item.title}" excluído.` }
 }
@@ -393,25 +399,21 @@ export async function fetchChestForCache(): Promise<ActionResult<ChestItemView[]
     return { ok: false, error: 'Sessão expirada. Entre novamente.' }
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
   const house = isAdmin ? await getActiveAdminHouse() : await getDependentHouse(user.id)
   if (!house) {
     return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
   }
 
-  const { data, error } = await admin
-    .from('chest_items')
-    .select('*')
-    .eq('house_id', house.id)
-    .order('created_at', { ascending: false })
-
-  if (error) {
+  let data: ChestItemView[]
+  try {
+    data = await getCachedChestItemsForHouse(house.id)
+  } catch (error) {
     console.error('[chest] Falha ao carregar o baú:', error)
     return { ok: false, error: 'Não foi possível carregar o baú da casa.' }
   }
 
-  return { ok: true, data: (data ?? []) satisfies ChestItemView[] }
+  return { ok: true, data: data satisfies ChestItemView[] }
 }
 
 /**
@@ -535,6 +537,7 @@ export async function listChestAttachmentsForTask(): Promise<
           .is('file_size', null)
       })
     )
+    updateTag(dataTags.chest(activeHouse.id))
   }
 
   const options: ChestAttachmentOption[] = rawItems.map((item) => {
