@@ -1,8 +1,11 @@
 import type { Metadata } from 'next'
 import type { Tables } from '@/types/database'
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { fetchTasksForCache } from '@/actions/tasks'
+import { queryKeys } from '@/lib/query-keys'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -133,64 +136,77 @@ export default async function TasksPage() {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const [{ data: tasks }, assignees] = await Promise.all([
-        admin
-          .from('tasks')
-          .select('*')
-          .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: false }),
+      // UMA leitura de tarefas nesta tela: a mesma action serve o render do
+      // servidor (prop `initialTasks`) e o cache do cliente (hidratação). Nada
+      // é lido duas vezes — nem no servidor, nem no cliente.
+      const queryClient = new QueryClient()
+      const tasks = await queryClient.fetchQuery({
+        queryKey: queryKeys.tasks.house(activeHouse.id),
+        queryFn: async () => {
+          const result = await fetchTasksForCache()
+          if (!result.ok) throw new Error(result.error)
+          return result.data
+        },
+      })
+      const [assignees, chestItems] = await Promise.all([
         getHouseAssignees(activeHouse.id),
+        loadChestItems(admin, tasks ?? []),
       ])
-      const chestItems = await loadChestItems(admin, tasks ?? [])
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <TasksAdmin
-          key={activeHouse.id}
-          houseId={activeHouse.id}
-           initialTasks={tasks ?? []}
-           chestItems={chestItems}
-          assignees={assignees}
-          defaultDueDays={taskSlaSettings?.defaultDueDays}
-          dueSoonHours={taskSlaSettings?.dueSoonHours}
-          extensionDayOptions={extensionRulesSettings?.dayOptions}
-          maxExtensions={extensionRulesSettings?.maxExtensions}
-          taskDecay={taskDecaySettings}
-          textLimits={textLimitsSettings}
-          attachmentsAllowed={attachmentSettings?.tasksAllowed}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <TasksAdmin
+            key={activeHouse.id}
+            houseId={activeHouse.id}
+            initialTasks={tasks ?? []}
+            chestItems={chestItems}
+            assignees={assignees}
+            defaultDueDays={taskSlaSettings?.defaultDueDays}
+            dueSoonHours={taskSlaSettings?.dueSoonHours}
+            extensionDayOptions={extensionRulesSettings?.dayOptions}
+            maxExtensions={extensionRulesSettings?.maxExtensions}
+            taskDecay={taskDecaySettings}
+            textLimits={textLimitsSettings}
+            attachmentsAllowed={attachmentSettings?.tasksAllowed}
+          />
+        </HydrationBoundary>
       )
     }
   } else {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const { data: tasks } = await admin
-        .from('tasks')
-        .select('*')
-        .eq('house_id', dependentHouse.id)
-        .eq('assigned_to', user.id)
-        // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
-        // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
-        .neq('status', 'ON_HOLD')
-        .order('created_at', { ascending: false })
-
-      const taskList = tasks ?? []
-      const chestItems = await loadChestItems(admin, taskList)
-      const creatorNames = await getProfileNames(
-        taskList.map((task) => task.created_by)
-      )
+      // Mesma leitura única do caminho do ADMIN (a action resolve o papel).
+      const queryClient = new QueryClient()
+      const taskList = await queryClient.fetchQuery({
+        queryKey: queryKeys.tasks.dependent(user.id),
+        queryFn: async () => {
+          const result = await fetchTasksForCache()
+          if (!result.ok) throw new Error(result.error)
+          return result.data
+        },
+      })
+      const [chestItems, creatorNames] = await Promise.all([
+        loadChestItems(admin, taskList ?? []),
+        getProfileNames((taskList ?? []).map((task) => task.created_by)),
+      ])
+      const dehydratedState = dehydrate(queryClient)
 
       content = (
-        <TasksDependent
-          key={dependentHouse.id}
-          houseId={dependentHouse.id}
-          initialTasks={taskList}
-          chestItems={chestItems}
-          creatorNames={creatorNames}
-          dueSoonHours={taskSlaSettings?.dueSoonHours}
-          taskDecay={taskDecaySettings}
-          attachmentsAllowed={attachmentSettings?.tasksAllowed}
-        />
+        <HydrationBoundary state={dehydratedState}>
+          <TasksDependent
+            key={dependentHouse.id}
+            houseId={dependentHouse.id}
+            userId={user.id}
+            initialTasks={taskList ?? []}
+            chestItems={chestItems}
+            creatorNames={creatorNames}
+            dueSoonHours={taskSlaSettings?.dueSoonHours}
+            taskDecay={taskDecaySettings}
+            attachmentsAllowed={attachmentSettings?.tasksAllowed}
+          />
+        </HydrationBoundary>
       )
     }
   }

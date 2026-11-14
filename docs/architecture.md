@@ -27,3 +27,12 @@
   - Web: Web Push (VAPID) existente.
 - **Backend:** `push-service.ts` bifurca o envio por `provider`: Web Push (VAPID) e FCM (Firebase Admin HTTP v1).
 - **Android:** permissões `INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE`, `WAKE_LOCK`; `google-services.json` em `android/app/`; ícone de notificação `ic_stat_ic_notification` (vector drawable).
+
+## Cache de Cliente (React Query) — "local-first"
+- **Provider global:** `src/components/providers/query-provider.tsx` (no layout raiz) — `staleTime: 5min`, `gcTime: 30min`, `refetchOnWindowFocus: false` (só dado crítico, como saldo, marca `true`).
+- **Chaves:** `src/lib/query-keys.ts` — o primeiro segmento é o **escopo da rota** (`tasks`, `rewards`, `achievements`, `chest`), o que permite invalidar a tela inteira com `invalidateQueries({ queryKey: [scope] })` (é o que o pull-to-refresh usa).
+- **Leitura:** o `queryFn` é uma **Server Action por tela** (ex.: `fetchTasksForCache`) — service-role + escopo derivado da sessão (ADR-0006). **Nunca** leitura pelo cliente do browser: o RLS não entrega o que a tela mostra (dependente lê a própria tarefa, ADMIN lê a casa inteira).
+- **Hidratação sem dupla busca:** o Server Component busca **uma vez**, passa o mesmo resultado como prop e o `dehydrate` no `HydrationBoundary` — o client já nasce com o dado (SWR) e **não** refaz a requisição no primeiro paint.
+- **Escrita:** Realtime e mutações otimistas escrevem no **mesmo cache** (`setQueryData`) — uma verdade só, sem espelho em `useState`.
+- **Shell continua no servidor:** badges da nav, ícone de castigo, comunicados e sino são RSC e se atualizam com `router.refresh()`.
+- **Pull-to-refresh (Android):** invalida o escopo da rota ativa + `router.refresh()` do shell — não limpa mais o cache da sessão.

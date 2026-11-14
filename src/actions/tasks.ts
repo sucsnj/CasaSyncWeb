@@ -256,6 +256,66 @@ function normalizeDueDate(
   }
 }
 
+/**
+ * LEITURA da lista de tarefas para o cache do cliente (React Query).
+ *
+ * **Por que uma Server Action e não o cliente do browser:** a tela de tarefas é
+ * renderizada com **service-role** (ADR-0006) porque o dependente lê a própria
+ * tarefa e o ADMIN lê a casa inteira — o RLS do browser não entrega isso. Mover
+ * a leitura para o client exigiria policy nova (superfície de segurança maior)
+ * ou um Route Handler por lista. Aqui a action é o `queryFn`: mesma leitura,
+ * mesmo escopo derivado da sessão, sem tocar no RLS.
+ *
+ * **Uma action por tela** (não uma por casa/papel): o `queryFn` é chamado na
+ * revalidação em background e o Next.js **enfileira** as Server Actions — várias
+ * actions concorrentes na mesma tela viram fila sequencial. Uma só, com o papel
+ * resolvido dentro, evita isso.
+ */
+export async function fetchTasksForCache(): Promise<ActionResult<Task[]>> {
+  const { user, profile } = await getSessionProfile()
+  if (!user || !profile) {
+    return { ok: false, error: 'Sessão expirada. Entre novamente.' }
+  }
+
+  const admin = createAdminClient()
+
+  if (profile.user_role === 'ADMIN') {
+    const house = await getActiveAdminHouse()
+    if (!house) {
+      return { ok: false, error: 'Nenhuma casa ativa. Crie ou selecione uma casa.' }
+    }
+    const { data, error } = await admin
+      .from('tasks')
+      .select('*')
+      .eq('house_id', house.id)
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('[tasks] Falha ao carregar as tarefas da casa:', error)
+      return { ok: false, error: 'Falha ao carregar as tarefas.' }
+    }
+    return { ok: true, data: data ?? [] }
+  }
+
+  const house = await getDependentHouse(user.id)
+  if (!house) {
+    return { ok: false, error: 'Você ainda não está vinculado a uma casa.' }
+  }
+  const { data, error } = await admin
+    .from('tasks')
+    .select('*')
+    .eq('house_id', house.id)
+    .eq('assigned_to', user.id)
+    // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
+    // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
+    .neq('status', 'ON_HOLD')
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.error('[tasks] Falha ao carregar as tarefas do dependente:', error)
+    return { ok: false, error: 'Falha ao carregar as tarefas.' }
+  }
+  return { ok: true, data: data ?? [] }
+}
+
 export async function createTask(
   input: CreateTaskInput,
   options?: { force?: boolean }

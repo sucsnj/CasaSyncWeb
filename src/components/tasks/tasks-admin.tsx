@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   adminCompleteTask,
@@ -18,6 +18,10 @@ import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
+import { useQueryList } from '@/hooks/use-query-list'
+import { queryKeys } from '@/lib/query-keys'
+import { unwrapAction } from '@/lib/unwrap-action'
+import { fetchTasksForCache } from '@/actions/tasks'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { getTaskSlaStatus } from '@/utils/task-sla'
@@ -133,7 +137,14 @@ export function TasksAdmin({
   const router = useRouter()
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
-  const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  // A lista vem do CACHE do React Query (o RSC já hidratou a chave): a tela
+  // abre instantânea e a revalidação acontece em background (SWR). O Realtime e
+  // as mutações otimistas escrevem no MESMO cache — uma verdade só.
+  const { data: tasks, setData: setTasks } = useQueryList<Task>({
+    queryKey: queryKeys.tasks.house(houseId),
+    queryFn: () => unwrapAction(fetchTasksForCache),
+    initialData: initialTasks,
+  })
   const [chestItemsMap, setChestItemsMap] = useState<Record<string, ChestItemView>>(chestItems)
   const [syncedChestItems, setSyncedChestItems] = useState(chestItems)
   if (chestItems !== syncedChestItems) {
@@ -178,8 +189,7 @@ export function TasksAdmin({
 
   // Pending/otimista por item compartilhado com recompensas. `pending` continua
   // existindo para os 3 botões do FORMULÁRIO de criação (escopo único).
-  const { isPending, markServer, optimisticIdsRef, runOptimistic } =
-    useOptimisticAction()
+  const { isPending, markServer, runOptimistic } = useOptimisticAction()
 
   type TransitionResult =
     | { ok: true; message?: string }
@@ -268,23 +278,16 @@ export function TasksAdmin({
   })
 
   /**
-   * Sincroniza a lista com a prop do servidor.
+   * A lista NÃO volta mais da prop do servidor: quem manda é o cache (o RSC
+   * hidrata a chave, o Realtime e as mutações otimistas escrevem nela).
+   * Sobrescrever com a prop traria de volta o estado ANTERIOR do servidor por
+   * cima de um card que acabou de mudar — o que o cache do cliente evita.
    *
-   * Sem isso o `router.refresh()` **não** fazia nada: o componente é montado com
-   * `key={casa.id}`, que só muda quando o ADMIN troca de casa — na mesma casa o
-   * refresh re-renderiza o Server Component, mas o `useState(initialTasks)` de um
-   * client component já montado **ignora** a prop nova. Era por isso que o
-   * `refresh` do caminho de erro de rede não reconcilia nada.
-   *
-   * Pulado enquanto há valor otimista na tela: nesse instante o refresh traz o
-   * estado ANTERIOR do servidor e sobrescreveria o card que acabou de mudar. Como
-   * o `finally` de `runTaskTransition` limpa o registro antes, o refresh
-   * pós-erro já entra aqui.
+   * Antes isso era um `useEffect` que fazia `setTasks(initialTasks)`: ele
+   * reconciliava o `router.refresh()` (o `useState` de um client component já
+   * montado ignora a prop nova), mas às custas de sobrescrever o card que tinha
+   * acabado de mudar. Agora quem reconcilia é o próprio cache.
    */
-  useEffect(() => {
-    if (optimisticIdsRef.current.size > 0) return
-    setTasks(initialTasks)
-  }, [initialTasks, optimisticIdsRef])
 
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
