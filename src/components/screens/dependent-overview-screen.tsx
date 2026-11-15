@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
+'use client'
+
 import Link from 'next/link'
-import { Gift, GraduationCap, ListTodo, Package } from 'lucide-react'
-import {
-  getDependentHouse,
-  getHouseTutors,
-  getSessionProfile,
-} from '@/utils/house'
+import { GraduationCap, Gift, ListTodo, Package } from 'lucide-react'
+import { useAppSession } from '@/components/session/app-session'
+import { useShellBundle } from '@/hooks/queries/use-shell'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import {
   Card,
   CardContent,
@@ -13,12 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-
-export const metadata: Metadata = {
-  title: 'Visão geral',
-}
-
-export const dynamic = 'force-dynamic'
 
 const actions = [
   {
@@ -28,10 +22,10 @@ const actions = [
     icon: ListTodo,
     accent: 'bg-blue-100 text-blue-700',
   },
-{
+  {
     href: '/rewards',
     title: 'Recompensas',
-    description: 'Troque seus pontos por premios.',
+    description: 'Troque seus pontos por prêmios.',
     icon: Gift,
     accent: 'bg-amber-100 text-amber-700',
   },
@@ -44,11 +38,15 @@ const actions = [
   },
 ] as const
 
-export default async function DependentDashboardPage() {
-  const { user, profile } = await getSessionProfile()
-  const house = user ? await getDependentHouse(user.id) : null
-  const firstName = profile?.full_name?.split(' ')[0] ?? ''
-  const tutors = house ? await getHouseTutors(house.id) : []
+export function DependentOverviewScreen() {
+  const { userId } = useAppSession()
+  const { data, isPending, refetch } = useShellBundle(userId)
+
+  if (isPending && !data) return <PageSkeleton cards={3} cols={2} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
+
+  const { profile, houseName, tutors } = data
+  const firstName = profile.full_name?.split(' ')[0] ?? ''
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,9 +56,7 @@ export default async function DependentDashboardPage() {
         </p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Visão geral</h1>
         <p className="mt-1 text-sm text-white/85">
-          {house
-            ? `Casa: ${house.name}`
-            : 'Você ainda não foi vinculado a uma casa.'}
+          {houseName ? `Casa: ${houseName}` : 'Você ainda não foi vinculado a uma casa.'}
         </p>
       </header>
 
@@ -74,12 +70,12 @@ export default async function DependentDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="font-heading text-4xl font-bold tracking-tight text-white">
-              {profile?.points ?? 0} pts
+              {profile.points ?? 0} pts
             </p>
           </CardContent>
         </Card>
 
-        {tutors.length > 0 ? (
+        {tutors && tutors.length > 0 ? (
           <Card>
             <CardHeader className="gap-3">
               <CardTitle className="flex items-center gap-2">

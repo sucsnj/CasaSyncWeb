@@ -4,7 +4,9 @@ import {
   getActiveAdminHouse,
   getAdminHouses,
   getDependentHouse,
+  getHouseTutors,
   getSessionProfile,
+  type Tutor,
 } from '@/utils/house'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import { getMyNotifications } from '@/utils/notifications'
@@ -35,6 +37,8 @@ export type ShellBundle = {
   punishment: ActivePunishment | null
   dueComunicados: DueComunicado[]
   hasClaimableAchievement?: boolean
+  /** DEPENDENT: tutores da casa (para a visão geral). */
+  tutors?: Tutor[]
 }
 
 /**
@@ -85,6 +89,9 @@ export async function getShellBundle(): Promise<ShellBundle> {
   const dueComunicados =
     !isAdmin && dependentHouse ? await getDueComunicados() : []
 
+  const tutors =
+    !isAdmin && dependentHouse ? await getHouseTutors(dependentHouse.id) : undefined
+
   return {
     userId: user.id,
     role: isAdmin ? 'ADMIN' : 'DEPENDENT',
@@ -103,5 +110,6 @@ export async function getShellBundle(): Promise<ShellBundle> {
     punishment,
     dueComunicados,
     hasClaimableAchievement: isAdmin ? undefined : hasClaimable,
+    tutors,
   }
 }

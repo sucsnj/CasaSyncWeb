@@ -1,20 +1,18 @@
-import type { Metadata } from 'next'
+'use client'
+
 import Link from 'next/link'
 import { House, Megaphone, Package, SlidersHorizontal } from 'lucide-react'
-import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
+import { useAppSession } from '@/components/session/app-session'
+import { useShellBundle } from '@/hooks/queries/use-shell'
 import { ProfileEditor } from '@/components/dashboard/profile-editor'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import {
   Card,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-
-export const metadata: Metadata = {
-  title: 'Visão geral',
-}
-
-export const dynamic = 'force-dynamic'
 
 const actions = [
   {
@@ -39,8 +37,6 @@ const actions = [
     accent: 'bg-rose-100 text-rose-700',
   },
   {
-    // Baú: sem item na nav do ADMIN (ADR-0024, item 14) — o acervo é gerenciado
-    // por aqui, como os Comunicados.
     href: '/chest',
     title: 'Baú',
     description: 'Arquivos que os dependentes podem consultar.',
@@ -49,22 +45,28 @@ const actions = [
   },
 ] as const
 
-export default async function AdminDashboardPage() {
-  const [{ user, profile }, activeHouse] = await Promise.all([
-    getSessionProfile(),
-    getActiveAdminHouse(),
-  ])
+export function AdminOverviewScreen() {
+  const { userId } = useAppSession()
+  const { data, isPending, refetch } = useShellBundle(userId)
+
+  if (isPending && !data) return <PageSkeleton cards={4} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
+
+  const { profile, houseName } = data
+  const firstName = profile.full_name?.split(' ')[0] ?? ''
 
   return (
     <div className="flex flex-col gap-6">
       <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
-        <p className="text-sm font-medium text-white/80">Área do administrador</p>
+        <p className="text-sm font-medium text-white/80">
+          {firstName ? `Bem-vindo, ${firstName}!` : 'Bem-vindo!'}
+        </p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Visão geral</h1>
         <p className="mt-1 text-sm text-white/85">
-          Casa ativa: 
-          {activeHouse ? (
+          Casa ativa:{' '}
+          {houseName ? (
             <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-sm font-semibold text-white">
-              {activeHouse.name}
+              {houseName}
             </span>
           ) : (
             'Nenhuma casa ativa ainda — crie a primeira.'
@@ -90,13 +92,11 @@ export default async function AdminDashboardPage() {
         ))}
       </div>
 
-      {user && profile ? (
-        <ProfileEditor
-          userId={user.id}
-          fullName={profile.full_name}
-          avatarUrl={profile.avatar_url}
-        />
-      ) : null}
+      <ProfileEditor
+        userId={userId}
+        fullName={profile.full_name}
+        avatarUrl={profile.avatar_url}
+      />
     </div>
   )
 }
