@@ -18,9 +18,14 @@ const PERSIST_EXCLUDE = new Set(['comunicados', 'punishments'])
 
 export const shouldDehydrateQuery: NonNullable<
   DehydrateOptions['shouldDehydrateQuery']
-> = (query) =>
-  query.state.status === 'success' &&
-  !(typeof query.queryKey[2] === 'string' && PERSIST_EXCLUDE.has(query.queryKey[2]))
+> = (query) => {
+  if (query.state.status !== 'success') return false
+  // O shell carrega comunicados pendentes — jamais persiste.
+  if (query.queryKey[0] === 'shell') return false
+  return !(
+    typeof query.queryKey[2] === 'string' && PERSIST_EXCLUDE.has(query.queryKey[2])
+  )
+}
 
 export function createIdbPersister(key: string = PERSIST_KEY): Persister {
   return {

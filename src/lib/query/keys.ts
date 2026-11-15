@@ -3,8 +3,12 @@
  * prefixo ['tenant', houseId]; tudo que é escopado pelo usuário usa
  * ['user', userId]. Nunca use pathname nem profile sem o userId — trocar de
  * casa (ADMIN) ou de conta no mesmo dispositivo não pode vazar dado.
+ *
+ * `qk.shell` fica FORA do persistente (IndexedDB): o shell carrega
+ * comunicados pendentes, que jamais devem ser gravados em disco.
  */
 export const qk = {
+  shell: (userId: string) => ['shell', userId] as const,
   tenant: (houseId: string) => ['tenant', houseId] as const,
   tasks: (houseId: string) => ['tenant', houseId, 'tasks'] as const,
   rewards: (houseId: string) => ['tenant', houseId, 'rewards'] as const,

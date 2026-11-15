@@ -12,6 +12,7 @@ import { Modal } from '@/components/ui/modal'
 import { useClaimableAchievement } from '@/hooks/use-claimable-achievement'
 import { PunishmentIndicator } from '@/components/punishments/punishment-indicator'
 import { selectHouse } from '@/actions/houses'
+import { useInvalidateShell } from '@/hooks/queries/use-shell'
 import type { NotificationRow } from '@/types/notifications'
 import type { QuickMessageSettings } from '@/utils/settings'
 import type { ActivePunishment } from '@/utils/punishments'
@@ -75,6 +76,7 @@ export function DashboardNav({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const invalidateShell = useInvalidateShell()
   const [showAccount, setShowAccount] = useState(false)
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const claimable = useClaimableAchievement(hasClaimableAchievement)
@@ -115,6 +117,8 @@ export function DashboardNav({
             toast.error(result.error)
             return
           }
+          // Troca o contexto de casa nas telas (shell + bundle das rotas).
+          if (userId) void invalidateShell(userId)
           const name = houseNames?.[houseId]
           toast.info(name ? `Você mudou para a casa ${name}.` : 'Casa ativa alterada.')
         }
@@ -134,7 +138,7 @@ export function DashboardNav({
     // `houseNames`/`activeHouseId` entram no dep de propósito: sem eles o
     // closure usaria a casa ativa antiga depois de uma troca. São props do
     // servidor, então só mudam quando o app navega de verdade.
-  }, [role, router, activeHouseId, houseNames])
+  }, [role, router, activeHouseId, houseNames, invalidateShell, userId])
 
   return (
     <>

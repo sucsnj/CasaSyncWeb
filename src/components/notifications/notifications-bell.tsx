@@ -39,6 +39,7 @@ import {
   markNotificationRead,
 } from '@/actions/notifications'
 import { selectHouse } from '@/actions/houses'
+import { useInvalidateShell } from '@/hooks/queries/use-shell'
 import { toast } from 'sonner'
 import type { NotificationRow, NotificationType } from '@/types/notifications'
 
@@ -120,6 +121,7 @@ export function NotificationsBell({
   houseNames?: Record<string, string>
 }) {
   const router = useRouter()
+  const invalidateShell = useInvalidateShell()
   const cache = useNotificationsCache(userId)
   const { data: items = [] } = useNotifications(userId, initialNotifications)
   const [open, setOpen] = useState(false)
@@ -169,6 +171,8 @@ export function NotificationsBell({
         toast.error(result.error)
         return
       }
+      // Troca o contexto de casa nas telas (shell + bundle das rotas).
+      void invalidateShell(userId)
       const name = houseNames?.[item.house_id]
       toast.info(
         name
