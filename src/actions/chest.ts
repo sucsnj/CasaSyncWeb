@@ -107,7 +107,6 @@ async function loadManagedItem(
 
 /** Rebaixa a tela do dependente e a do baú depois de qualquer escrita. */
 function revalidateChest() {
-  revalidatePath('/chest')
   revalidatePath('/dashboard/dependent')
 }
 
@@ -364,7 +363,6 @@ export async function deleteChestItem(itemId: string): Promise<ActionResult> {
   await removeStorageFile(admin, item.file_url, CHEST_ITEM_FOLDER, 'CHEST')
 
   revalidateChest()
-  revalidatePath('/tasks')
   return { ok: true, message: `Item "${item.title}" excluído.` }
 }
 

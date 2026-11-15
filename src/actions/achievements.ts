@@ -178,7 +178,6 @@ export async function createAchievement(
     return { ok: false, error: 'Falha ao criar a conquista.' }
   }
 
-  revalidatePath('/achievements')
   return {
     ok: true,
     data: { achievement: achievementRow },
@@ -279,7 +278,6 @@ export async function updateAchievement(
     .eq('id', achievementId)
   if (error) return { ok: false, error: 'Falha ao salvar a conquista.' }
 
-  revalidatePath('/achievements')
   return { ok: true, message: 'Conquista atualizada.' }
 }
 
@@ -339,7 +337,6 @@ export async function deleteAchievement(
 
   removeAchievementImage(admin, achievement.image_url)
 
-  revalidatePath('/achievements')
   return { ok: true, message: `Conquista "${achievement.title}" excluída.` }
 }
 
@@ -518,7 +515,6 @@ export async function adjustAchievementProgress(
     }
   }
 
-  revalidatePath('/achievements')
   return {
     ok: true,
     data: { progress: updated },
@@ -619,7 +615,6 @@ export async function resetAchievementProgress(
     }
   }
 
-  revalidatePath('/achievements')
   return {
     ok: true,
     data: { progress: updated },
@@ -749,8 +744,6 @@ export async function claimAchievementReward(
     return { ok: false, error: 'Falha ao creditar pontos. Ação revertida.' }
   }
 
-  revalidatePath('/achievements')
-  revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
 
   return {

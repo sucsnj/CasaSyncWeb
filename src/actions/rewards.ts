@@ -136,7 +136,6 @@ export async function createReward(input: CreateRewardInput): Promise<ActionResu
     link: '/rewards',
   })
 
-  revalidatePath('/rewards')
   return { ok: true, message: `Recompensa "${title}" criada.` }
 }
 
@@ -342,7 +341,6 @@ export async function requestRedemption(rewardId: string): Promise<ActionResult>
     console.error('[PUSH] Falha ao disparar push na solicitação de resgate:', err)
   }
 
-  revalidatePath('/rewards')
   return { ok: true, message: `Resgate de "${reward.title}" solicitado.` }
 }
 
@@ -502,9 +500,7 @@ export async function approveRedemption(redemptionId: string): Promise<ActionRes
     auth.adminId
   )
 
-  revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
-  revalidatePath('/tasks')
 
   return { ok: true, message: 'Resgate aprovado e pontos debitados.' }
 }
@@ -561,7 +557,6 @@ export async function rejectRedemption(redemptionId: string): Promise<ActionResu
     console.error('[PUSH] Falha ao disparar push na rejeição de resgate:', err)
   }
 
-  revalidatePath('/rewards')
   return { ok: true, message: 'Resgate rejeitado.' }
 }
 
@@ -639,7 +634,6 @@ export async function updateReward(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
-  revalidatePath('/rewards')
   return { ok: true, message: 'Recompensa atualizada.' }
 }
 
@@ -676,7 +670,6 @@ export async function setRewardActive(
 
   if (error) return { ok: false, error: 'Falha ao atualizar a recompensa.' }
 
-  revalidatePath('/rewards')
   return {
     ok: true,
     message: active
@@ -745,7 +738,6 @@ export async function createRewardSuggestion(
     link: '/rewards',
   })
 
-  revalidatePath('/rewards')
   return { ok: true, message: 'Sugestão enviada para aprovação.' }
 }
 
@@ -830,6 +822,5 @@ export async function resolveRewardSuggestion(
     )
   }
 
-  revalidatePath('/rewards')
   return { ok: true, message: approve ? 'Sugestão aprovada e recompensa criada.' : 'Sugestão rejeitada.' }
 }

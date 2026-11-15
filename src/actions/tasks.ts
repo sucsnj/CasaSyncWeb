@@ -458,7 +458,6 @@ export async function createTask(
     console.error('[PUSH] Falha ao disparar push na criação de tarefa:', err)
   }
 
-  revalidatePath('/tasks')
   return {
     ok: true,
     data: { task: taskRow },
@@ -780,7 +779,6 @@ export async function updateTask(
     }
   }
 
-  revalidatePath('/tasks')
   return { ok: true }
 }
 
@@ -889,7 +887,6 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
     console.error('[PUSH] Falha ao disparar push na conclusão de tarefa:', err)
   }
 
-  revalidatePath('/tasks')
   return { ok: true }
 }
 
@@ -988,9 +985,6 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
-  revalidatePath('/achievements')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -1067,7 +1061,6 @@ export async function rejectCompletedTask(taskId: string): Promise<ActionResult>
     )
   }
 
-  revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
   return { ok: true, message: 'Tarefa devolvida ao dependente.' }
@@ -1156,8 +1149,6 @@ export async function markTaskNotDelivered(taskId: string): Promise<ActionResult
     link: '/tasks',
   })
 
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -1264,7 +1255,6 @@ export async function setTaskOnHold(
       })
     }
 
-    revalidatePath('/tasks')
     revalidatePath('/dashboard/dependent')
 
     return {
@@ -1335,7 +1325,6 @@ export async function setTaskOnHold(
     })
   }
 
-  revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -1421,7 +1410,6 @@ export async function restoreTask(
     })
   }
 
-  revalidatePath('/tasks')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -1523,9 +1511,6 @@ export async function adminCompleteTask(taskId: string): Promise<ActionResult> {
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'TASKS_APPROVED', 1, auth.adminId)
   await registerAchievementProgress(activeHouse.id, task.assigned_to, 'EARNED_POINTS', currentPoints, auth.adminId)
 
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
-  revalidatePath('/achievements')
   revalidatePath('/dashboard/dependent')
 
   return {
@@ -1627,7 +1612,6 @@ export async function requestTaskExtension(
     link: '/tasks',
   })
 
-  revalidatePath('/tasks')
   return { ok: true, message: 'Pedido de adiamento enviado.' }
 }
 
@@ -1765,9 +1749,7 @@ export async function resolveTaskExtension(
     })
   }
 
-  revalidatePath('/tasks')
   if (approve && isNotDelivered) {
-    revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
   }
 

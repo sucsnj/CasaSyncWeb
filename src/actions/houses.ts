@@ -23,33 +23,21 @@ import { getPushTable } from '@/lib/push-service'
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
 
 /**
- * Rotas que resolvem o **contexto da casa ativa** (tarefas, recompensas,
- * conquistas, visões de admin e de dependente).
+ * Rotas RSC que resolvem o **contexto da casa ativa** (visões de admin e de
+ * dependente). As rotas `/tasks`, `/rewards`, `/achievements` e `/chest` são
+ * shells estáticos no cliente (o dado vive no query cache, não na RSC), então
+ * invalidá-las aqui não faz mais sentido — a lista anterior foi reduzida a
+ * quem ainda depende do payload de servidor.
  *
  * Toda action que muda esse contexto — trocar/ criar/ excluir casa, criar ou
  * editar dependente, alterar pontos, expulsar membro — precisa revalidar a lista
  * INTEIRA. Uma rota esquecida não dá erro: ela simplesmente serve o payload
- * antigo, e a tela mostra dados da casa anterior (ou de uma casa que não existe
- * mais, no caso do `deleteHouse`).
- *
- * A lista é única de propósito: com `revalidatePath` repetido à mão em cada
- * action, a omissão é invisível na revisão — foi assim que `/achievements`
- * ficou fora de sete actions e só apareceu quando a troca automática de casa
- * (clique na notificação) passou a navegar para lá.
- *
- * Vale a lista cheia mesmo em actions cujo dado é mais estreito (o
- * `rotateHousePin`, por exemplo, só muda o código exibido): como todas as rotas
- * são dinâmicas, invalidar a mais não custa nada — e um bloco "curto" deixado
- * no arquivo é exatamente o que a próxima action copiaria por engano.
+ * antigo.
  */
 const HOUSE_CONTEXT_ROUTES = [
   '/dashboard/admin',
   '/dashboard/admin/houses',
   '/dashboard/dependent',
-  '/tasks',
-  '/rewards',
-  '/achievements',
-  '/chest',
 ] as const
 
 function revalidateHouseContext() {

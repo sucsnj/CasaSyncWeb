@@ -6,7 +6,8 @@
 - **Páginas do grupo `(app)` são shells leves:** `page.tsx` de `/tasks`, `/rewards`, `/achievements` e `/chest` não faz mais `await` de dados; renderiza um screen client (`src/components/screens/*`). O shell `(app)/layout.tsx` monta `AppSessionProvider` (`src/components/session/app-session.tsx`) com `{ userId, role, houseId, houseName }` lidos uma única vez na sessão — as telas montam o `useQuery` na hora, sem round-trip extra de RSC. As rotas renderizam a partir do cache (IndexedDB); `PageSkeleton` só na 1ª visita (`isPending && !data`) e `QueryError` com retry em falha. Os `loading.tsx` desses segmentos foram removidos.
 - **Bundles = unidade de invalidação:** as actions `list*(houseId)` (`src/actions/*-reads.ts`) retornam o bundle completo (ex.: tasks + chestItems + settings de prazo/decaimento/anexos), validado por `assertHouseAccess` (`src/utils/tenant-scope.ts`) — escopo sempre derivado da sessão.
 - **Server Components (RSC):** Buscam dados via `src/utils/house.ts` + `createClient()`.
-- **Server Actions (`src/actions/*.ts`):** Todas as escritas (`'use server'`) retornam `ActionResult` (`{ ok, error?, data? }`).
+- **Server Actions (`src/actions/*.ts`):** Todas as escritas (`'use server'`) retornam `ActionResult` (`{ ok, error?, data? }`). `revalidatePath` fica **só para rotas RSC** (`/dashboard/*` e `/abrir-anexo`); as rotas do grupo `(app)` são shells estáticos no cliente e seu dado é invalidado no client (`invalidateQueries`/`setQueryData`). `HOUSE_CONTEXT_ROUTES` (`src/actions/houses.ts`) contém apenas as rotas RSC de contexto.
+- **Offline:** `src/components/ui/offline-banner.tsx` aviso fixo no rodapé; offline prolongado é servido pelo cache persistido (stale `~60s`, refetch no foco/reconexão via `refetchOnWindowFocus`/`refetchOnReconnect`).
 - **Modais (`src/components/ui/modal.tsx`):** Portal no `body` (`z-[100]`), trava scroll, prende foco e fecha no Esc.
 
 ## Supabase & Clientes

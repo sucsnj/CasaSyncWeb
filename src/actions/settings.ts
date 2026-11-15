@@ -128,19 +128,11 @@ export async function updateHouseSettings(
   if (!written.ok) return written
 
   revalidatePath('/dashboard/admin/settings')
+  // As rotas `/tasks`, `/rewards`, `/achievements` e `/chest` são shells
+  // estáticos no cliente — o dado vive no query cache, então as settings
+  // (que antes revalidavam essas rotas) não aparecem mais aqui.
   if (key === 'quick_message') {
-    revalidatePath('/tasks')
-    revalidatePath('/rewards')
     revalidatePath('/dashboard/dependent')
-  }
-  if (key === 'task_sla' || key === 'extension_rules' || key === 'task_decay' || key === 'task_rules') {
-    revalidatePath('/tasks')
-  }
-  if (key === 'attachment_budget') {
-    // O limite aparece no form do baú ("N de M") e na barra do seletor de anexo
-    // da tarefa, então as duas telas leem o número.
-    revalidatePath('/chest')
-    revalidatePath('/tasks')
   }
   // `notification_mute` e `notification_retention` só afetam notificações
   // futuras, então não invalidam nenhuma tela.
@@ -148,15 +140,6 @@ export async function updateHouseSettings(
     // O fuso muda o que está "devido" no overlay de comunicados e o dia da
     // Streak, ambos calculados no render das telas do dependente.
     revalidatePath('/dashboard/dependent')
-    revalidatePath('/tasks')
-    revalidatePath('/rewards')
-  }
-  if (key === 'text_limits') {
-    // O limite entra no `maxLength`/contador dos TRÊS formulários do ADMIN, cada
-    // um na sua tela — por isso as três rotas.
-    revalidatePath('/tasks')
-    revalidatePath('/rewards')
-    revalidatePath('/achievements')
   }
 
   return { ok: true, message: 'Configurações salvas.' }
@@ -582,10 +565,6 @@ export async function updateAttachmentSettings(
     if (!written.ok) return written
 
     revalidatePath('/dashboard/admin/settings')
-    // O toggle decide se o input de anexo aparece (form do ADMIN) e se o chip
-    // abre (cards dos dois papéis) — em `/tasks` e no `/chest`.
-    revalidatePath('/tasks')
-    revalidatePath('/chest')
     // O aviso vive em `/abrir-anexo` e o bloqueio de leitura nas rotas `/api/...`
     // do anexo. A tela é lida no request, mas invalidar mantém o mesmo
     // comportamento das demais configurações da casa.

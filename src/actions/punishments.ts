@@ -170,9 +170,6 @@ export async function applyPunishment(
 
   // Telas do dependente: a próxima renderização já mostra (ou some com) o ícone.
   revalidatePath('/dashboard/dependent')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
-  revalidatePath('/achievements')
   revalidatePath('/dashboard/admin/houses')
 
   return {
@@ -216,9 +213,6 @@ export async function removePunishment(
   }
 
   revalidatePath('/dashboard/dependent')
-  revalidatePath('/tasks')
-  revalidatePath('/rewards')
-  revalidatePath('/achievements')
   revalidatePath('/dashboard/admin/houses')
 
   return { ok: true, message: 'Castigo removido.' }

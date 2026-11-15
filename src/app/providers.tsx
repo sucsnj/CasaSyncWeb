@@ -13,6 +13,7 @@ import {
   shouldDehydrateQuery,
 } from '@/lib/query/persist'
 import { useSessionScope } from '@/lib/query/session-scope'
+import { OfflineBanner } from '@/components/ui/offline-banner'
 
 const persister = createIdbPersister()
 const LAST_USER_KEY = 'casasync:last-user'
@@ -52,6 +53,7 @@ export function Providers({ children }: { children: ReactNode }) {
       }}
     >
       <SessionCachePurge />
+      <OfflineBanner />
       {children}
     </PersistQueryClientProvider>
   )
