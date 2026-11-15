@@ -27,6 +27,12 @@ export function SignOutButton({
       // aba/aparelho herda os dados deste usuário.
       queryClient.clear()
       await purgePersistedCache()
+      // O `clear()` dispara o subscriber do provider (e ele salva um blob
+      // VAZIO ~1s depois, pelo `asyncThrottle`). Para a chave sumir de fato,
+      // apaga de novo depois dessa janela.
+      window.setTimeout(() => {
+        void purgePersistedCache()
+      }, 1500)
       const supabase = createClient()
       await supabase.auth.signOut()
       router.push('/login')
