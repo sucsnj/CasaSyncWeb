@@ -3,15 +3,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listChest,
-  type ChestAdminBundle,
-  type ChestDependentBundle,
 } from '@/actions/chest-reads'
 import { qk } from '@/lib/query/keys'
 
-export function useChestAdminBundle(
-  houseId: string,
-  initialData: ChestAdminBundle
-) {
+export function useChestAdminBundle(houseId: string) {
   return useQuery({
     queryKey: qk.chest(houseId),
     queryFn: async () => {
@@ -19,14 +14,10 @@ export function useChestAdminBundle(
       if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 
-export function useChestDependentBundle(
-  houseId: string,
-  initialData: ChestDependentBundle
-) {
+export function useChestDependentBundle(houseId: string) {
   return useQuery({
     queryKey: qk.chest(houseId),
     queryFn: async () => {
@@ -34,7 +25,6 @@ export function useChestDependentBundle(
       if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 

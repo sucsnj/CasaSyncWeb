@@ -9,11 +9,10 @@ import type { ChestItemView } from '@/components/chest/chest-types'
 
 export type Task = Tables<'tasks'>
 
-export function useTasksBundle(houseId: string, initialData: TasksBundle) {
+export function useTasksBundle(houseId: string) {
   return useQuery({
     queryKey: qk.tasks(houseId),
     queryFn: () => listTasks(houseId),
-    initialData,
   })
 }
 

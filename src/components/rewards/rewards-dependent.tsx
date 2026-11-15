@@ -6,12 +6,14 @@ import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import { useQueryClient } from '@tanstack/react-query'
-import { useMyPoints, applyMyPoints } from '@/hooks/queries/use-points'
 import {
   useRewardsDependentBundle,
   useInvalidateRewards,
+  patchDependentRewardsPoints,
 } from '@/hooks/queries/use-rewards'
-import type { RewardsBundle } from '@/actions/rewards-reads'
+import { useAppSession } from '@/components/session/app-session'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
@@ -20,7 +22,6 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Input } from '@/components/ui/input'
 import {
   DEFAULT_TEXT_LIMITS,
-  type TextLimitsSettings,
 } from '@/utils/settings'
 import {
   countRewardRedemptionsSince,
@@ -48,44 +49,40 @@ import {
 import {
   groupRedemptionsByStatus,
   getRedemptionDisplayDate,
+  type RedemptionView,
 } from '@/utils/redemptions'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
 
+const EMPTY_REWARDS: Reward[] = []
+const EMPTY_REDEMPTIONS: RedemptionView[] = []
+const EMPTY_SUGGESTIONS: {
+  id: string
+  title: string
+  description: string | null
+  points_cost: number | null
+  status: Tables<'reward_suggestions'>['status']
+  created_at: string
+}[] = []
+
 export function RewardsDependent({
   houseId,
-  myId,
-  initialPoints,
-  dayStartIso,
-  monthStartIso,
-  initialData,
-  textLimits,
 }: {
   houseId: string
-  myId: string
-  initialPoints: number
-  initialData: Extract<RewardsBundle, { role: 'DEPENDENT' }>
-  /**
-   * Fronteira do dia/mês corrente no **fuso da casa** (calculada no servidor) —
-   * é o que define a janela do limitador de resgate. O client só compara
-   * instantes; quem decide é o servidor (`requestRedemption` rechecka).
-   */
-  dayStartIso?: string
-  monthStartIso?: string
-  /**
-   * Teto de caracteres da descrição da sugestão (0 = sem limite) - settings.casa.
-   * Mesmo teto da recompensa, porque a sugestão vira recompensa na aprovação.
-   */
-  textLimits?: TextLimitsSettings
 }) {
-  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
+  const { userId: myId } = useAppSession()
+  const { data, isPending: bundlePending, refetch } =
+    useRewardsDependentBundle(houseId)
+  const rewards = data?.rewards ?? EMPTY_REWARDS
+  const redemptions = data?.redemptions ?? EMPTY_REDEMPTIONS
+  const suggestions = data?.suggestions ?? EMPTY_SUGGESTIONS
+  const points = data?.points ?? 0
+  const dayStartIso = data?.dayStartIso
+  const monthStartIso = data?.monthStartIso
+  const limits = data?.textLimits ?? DEFAULT_TEXT_LIMITS
   const queryClient = useQueryClient()
   const invalidateRewards = useInvalidateRewards()
-  const { data } = useRewardsDependentBundle(houseId, initialData)
-  const { rewards, redemptions, suggestions } = data
-  const { data: pointsData } = useMyPoints(myId, initialPoints)
-  const points = pointsData.points
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSuggestionModal, setShowSuggestionModal] = useState(false)
@@ -133,7 +130,7 @@ export function RewardsDependent({
     table: 'profiles',
     filter: `id=eq.${myId}`,
     event: 'UPDATE',
-    onUpsert: (row) => applyMyPoints(queryClient, myId, row.points),
+    onUpsert: (row) => patchDependentRewardsPoints(queryClient, houseId, row.points),
   })
 
   // Uso dos limitadores de resgate: quantos resgates o dependente já fez desta
@@ -141,6 +138,7 @@ export function RewardsDependent({
   // vaga (pendente/aprovado) — o recusado não consome o limite.
   const usageByReward = useMemo(() => {
     const map = new Map<string, { daily: number; monthly: number }>()
+    if (!dayStartIso || !monthStartIso) return map
     for (const reward of rewards) {
       if (
         isRewardUnlimited(reward.daily_limit) &&
@@ -248,6 +246,10 @@ export function RewardsDependent({
     () => groupRedemptionsByStatus(myRedemptions),
     [myRedemptions]
   )
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-6">

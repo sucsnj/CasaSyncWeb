@@ -15,7 +15,8 @@ import {
   useChestDependentBundle,
   useInvalidateChest,
 } from '@/hooks/queries/use-chest'
-import type { ChestDependentBundle } from '@/actions/chest-reads'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import type { ChestItemView } from './chest-types'
 
 /**
@@ -31,18 +32,19 @@ import type { ChestItemView } from './chest-types'
  * tela, então uma consulta por tecla só somaria latência. Mesmo critério das
  * buscas de recompensas.
  */
+const EMPTY_ITEMS: ChestItemView[] = []
+
 export function ChestDependent({
   houseId,
-  initialData,
 }: {
   /** Casa do dependente — é o filtro do Realtime e do cache. */
   houseId: string
-  initialData: ChestDependentBundle
 }) {
   const invalidateChest = useInvalidateChest()
-  const { data } = useChestDependentBundle(houseId, initialData)
-  const items = data.items
-  const attachmentsAllowed = data.attachmentsAllowed
+  const { data, isPending: bundlePending, refetch } =
+    useChestDependentBundle(houseId)
+  const items = data?.items ?? EMPTY_ITEMS
+  const attachmentsAllowed = data?.attachmentsAllowed ?? true
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-dependent', 'created:desc')
 
@@ -75,6 +77,10 @@ export function ChestDependent({
     }
     return sortBy(filtered, getter, direction === 'desc' ? 'desc' : 'asc')
   }, [filtered, sort])
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-4">

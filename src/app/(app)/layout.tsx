@@ -10,6 +10,7 @@ import {
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 import { RealtimeToastListener } from '@/components/notifications/realtime-toast-listener'
+import { AppSessionProvider } from '@/components/session/app-session'
 import { hasClaimableAchievement } from '@/utils/achievement-progress'
 import { getActivePunishment } from '@/utils/active-punishment'
 import {
@@ -73,6 +74,17 @@ export default async function AppLayout({
     adminHouses.map((house) => [house.id, house.name])
   )
 
+  // Sessão instantânea do cliente: `houseId`/`role`/`userId`/`houseName` para
+  // as telas montaram o `useQuery` na navegação sem round-trip adicional.
+  const appSession = {
+    userId: user.id,
+    role: (isAdmin ? 'ADMIN' : 'DEPENDENT') as 'ADMIN' | 'DEPENDENT',
+    houseId: isAdmin ? (activeHouse?.id ?? null) : (dependentHouse?.id ?? null),
+    houseName: isAdmin
+      ? (activeHouse?.name ?? null)
+      : (dependentHouse?.name ?? null),
+  }
+
   // Ajustes do sino do DEPENDENT (limite de caracteres da mensagem rápida) e o
   // castigo ativo do tutor (ADR-0020 — ícone de triângulo, sem Realtime: lido
   // no render, como os comunicados).
@@ -129,7 +141,7 @@ export default async function AppLayout({
           initialNotifications={notifications}
         />
       ) : null}
-      {children}
+      <AppSessionProvider session={appSession}>{children}</AppSessionProvider>
     </div>
   )
 }

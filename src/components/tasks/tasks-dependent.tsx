@@ -8,6 +8,8 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import { sortBy } from '@/utils/sort'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import {
@@ -16,10 +18,10 @@ import {
   upsertTaskInBundle,
   deleteTaskFromBundle,
 } from '@/hooks/queries/use-tasks'
-import type { TasksBundle } from '@/actions/tasks-reads'
+import type { ChestItemView } from '@/components/chest/chest-types'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
-import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
+import { DEFAULT_TASK_DECAY } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { taskAttachmentView } from '@/utils/task-attachment-view'
@@ -43,33 +45,24 @@ import {
 
 type Task = Tables<'tasks'>
 
+const EMPTY_TASKS: Task[] = []
+const EMPTY_CHEST_MAP: Record<string, ChestItemView> = {}
+const EMPTY_NAMES: Record<string, string> = {}
+
 export function TasksDependent({
   houseId,
-  initialData,
-  dueSoonHours = 4,
-  taskDecay,
-  attachmentsAllowed = true,
 }: {
   houseId: string
-  initialData: TasksBundle
-  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
-  dueSoonHours?: number
-  /** Decaimento de pontos de tarefas — settings.casa. */
-  taskDecay?: TaskDecaySettings
-  /**
-   * A casa permite anexos em tarefa? (ADR-0026). Default ligado, igual à
-   * configuração — o chip bloqueado é a consequência, não o bloqueio em si (a
-   * barreira está no servidor).
-   */
-  attachmentsAllowed?: boolean
 }) {
-  const decay = taskDecay ?? DEFAULT_TASK_DECAY
+  const { data, isPending: bundlePending, refetch } = useTasksBundle(houseId)
+  const tasks = data?.tasks ?? EMPTY_TASKS
+  const chestItemsMap = data?.chestItems ?? EMPTY_CHEST_MAP
+  const creatorNames = data?.creatorNames ?? EMPTY_NAMES
+  const decay = data?.settings.taskDecay ?? DEFAULT_TASK_DECAY
+  const dueSoonHours = data?.settings.dueSoonHours ?? 4
+  const attachmentsAllowed = data?.settings.attachmentsAllowed ?? true
   const queryClient = useQueryClient()
   const invalidateTasks = useInvalidateTasks()
-  const { data } = useTasksBundle(houseId, initialData)
-  const tasks = data.tasks
-  const chestItemsMap = data.chestItems
-  const creatorNames = data.creatorNames ?? {}
   const [sortOpen, setSortOpen] = usePersistedSort('sort:tasks-dependent:open', 'created:desc')
   const [sortDone, setSortDone] = usePersistedSort('sort:tasks-dependent:done', 'created:desc')
   const [error, setError] = useState<string | null>(null)
@@ -193,6 +186,7 @@ export function TasksDependent({
 
   const awaitingTasks = tasks.filter((task) => task.status === 'COMPLETED')
   const doneTasks = useMemo(() => {
+
     const [key, direction] = sortDone.split(':')
     const getter = (task: Task) => {
       switch (key) {
@@ -213,6 +207,11 @@ export function TasksDependent({
       direction === 'desc' ? 'desc' : 'asc'
     )
   }, [tasks, sortDone])
+
+  // 1ª visita sem cache: skeleton completo; com cache (IndexedDB) renderiza na
+  // hora — o refetch fica em background. Erro sem cache: card com retry.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-6">

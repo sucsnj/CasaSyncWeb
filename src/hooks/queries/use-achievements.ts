@@ -4,14 +4,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listAchievements,
   type AchievementsAdminBundle,
-  type AchievementsDependentBundle,
 } from '@/actions/achievements-reads'
 import { qk } from '@/lib/query/keys'
 
-export function useAchievementsAdminBundle(
-  houseId: string,
-  initialData: AchievementsAdminBundle
-) {
+export function useAchievementsAdminBundle(houseId: string) {
   return useQuery({
     queryKey: qk.achievements(houseId),
     queryFn: async () => {
@@ -19,14 +15,10 @@ export function useAchievementsAdminBundle(
       if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 
-export function useAchievementsDependentBundle(
-  houseId: string,
-  initialData: AchievementsDependentBundle
-) {
+export function useAchievementsDependentBundle(houseId: string) {
   return useQuery({
     queryKey: qk.achievements(houseId),
     queryFn: async () => {
@@ -34,7 +26,6 @@ export function useAchievementsDependentBundle(
       if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 

@@ -30,7 +30,6 @@ import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
 import {
   DEFAULT_TEXT_LIMITS,
-  type TextLimitsSettings,
 } from '@/utils/settings'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ClearableInput } from '@/components/ui/clearable-input'
@@ -39,6 +38,8 @@ import { Input } from '@/components/ui/input'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -47,7 +48,6 @@ import {
   useInvalidateAchievements,
 } from '@/hooks/queries/use-achievements'
 import type {
-  AchievementsAdminBundle,
   AchievementProgressEntry,
 } from '@/actions/achievements-reads'
 import type { Tables } from '@/types/database'
@@ -93,20 +93,22 @@ const METRIC_OPTIONS: Array<{ value: AchievementMetricType; label: string }> = [
   { value: 'MANUAL', label: 'Concessão manual pelo tutor' },
 ]
 
+const EMPTY_ACHIEVEMENTS: Achievement[] = []
+const EMPTY_PROGRESS: AchievementProgressEntry[] = []
+const EMPTY_DEPENDENTS: { id: string; full_name: string }[] = []
+
 export function AchievementsAdmin({
   houseId,
-  initialData,
-  textLimits,
 }: {
   houseId: string
-  initialData: AchievementsAdminBundle
-  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
-  textLimits?: TextLimitsSettings
 }) {
-  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
+  const { data, isPending: bundlePending, refetch } =
+    useAchievementsAdminBundle(houseId)
+  const achievements = data?.achievements ?? EMPTY_ACHIEVEMENTS
+  const progress = data?.progress ?? EMPTY_PROGRESS
+  const dependents = data?.dependents ?? EMPTY_DEPENDENTS
+  const limits = data?.textLimits ?? DEFAULT_TEXT_LIMITS
   const queryClient = useQueryClient()
-  const { data } = useAchievementsAdminBundle(houseId, initialData)
-  const { achievements, progress, dependents } = data
   const [sort, setSort] = usePersistedSort('sort:achievements-admin', 'title:asc')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -453,6 +455,10 @@ export function AchievementsAdmin({
       setResetTarget(null)
     }
   }
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-6">

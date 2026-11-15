@@ -25,6 +25,8 @@ import {
 import { qk } from '@/lib/query/keys'
 import type { AchievementsBundle } from '@/actions/achievements-reads'
 import { AchievementIcon } from './achievement-icon'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import type { Tables } from '@/types/database'
@@ -42,17 +44,18 @@ export type AchievementView = {
   progress: DependentAchievementProgress | null
 }
 
+const EMPTY_VIEWS: AchievementView[] = []
+
 export function AchievementsDependent({
   houseId,
-  initialData,
 }: {
   houseId: string
-  initialData: Extract<AchievementsBundle, { role: 'DEPENDENT' }>
 }) {
   const queryClient = useQueryClient()
   const invalidateAchievements = useInvalidateAchievements()
-  const { data } = useAchievementsDependentBundle(houseId, initialData)
-  const views = data.views
+  const { data, isPending: bundlePending, refetch } =
+    useAchievementsDependentBundle(houseId)
+  const views = data?.views ?? EMPTY_VIEWS
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [sort, setSort] = usePersistedSort('sort:achievements-dependent', 'title:asc')
 
@@ -149,6 +152,10 @@ export function AchievementsDependent({
       setClaimingId(null)
     }
   }
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={2} cols={2} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   if (views.length === 0) {
     return (

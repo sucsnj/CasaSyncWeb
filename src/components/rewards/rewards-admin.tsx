@@ -19,7 +19,12 @@ import {
   useInvalidateRewards,
   patchRewards,
 } from '@/hooks/queries/use-rewards'
-import type { RewardsBundle, SuggestionAdminView } from '@/actions/rewards-reads'
+import type {
+  SuggestionAdminView,
+} from '@/actions/rewards-reads'
+import { useAppSession } from '@/components/session/app-session'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import type { NotificationRow } from '@/types/notifications'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -40,7 +45,6 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import {
   DEFAULT_TEXT_LIMITS,
-  type TextLimitsSettings,
 } from '@/utils/settings'
 import { rewardLimitLabel } from '@/utils/reward-limits'
 import {
@@ -61,23 +65,24 @@ type Reward = Tables<'rewards'>
 
 type SuggestionView = SuggestionAdminView
 
+const EMPTY_REWARDS: Reward[] = []
+const EMPTY_REDEMPTIONS: RedemptionView[] = []
+const EMPTY_SUGGESTIONS: SuggestionView[] = []
+
 export function RewardsAdmin({
   houseId,
-  userId,
-  initialData,
-  textLimits,
 }: {
   houseId: string
-  userId: string
-  initialData: Extract<RewardsBundle, { role: 'ADMIN' }>
-  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
-  textLimits?: TextLimitsSettings
 }) {
-  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
+  const { userId } = useAppSession()
+  const { data, isPending: bundlePending, refetch } =
+    useRewardsAdminBundle(houseId)
+  const rewards = data?.rewards ?? EMPTY_REWARDS
+  const redemptions = data?.redemptions ?? EMPTY_REDEMPTIONS
+  const suggestions = data?.suggestions ?? EMPTY_SUGGESTIONS
+  const limits = data?.textLimits ?? DEFAULT_TEXT_LIMITS
   const queryClient = useQueryClient()
   const invalidateRewards = useInvalidateRewards()
-  const { data } = useRewardsAdminBundle(houseId, initialData)
-  const { rewards, redemptions, suggestions } = data
   const [pending, startTransition] = useTransition()
   // Pending/otimista por item compartilhado com tasks. `pending` fica só para
   // os forms (ação de escopo único).
@@ -357,6 +362,10 @@ export function RewardsAdmin({
     }
     return sortBy(groupedRedemptions, getter, direction === 'desc' ? 'desc' : 'asc')
   }, [groupedRedemptions, sortHistory])
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-6">

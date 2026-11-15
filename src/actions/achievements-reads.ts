@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getHouseAssignees } from '@/utils/house'
+import { getHouseTextLimitsSettings } from '@/utils/house-settings'
+import type { TextLimitsSettings } from '@/utils/settings'
 import { assertHouseAccess } from '@/utils/tenant-scope'
 import type { Tables } from '@/types/database'
 
@@ -38,6 +40,7 @@ export type AchievementsAdminBundle = {
   achievements: AchievementRow[]
   progress: AchievementProgressEntry[]
   dependents: { id: string; full_name: string }[]
+  textLimits: TextLimitsSettings
 }
 
 export type AchievementsBundle = AchievementsAdminBundle | AchievementsDependentBundle
@@ -51,7 +54,7 @@ export async function listAchievements(
   const admin = createAdminClient()
 
   if (access.role === 'ADMIN') {
-    const [achievements, progress, dependents] = await Promise.all([
+    const [achievements, progress, dependents, textLimits] = await Promise.all([
       admin
         .from('achievements')
         .select('*')
@@ -62,6 +65,7 @@ export async function listAchievements(
         .select('id, achievement_id, profile_id, level, current_progress, unlocked_at')
         .eq('house_id', houseId),
       getHouseAssignees(houseId),
+      getHouseTextLimitsSettings(houseId),
     ])
 
     return {
@@ -70,6 +74,7 @@ export async function listAchievements(
       achievements: achievements.data ?? [],
       progress: (progress.data ?? []) as AchievementProgressEntry[],
       dependents,
+      textLimits,
     }
   }
 

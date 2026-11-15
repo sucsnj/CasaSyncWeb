@@ -22,11 +22,13 @@ import {
   upsertChestItemInBundle,
   deleteChestItemFromBundle,
 } from '@/hooks/queries/use-tasks'
-import type { TasksBundle } from '@/actions/tasks-reads'
+
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import { sortBy } from '@/utils/sort'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
@@ -35,8 +37,6 @@ import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import {
   DEFAULT_TASK_DECAY,
   DEFAULT_TEXT_LIMITS,
-  type TaskDecaySettings,
-  type TextLimitsSettings,
 } from '@/utils/settings'
 import { normalizeTaskTitle, searchTasksByWords } from '@/utils/task-normalize'
 import {
@@ -93,49 +93,30 @@ import {
 
 type Task = Tables<'tasks'>
 
+const EMPTY_TASKS: Task[] = []
+const EMPTY_CHEST_MAP: Record<string, ChestItemView> = {}
+const EMPTY_ASSIGNEES: { id: string; full_name: string }[] = []
+
 export function TasksAdmin({
   houseId,
-  initialData,
-  defaultDueDays = 1,
-  dueSoonHours = 4,
-  extensionDayOptions = [1, 3],
-  maxExtensions = 0,
-  taskDecay,
-  textLimits,
-  attachmentsAllowed,
 }: {
   houseId: string
-  initialData: TasksBundle
-  /** Prazo padrão de criação/restauro (dias a partir de agora) - settings.casa. */
-  defaultDueDays?: number
-  /** Horas restantes até o prazo que ligam o chip "Prazo próximo" - settings.casa. */
-  dueSoonHours?: number
-  /** Dias disponíveis nos botões de aprovação de adiamento - settings.casa. */
-  extensionDayOptions?: number[]
-  /** Máximo de adiamentos por tarefa (0 = ilimitado) - settings.casa. */
-  maxExtensions?: number
-  /** Decaimento de pontos de tarefas - settings.casa. */
-  taskDecay?: TaskDecaySettings
-  /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
-  textLimits?: TextLimitsSettings
-  /**
-   * A casa permite anexar material em tarefa? (chave `attachments`, ADR-0026).
-   * Default `true` = ligado, que é o default da casa — o componente só esconde o
-   * input e o chip; quem recusa de verdade é o servidor.
-   */
-  attachmentsAllowed?: boolean
 }) {
-  const decay = taskDecay ?? DEFAULT_TASK_DECAY
-  const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const attachmentsOn = attachmentsAllowed ?? true
+  // Fonte da verdade: o query cache (persistido em IndexedDB). Realtime
+  // patcha direto no cache — sem piscar a tela.
+  const { data, isPending: bundlePending, refetch } = useTasksBundle(houseId)
+  const tasks = data?.tasks ?? EMPTY_TASKS
+  const chestItemsMap = data?.chestItems ?? EMPTY_CHEST_MAP
+  const assignees = data?.assignees ?? EMPTY_ASSIGNEES
+  const defaultDueDays = data?.settings.defaultDueDays ?? 1
+  const extensionDayOptions = data?.settings.extensionDayOptions ?? [1, 3]
+  const maxExtensions = data?.settings.maxExtensions ?? 0
+  const decay = data?.settings.taskDecay ?? DEFAULT_TASK_DECAY
+  const limits = data?.settings.textLimits ?? DEFAULT_TEXT_LIMITS
+  const attachmentsOn = data?.settings.attachmentsAllowed ?? true
+  const dueSoonHours = data?.settings.dueSoonHours ?? 4
   const queryClient = useQueryClient()
   const invalidateTasks = useInvalidateTasks()
-  // Fonte da verdade: o query cache (semeado pela RSC, persistido em
-  // IndexedDB). Realtime patcha direto no cache — sem piscar a tela.
-  const { data } = useTasksBundle(houseId, initialData)
-  const tasks = data.tasks
-  const chestItemsMap = data.chestItems
-  const assignees = data.assignees ?? []
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
   const [sortPending, setSortPending] = usePersistedSort('sort:tasks-admin:pending', 'created:desc')
@@ -760,6 +741,10 @@ export function TasksAdmin({
       }
     })()
   }
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza instantâneo.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-6">

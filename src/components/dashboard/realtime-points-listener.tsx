@@ -1,16 +1,14 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
-import { qk } from '@/lib/query/keys'
 import type { Tables } from '@/types/database'
 
 /**
  * Mantém a tela do DEPENDENT sincronizada quando o ADMIN ajusta
- * `profiles.points` (updateDependentPoints com o PIN da casa, penalidade etc.): ouvindo
- * UPDATEs na própria linha do perfil, dispara `router.refresh()` para os
- * Server Components refletirem o novo saldo no badge/nav e nos cards.
+ * `profiles.points` (updateDependentPoints com o PIN da casa, penalidade etc.):
+ * ouvindo UPDATEs na própria linha do perfil, dispara `router.refresh()` para
+ * os Server Components refletirem o novo saldo no badge/nav — e no dashboard.
  *
  * Usa `usePostgresChanges` (que faz `getSession()` + `realtime.setAuth()` antes
  * de assinar — ver ADR-0010): sem o setAuth, com a sessão restaurada de
@@ -20,16 +18,12 @@ import type { Tables } from '@/types/database'
  */
 export function RealtimePointsListener({ userId }: { userId: string }) {
   const router = useRouter()
-  const queryClient = useQueryClient()
 
   usePostgresChanges<Tables<'profiles'>>({
     table: 'profiles',
     filter: `id=eq.${userId}`,
     event: 'UPDATE',
     onUpsert: () => {
-      // Saldo no query cache (pontos da tela de recompensas) invalida já;
-      // o refresh continua para o RSC do dashboard/nav refletir o badge.
-      void queryClient.invalidateQueries({ queryKey: qk.points(userId) })
       router.refresh()
     },
   })

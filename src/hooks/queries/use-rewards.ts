@@ -3,17 +3,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listRewards,
-  type RewardsBundle,
+  type RewardsAdminBundle,
+  type RewardsDependentBundle,
 } from '@/actions/rewards-reads'
 import { qk } from '@/lib/query/keys'
 
-type AdminRewardsBundle = Extract<RewardsBundle, { role: 'ADMIN' }>
-type DependentRewardsBundle = Extract<RewardsBundle, { role: 'DEPENDENT' }>
-
-export function useRewardsAdminBundle(
-  houseId: string,
-  initialData: AdminRewardsBundle
-) {
+export function useRewardsAdminBundle(houseId: string) {
   return useQuery({
     queryKey: qk.rewards(houseId),
     queryFn: async () => {
@@ -21,14 +16,10 @@ export function useRewardsAdminBundle(
       if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 
-export function useRewardsDependentBundle(
-  houseId: string,
-  initialData: DependentRewardsBundle
-) {
+export function useRewardsDependentBundle(houseId: string) {
   return useQuery({
     queryKey: qk.rewards(houseId),
     queryFn: async () => {
@@ -36,7 +27,6 @@ export function useRewardsDependentBundle(
       if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
       return bundle
     },
-    initialData,
   })
 }
 
@@ -49,9 +39,21 @@ export function useInvalidateRewards() {
 export function patchRewards(
   queryClient: ReturnType<typeof useQueryClient>,
   houseId: string,
-  fn: (bundle: AdminRewardsBundle) => AdminRewardsBundle
+  fn: (bundle: RewardsAdminBundle) => RewardsAdminBundle
 ) {
-  queryClient.setQueryData<AdminRewardsBundle>(qk.rewards(houseId), (old) =>
+  queryClient.setQueryData<RewardsAdminBundle>(qk.rewards(houseId), (old) =>
     old ? fn(old) : undefined
+  )
+}
+
+/** Realtime de `profiles.points`: patcha o saldo guardado no bundle do dependente. */
+export function patchDependentRewardsPoints(
+  queryClient: ReturnType<typeof useQueryClient>,
+  houseId: string,
+  points: number
+) {
+  queryClient.setQueryData<RewardsDependentBundle>(
+    qk.rewards(houseId),
+    (old) => (old ? { ...old, points } : old)
   )
 }

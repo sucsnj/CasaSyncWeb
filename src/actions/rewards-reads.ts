@@ -1,8 +1,18 @@
 'use server'
 
 import { createAdminClient } from '@/utils/supabase/admin'
-import { getSessionProfile } from '@/utils/house'
+import {
+  getHouseTextLimitsSettings,
+  getHouseTimezoneSettings,
+} from '@/utils/house-settings'
+import {
+  zonedDayStart,
+  zonedMonthStart,
+} from '@/utils/timezone'
 import { assertHouseAccess } from '@/utils/tenant-scope'
+import {
+  type TextLimitsSettings,
+} from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import type { RedemptionView } from '@/utils/redemptions'
 
@@ -37,6 +47,7 @@ export type RewardsBundleBase = {
   houseId: string
   rewards: Tables<'rewards'>[]
   redemptions: RedemptionView[]
+  textLimits: TextLimitsSettings
 }
 
 export type RewardsAdminBundle = RewardsBundleBase & {
@@ -49,6 +60,10 @@ export type RewardsAdminBundle = RewardsBundleBase & {
 export type RewardsDependentBundle = RewardsBundleBase & {
   role: 'DEPENDENT'
   suggestions: SuggestionDependentView[]
+  points: number
+  /** Fronteiras do dia/mês corrente no fuso da casa (calculadas no servidor). */
+  dayStartIso: string
+  monthStartIso: string
 }
 
 export type RewardsBundle = RewardsAdminBundle | RewardsDependentBundle
@@ -58,6 +73,7 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
   if (!access.ok) throw new Error('FORBIDDEN')
 
   const admin = createAdminClient()
+  const textLimits = await getHouseTextLimitsSettings(houseId)
 
   if (access.role === 'ADMIN') {
     const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
@@ -129,6 +145,7 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
       redemptions: redemptionViews,
       suggestions: suggestionViews,
       dependents: Array.from(nameById, ([id, full_name]) => ({ id, full_name })),
+      textLimits,
     }
   }
 
@@ -178,27 +195,30 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
     })
   )
 
+  // Fronteiras das janelas do limitador de resgate (dia/mês corrente no fuso
+  // da CASA) — calculadas aqui para o cliente só comparar instantes.
+  const { timezone } = await getHouseTimezoneSettings(houseId)
+  const now = new Date()
+  const dayStartIso = zonedDayStart(timezone, now).toISOString()
+  const monthStartIso = zonedMonthStart(timezone, now).toISOString()
+
+  // Saldo atual (mesmo cliente service role; o /rewards mostra o número no header).
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('points')
+    .eq('id', access.userId)
+    .maybeSingle()
+  const points = profileRow?.points ?? 0
+
   return {
     role: 'DEPENDENT',
     houseId,
     rewards: rewards ?? [],
     redemptions: redemptionViews,
     suggestions: suggestionViews,
+    textLimits,
+    points,
+    dayStartIso,
+    monthStartIso,
   }
-}
-
-/** Saldo de pontos do usuário da sessão (página de recompensas do dependente). */
-export async function getMyProfilePoints(): Promise<{ id: string; points: number }> {
-  const { user } = await getSessionProfile()
-  if (!user) throw new Error('UNAUTHENTICATED')
-
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from('profiles')
-    .select('id, points')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (!data) throw new Error('NOT_FOUND')
-  return { id: data.id, points: data.points }
 }

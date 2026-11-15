@@ -21,6 +21,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
 import { cn } from '@/lib/utils'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
@@ -30,7 +32,6 @@ import {
   useChestAdminBundle,
   useInvalidateChest,
 } from '@/hooks/queries/use-chest'
-import type { ChestAdminBundle } from '@/actions/chest-reads'
 import {
   CHEST_ITEM_FOLDER,
   CHEST_ITEM_TITLE_MAX,
@@ -57,20 +58,24 @@ import type { Tables } from '@/types/database'
  * é dela e o chip do nome saiu (todos os itens são da mesma casa — o chip só faria
  * sentido entre casas). Trocar a casa ativa já troca o acervo exibido.
  */
+const EMPTY_ITEMS: ChestItemView[] = []
+
 export function ChestAdmin({
   houseId,
   houseName,
-  initialData,
 }: {
   /** Casa ativa — é dela o acervo e é nela que o item novo nasce. */
   houseId: string
   /** Nome da casa ativa, só para o texto do form. */
   houseName: string
-  initialData: ChestAdminBundle
 }) {
   const invalidateChest = useInvalidateChest()
-  const { data } = useChestAdminBundle(houseId, initialData)
-  const { items, maxMb, usageBytes, attachmentsAllowed } = data
+  const { data, isPending: bundlePending, refetch } =
+    useChestAdminBundle(houseId)
+  const items = data?.items ?? EMPTY_ITEMS
+  const maxMb = data?.maxMb ?? 0
+  const usageBytes = data?.usageBytes ?? 0
+  const attachmentsAllowed = data?.attachmentsAllowed ?? true
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-admin', 'created:desc')
 
@@ -239,6 +244,10 @@ export function ChestAdmin({
       setDeleting(false)
     }
   }
+
+  // 1ª visita sem cache: skeleton; com cache (IndexedDB) renderiza na hora.
+  if (bundlePending && !data) return <PageSkeleton cards={3} />
+  if (!data) return <QueryError onRetry={() => void refetch()} />
 
   return (
     <div className="flex flex-col gap-4">
