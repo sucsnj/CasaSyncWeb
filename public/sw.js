@@ -1,8 +1,9 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-// v4: o `notificationclick` passou a trocar a casa ativa antes de navegar (o
-// `link` é relativo e abria a tela da casa errada). Bump para forçar reinstalação
-// nos browsers com a versão antiga em uso.
-const CACHE_NAME = 'casasync-v4';
+// v5: install resiliente (cada asset falha sozinho, sem derrubar o push),
+// poda de entradas antigas no activate e `match` restrito ao cache corrente.
+// Bump para forçar reinstalação nos browsers com a versão antiga em uso.
+const CACHE_NAME = 'casasync-v5';
+const MAX_CACHE_ENTRIES = 60;
 // Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
 // é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
 const STATIC_ASSETS = [
@@ -14,20 +15,32 @@ const STATIC_ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cada asset falha de forma isolada: um 404 (ex.: /apple-icon.png)
+      // não pode abortar o install nem matar o Web Push silenciosamente.
+      Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset)))
+    ).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      )
-    )
+      );
+      // Poda FIFO: o cache só pode crescer até MAX_CACHE_ENTRIES entradas.
+      // Chunks de builds antigos (nomeados por hash) saem na ordem de inserção.
+      const cache = await caches.open(CACHE_NAME);
+      const entries = await cache.keys();
+      const overflow = entries.length - MAX_CACHE_ENTRIES;
+      if (overflow > 0) {
+        await Promise.all(entries.slice(0, overflow).map((entry) => cache.delete(entry)));
+      }
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -66,7 +79,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    caches.match(request, { cacheName: CACHE_NAME }).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }

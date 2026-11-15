@@ -1,8 +1,8 @@
 'use client'
 
 import { useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { unregisterAllPushSubscriptions } from '@/actions/push'
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,15 +14,19 @@ export function SignOutButton({
   variant?: 'button' | 'nav'
   className?: string
 }) {
-  const router = useRouter()
   const [pending, startTransition] = useTransition()
 
   function handleSignOut() {
     startTransition(async () => {
       const supabase = createClient()
+      // Revoga as push subscriptions no servidor ANTES do signOut: depois
+      // dele a sessão some e a action não teria como autorizar a remoção.
+      await unregisterAllPushSubscriptions()
       await supabase.auth.signOut()
-      router.push('/login')
-      router.refresh()
+      // Full reload: evita a corrida em que o proxy redireciona de volta para
+      // o dashboard (router.push + refresh dispara o redirect com a sessão
+      // ainda visível no cookie).
+      window.location.replace('/login')
     })
   }
 

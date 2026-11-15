@@ -3,6 +3,7 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
+import { NativeServiceWorkerGuard } from "@/components/pwa/native-sw-guard";
 import { PullToRefresh } from "@/components/pwa/pull-to-refresh";
 import { AndroidBackButton } from "@/components/pwa/android-back-button";
 import { Toaster } from "sonner";
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AndroidBackButton /> {/* <-- Monte o componente aqui */}
         {children}
         <ServiceWorkerRegistration />
+        <NativeServiceWorkerGuard />
         <PullToRefresh />
         <Toaster
           position="bottom-right"
