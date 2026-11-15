@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState } from 'react'
 import { CircleCheck, ChevronDown, Clock3, ListTodo, Sparkles, UserRound } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { completeTask, requestTaskExtension } from '@/actions/tasks'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
@@ -10,13 +10,19 @@ import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
+import {
+  useTasksBundle,
+  useInvalidateTasks,
+  upsertTaskInBundle,
+  deleteTaskFromBundle,
+} from '@/hooks/queries/use-tasks'
+import type { TasksBundle } from '@/actions/tasks-reads'
 import { getTaskSlaStatus } from '@/utils/task-sla'
 import { getTaskCurrentPoints, getTaskDecayStart } from '@/utils/task-decay'
 import { DEFAULT_TASK_DECAY, type TaskDecaySettings } from '@/utils/settings'
 import type { Tables } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { taskAttachmentView } from '@/utils/task-attachment-view'
-import type { ChestItemView } from '@/components/chest/chest-types'
 import { parseRichText } from '@/components/ui/rich-text'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -37,27 +43,15 @@ import {
 
 type Task = Tables<'tasks'>
 
-function upsertTask(list: Task[], task: Task): Task[] {
-  const exists = list.some((item) => item.id === task.id)
-  const next = exists
-    ? list.map((item) => (item.id === task.id ? task : item))
-    : [task, ...list]
-  return next.sort((a, b) => b.created_at.localeCompare(a.created_at))
-}
-
 export function TasksDependent({
   houseId,
-  initialTasks,
-  creatorNames,
-  chestItems,
+  initialData,
   dueSoonHours = 4,
   taskDecay,
   attachmentsAllowed = true,
 }: {
   houseId: string
-  initialTasks: Task[]
-  creatorNames: Record<string, string>
-  chestItems: Record<string, ChestItemView>
+  initialData: TasksBundle
   /** Horas restantes até o prazo que ligam o chip "Prazo próximo" — settings.casa. */
   dueSoonHours?: number
   /** Decaimento de pontos de tarefas — settings.casa. */
@@ -70,14 +64,12 @@ export function TasksDependent({
   attachmentsAllowed?: boolean
 }) {
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
-  const router = useRouter()
-  const [tasks, setTasks] = useState<Task[]>(initialTasks)
-  const [chestItemsMap, setChestItemsMap] = useState<Record<string, ChestItemView>>(chestItems)
-  const [syncedChestItems, setSyncedChestItems] = useState(chestItems)
-  if (chestItems !== syncedChestItems) {
-    setSyncedChestItems(chestItems)
-    setChestItemsMap(chestItems)
-  }
+  const queryClient = useQueryClient()
+  const invalidateTasks = useInvalidateTasks()
+  const { data } = useTasksBundle(houseId, initialData)
+  const tasks = data.tasks
+  const chestItemsMap = data.chestItems
+  const creatorNames = data.creatorNames ?? {}
   const [sortOpen, setSortOpen] = usePersistedSort('sort:tasks-dependent:open', 'created:desc')
   const [sortDone, setSortDone] = usePersistedSort('sort:tasks-dependent:done', 'created:desc')
   const [error, setError] = useState<string | null>(null)
@@ -87,40 +79,25 @@ export function TasksDependent({
     storageKey: `casasync:expanded:tasks-dependent:${houseId}`,
   })
   // Pending/otimista por item compartilhado com ADMIN e recompensas.
-  const { isPending, markServer, optimisticIdsRef, runOptimistic } =
+  const { isPending, markServer, runOptimistic } =
     useOptimisticAction()
   // O pedido de adiamento sai de um Modal de instância única (não de um card
   // repetido), então um flag próprio é mais simples que o Set — e não sofre com
   // o `setExtendingTask(null)` do sucesso, que desmonta o botão.
   const [sendingExtension, setSendingExtension] = useState(false)
 
-  /**
-   * Sincroniza a lista com a prop do servidor. Sem isso o `router.refresh()`
-   * não fazia nada: o componente é montado com `key={casa.id}`, que só muda na
-   * troca de casa, então o `useState(initialTasks)` de um client component já
-   * montado ignora a prop nova. Pulado enquanto há valor otimista na tela (o
-   * refresh traria o estado anterior do servidor e sobrescreveria o card).
-   */
-  useEffect(() => {
-    if (optimisticIdsRef.current.size > 0) return
-    setTasks(initialTasks)
-  }, [initialTasks, optimisticIdsRef])
-
-  // ENSINO (teach): o evento de UPDATE é recebido ao vivo. Quando o ADMIN
-  // aprova (APPROVED) a lista muda na hora; quando o ADMIN cria (INSERT) uma
-  // nova tarefa para este dependente, ela aparece sem refresh. O RLS do lado
-  // do servidor garante que só cheguem tarefas às quais este usuário tem
-  // acesso de leitura — embora o filter seja por casa.
+  // A fonte da verdade agora é o query cache (inicializado pela RSC e
+  // persistido em IndexedDB). Realtime patcha direto no cache: chega evento →
+  // card muda de seção sem refresh nem piscar.
   usePostgresChanges<Task>({
     table: 'tasks',
     filter: `house_id=eq.${houseId}`,
     onUpsert: (task) => {
       // Chegou linha REAL do servidor → sai do registro de otimistas.
       markServer(task.id)
-      setTasks((prev) => upsertTask(prev, task))
+      upsertTaskInBundle(queryClient, houseId, task)
     },
-    onDelete: (taskId) =>
-      setTasks((prev) => prev.filter((task) => task.id !== taskId)),
+    onDelete: (taskId) => deleteTaskFromBundle(queryClient, houseId, taskId),
   })
 
   function handleComplete(task: Task) {
@@ -134,21 +111,18 @@ export function TasksDependent({
         status: 'COMPLETED',
         completed_at: new Date().toISOString(),
       },
-      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      apply: (item) => upsertTaskInBundle(queryClient, houseId, item),
       action: () => completeTask(task.id),
       onSuccess: () => {
         toast.success('Tarefa concluída! Aguardando aprovação.')
-        router.refresh()
+        void invalidateTasks(houseId)
       },
       onError: (message) => {
         setError(message)
         toast.error(message)
       },
       onNetworkError: (message) => {
-        // Erro de rede é ambíguo: o servidor pode ter gravado e só a resposta
-        // não ter chegado. O `refresh` traz a linha real de volta (ver o efeito
-        // de sincronização da prop) e o Realtime confirma.
-        router.refresh()
+        void invalidateTasks(houseId)
         setError(message)
         toast.error(message)
       },
@@ -171,19 +145,19 @@ export function TasksDependent({
         extension_requested: true,
         extension_reason: reason,
       },
-      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      apply: (item) => upsertTaskInBundle(queryClient, houseId, item),
       action: () => requestTaskExtension(task.id, reason),
       onSuccess: () => {
         toast.success('Pedido de adiamento enviado!')
         setExtendingTask(null)
-        router.refresh()
+        void invalidateTasks(houseId)
       },
       onError: (message) => {
         setExtensionError(message)
         toast.error(message)
       },
       onNetworkError: (message) => {
-        router.refresh()
+        void invalidateTasks(houseId)
         setExtensionError(message)
         toast.error(message)
       },

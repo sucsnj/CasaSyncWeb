@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState, useTransition } from 'react'
 import {
   adminCompleteTask,
   approveTask,
@@ -13,6 +12,17 @@ import {
   setTaskOnHold,
   updateTask,
 } from '@/actions/tasks'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useTasksBundle,
+  useInvalidateTasks,
+  patchTasks,
+  upsertTaskInBundle,
+  deleteTaskFromBundle,
+  upsertChestItemInBundle,
+  deleteChestItemFromBundle,
+} from '@/hooks/queries/use-tasks'
+import type { TasksBundle } from '@/actions/tasks-reads'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
@@ -83,19 +93,9 @@ import {
 
 type Task = Tables<'tasks'>
 
-function upsertTask(list: Task[], task: Task): Task[] {
-  const exists = list.some((item) => item.id === task.id)
-  const next = exists
-    ? list.map((item) => (item.id === task.id ? task : item))
-    : [task, ...list]
-  return next.sort((a, b) => b.created_at.localeCompare(a.created_at))
-}
-
 export function TasksAdmin({
   houseId,
-  initialTasks,
-  chestItems,
-  assignees,
+  initialData,
   defaultDueDays = 1,
   dueSoonHours = 4,
   extensionDayOptions = [1, 3],
@@ -105,9 +105,7 @@ export function TasksAdmin({
   attachmentsAllowed,
 }: {
   houseId: string
-  initialTasks: Task[]
-  chestItems: Record<string, ChestItemView>
-  assignees: { id: string; full_name: string }[]
+  initialData: TasksBundle
   /** Prazo padrão de criação/restauro (dias a partir de agora) - settings.casa. */
   defaultDueDays?: number
   /** Horas restantes até o prazo que ligam o chip "Prazo próximo" - settings.casa. */
@@ -130,16 +128,16 @@ export function TasksAdmin({
   const decay = taskDecay ?? DEFAULT_TASK_DECAY
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
   const attachmentsOn = attachmentsAllowed ?? true
-  const router = useRouter()
+  const queryClient = useQueryClient()
+  const invalidateTasks = useInvalidateTasks()
+  // Fonte da verdade: o query cache (semeado pela RSC, persistido em
+  // IndexedDB). Realtime patcha direto no cache — sem piscar a tela.
+  const { data } = useTasksBundle(houseId, initialData)
+  const tasks = data.tasks
+  const chestItemsMap = data.chestItems
+  const assignees = data.assignees ?? []
   // Casas com um único dependente: ele é sempre pré-selecionado na criação.
   const defaultAssignee = assignees.length === 1 ? assignees[0].id : ''
-  const [tasks, setTasks] = useState<Task[]>(initialTasks)
-  const [chestItemsMap, setChestItemsMap] = useState<Record<string, ChestItemView>>(chestItems)
-  const [syncedChestItems, setSyncedChestItems] = useState(chestItems)
-  if (chestItems !== syncedChestItems) {
-    setSyncedChestItems(chestItems)
-    setChestItemsMap(chestItems)
-  }
   const [sortPending, setSortPending] = usePersistedSort('sort:tasks-admin:pending', 'created:desc')
   const [sortApproved, setSortApproved] = usePersistedSort('sort:tasks-admin:approved', 'created:desc')
   const [pending, startTransition] = useTransition()
@@ -178,7 +176,7 @@ export function TasksAdmin({
 
   // Pending/otimista por item compartilhado com recompensas. `pending` continua
   // existindo para os 3 botões do FORMULÁRIO de criação (escopo único).
-  const { isPending, markServer, optimisticIdsRef, runOptimistic } =
+  const { isPending, markServer, runOptimistic } =
     useOptimisticAction()
 
   type TransitionResult =
@@ -214,23 +212,21 @@ export function TasksAdmin({
     await runOptimistic({
       current: task,
       optimistic: buildOptimistic(),
-      apply: (item) => setTasks((prev) => upsertTask(prev, item)),
+      apply: (item) => upsertTaskInBundle(queryClient, houseId, item),
       action: run,
       onSuccess: (result) => {
         const message = result.message ?? options?.fallbackMessage ?? ''
         if (options?.successToast === 'warning') toast.warning(message)
         else if (options?.successToast === 'info') toast.info(message)
         else toast.success(message)
-        router.refresh()
+        void invalidateTasks(houseId)
       },
       onError: (message) => {
         // NÃO mexe em `formError`: o erro da transição sai pelo toast, perto do card.
         toast.error(message)
       },
       onNetworkError: () => {
-        // Erro de rede é ambíguo: o refresh traz a linha real de volta (ver o
-        // efeito de sincronização da prop) e o Realtime confirma.
-        router.refresh()
+        void invalidateTasks(houseId)
         toast.error('Falha de conexão. Tente novamente.')
       },
     })
@@ -246,45 +242,17 @@ export function TasksAdmin({
       // Chegou linha REAL do servidor: o card não está mais num valor que só o
       // otimista produziu, então sai do registro de otimistas.
       markServer(task.id)
-      setTasks((prev) => upsertTask(prev, task))
+      upsertTaskInBundle(queryClient, houseId, task)
     },
-    onDelete: (taskId) =>
-      setTasks((prev) => prev.filter((task) => task.id !== taskId)),
+    onDelete: (taskId) => deleteTaskFromBundle(queryClient, houseId, taskId),
   })
 
   usePostgresChanges<ChestItemView>({
     table: 'chest_items',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setChestItemsMap((prev) => ({ ...prev, [row.id]: row }))
-    },
-    onDelete: (id) => {
-      setChestItemsMap((prev) => {
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
-    },
+    onUpsert: (row) => upsertChestItemInBundle(queryClient, houseId, row),
+    onDelete: (id) => deleteChestItemFromBundle(queryClient, houseId, id),
   })
-
-  /**
-   * Sincroniza a lista com a prop do servidor.
-   *
-   * Sem isso o `router.refresh()` **não** fazia nada: o componente é montado com
-   * `key={casa.id}`, que só muda quando o ADMIN troca de casa — na mesma casa o
-   * refresh re-renderiza o Server Component, mas o `useState(initialTasks)` de um
-   * client component já montado **ignora** a prop nova. Era por isso que o
-   * `refresh` do caminho de erro de rede não reconcilia nada.
-   *
-   * Pulado enquanto há valor otimista na tela: nesse instante o refresh traz o
-   * estado ANTERIOR do servidor e sobrescreveria o card que acabou de mudar. Como
-   * o `finally` de `runTaskTransition` limpa o registro antes, o refresh
-   * pós-erro já entra aqui.
-   */
-  useEffect(() => {
-    if (optimisticIdsRef.current.size > 0) return
-    setTasks(initialTasks)
-  }, [initialTasks, optimisticIdsRef])
 
   const assigneeName = (id: string | null) =>
     assignees.find((assignee) => assignee.id === id)?.full_name ?? 'Sem nome'
@@ -425,12 +393,12 @@ export function TasksAdmin({
         // Otimista: reabre o card na seção de pendentes na hora, mesmo que o
         // router.refresh() ou o Realtime estejam atrasados/indisponíveis.
         if (result.data?.task) {
-          setTasks((prev) => upsertTask(prev, result.data!.task))
+          upsertTaskInBundle(queryClient, houseId, result.data!.task)
         }
     setFormError(null)
         resetForm()
         setShowTaskForm(false)
-        router.refresh()
+        void invalidateTasks(houseId)
       })
       return
     }
@@ -480,13 +448,13 @@ export function TasksAdmin({
       // o router.refresh() ou o Realtime estejam atrasados/indisponíveis.
       // Se o Realtime entregar o mesmo INSERT depois, o upsert deduplica por id.
       if (result.data?.task) {
-        setTasks((prev) => upsertTask(prev, result.data!.task))
+        upsertTaskInBundle(queryClient, houseId, result.data!.task)
       }
     console.log('DEBUG taskAttachment', taskAttachment)
     setFormError(null)
       resetForm()
       setShowTaskForm(false)
-      router.refresh()
+      void invalidateTasks(houseId)
     })
   }
 
@@ -572,7 +540,7 @@ export function TasksAdmin({
       async () => {
         const result = await setTaskOnHold(task.id, onHold)
         if (result.ok && result.data?.task) {
-          setTasks((prev) => upsertTask(prev, result.data!.task))
+          upsertTaskInBundle(queryClient, houseId, result.data!.task)
         }
         return result
       },
@@ -604,7 +572,7 @@ export function TasksAdmin({
         const result = await restoreTask(task.id)
         // Linha autoritativa (com o `due_date`/`decay_started_at` reais).
         if (result.ok && result.data?.task) {
-          setTasks((prev) => upsertTask(prev, result.data!.task))
+          upsertTaskInBundle(queryClient, houseId, result.data!.task)
         }
         return result
       },
@@ -647,7 +615,7 @@ export function TasksAdmin({
       async () => {
         const result = await resolveTaskExtension(task.id, approve, days)
         if (result.ok && result.data?.task) {
-          setTasks((prev) => upsertTask(prev, result.data!.task))
+          upsertTaskInBundle(queryClient, houseId, result.data!.task)
         }
         return result
       },
@@ -697,8 +665,9 @@ export function TasksAdmin({
     // o que foi debitado não volta; numa tarefa aberta, o adiamento aceito abre
     // um NOVO CICLO a partir do valor CORRENTE (10 que decaiu para 7 → a nova
     // base é 7), então o relógio do decaimento também reinicia.
-    setTasks((prev) =>
-      prev.map((item) => {
+    patchTasks(queryClient, houseId, (bundle) => ({
+      ...bundle,
+      tasks: bundle.tasks.map((item) => {
         if (item.id !== taskId) return item
         const changed =
           (item.due_date ? new Date(item.due_date).getTime() : null) !==
@@ -736,16 +705,16 @@ export function TasksAdmin({
           ...reopened,
           ...recycled,
         }
-      })
-    )
-    router.refresh()
+      }),
+    }))
+    void invalidateTasks(houseId)
     return result
   }
 
   function changeAssignee(task: Task, assigneeId: string) {
     const next = assigneeId || null
     // Otimista: o select controlado reage na hora (o Realtime confirma depois).
-    setTasks((prev) => upsertTask(prev, { ...task, assigned_to: next }))
+    upsertTaskInBundle(queryClient, houseId, { ...task, assigned_to: next })
     void updateTask(task.id, { assigned_to: next })
   }
 
@@ -767,25 +736,26 @@ export function TasksAdmin({
     }
 
     if (attachment.chestItemId && attachment.chestItem) {
-      setChestItemsMap((prev) => ({
-        ...prev,
-        [attachment.chestItemId as string]: attachment.chestItem as ChestItemView,
-      }))
+      upsertChestItemInBundle(
+        queryClient,
+        houseId,
+        attachment.chestItem as ChestItemView
+      )
     }
     // Otimista: o card mostra o anexo novo/removido na hora; em erro volta ao
     // valor anterior (`task` é o card como estava antes desta mudança).
-    setTasks((prev) => upsertTask(prev, { ...task, ...patch }))
+    upsertTaskInBundle(queryClient, houseId, { ...task, ...patch })
     void (async () => {
       try {
         const result = await updateTask(task.id, patch)
         if (!result.ok) {
-          setTasks((prev) => upsertTask(prev, task))
+          upsertTaskInBundle(queryClient, houseId, task)
           toast.error(result.error)
           return
         }
         toast.success(attachment.url ? 'Anexo atualizado.' : 'Anexo removido.')
       } catch {
-        setTasks((prev) => upsertTask(prev, task))
+        upsertTaskInBundle(queryClient, houseId, task)
         toast.error('Falha de conexão. O anexo não foi alterado.')
       }
     })()

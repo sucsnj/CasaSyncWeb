@@ -1,5 +1,9 @@
 # Estado do Projeto — CasaSync Web
 
 ## Status Atual
-- **Foco:** Aguardando novas demandas.
-- **Tarefas Pendentes:** Nenhuma no momento.
+- **Foco:** Migração SWR/Local-First — **Fases 0, 1 e 2 concluídas**.
+  - **Fase 0 (P0/pré-requisitos):** SW resiliente (`CACHE_NAME` v5, install all-or-nothing corrigido, poda FIFO); `public/manifest.webmanifest` duplicado removido (o do App Router ficou correto); `NativeServiceWorkerGuard` no root layout; `AndroidBackButton` deduplicado; logout revoga push + `window.location.replace('/login')`; `error.tsx`/`not-found.tsx`; órfãos `@tanstack/*`/`idb-keyval` removidos manualmente (não constavam no lockfile); versões corretas instaladas na Fase 1.
+  - **Fase 1 (Infraestrutura):** `@tanstack/react-query` + `@tanstack/react-query-persist-client` + `idb-keyval`; provider global (`src/app/providers.tsx`) com cache persistido em IndexedDB (`casasync:qc`, buster `casasync-v1`, sem persistir `comunicados`/`punishments`); chaves por tenant (`src/lib/query/keys.ts`); purger por conta (`SessionCachePurge` + `casasync:last-user`); logout limpa cache + IndexedDB.
+  - **Fase 2 (Rotas críticas):** leituras extraídas para `src/actions/*-reads.ts` (`tasks/rewards/achievements/chest/notifications`) com autorização por sessão (`assertHouseAccess`, `src/utils/tenant-scope.ts`); seed RSC + `use*Bundle` (staleTime 60 s, persistência 24 h); `/tasks`, `/rewards` (saldo de pontos incluso — `useProfilePoints` removido), `/achievements`, `/chest` e sino de notificações migrados para o query cache; Realtime → invalidação/patch no cache (sem mais sync effects).
+- **Pendente:** Fase 3 — Optimistic UI padronizada (`useMutation`), Realtime como único invalidador, remoção dos `revalidatePath` duais ~40 call sites; Fase 4 — avaliar Cache Components (ADR própria) e ADR-0029 (TanStack + IndexedDB por tenant).
+- **Tarefas Pendentes:** Fases 3 e 4 a planejar.

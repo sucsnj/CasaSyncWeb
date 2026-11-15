@@ -11,6 +11,11 @@ import { ClearableInput } from '@/components/ui/clearable-input'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import {
+  useChestDependentBundle,
+  useInvalidateChest,
+} from '@/hooks/queries/use-chest'
+import type { ChestDependentBundle } from '@/actions/chest-reads'
 import type { ChestItemView } from './chest-types'
 
 /**
@@ -27,47 +32,26 @@ import type { ChestItemView } from './chest-types'
  * buscas de recompensas.
  */
 export function ChestDependent({
-  initialItems,
   houseId,
-  attachmentsAllowed = true,
+  initialData,
 }: {
-  initialItems: ChestItemView[]
-  /** Casa do dependente — é o filtro do Realtime. */
+  /** Casa do dependente — é o filtro do Realtime e do cache. */
   houseId: string
-  /**
-   * A casa permite anexos no baú? (ADR-0026). Default ligado, igual à
-   * configuração da casa; o bloqueio real está no servidor e nas rotas `/api/...`.
-   */
-  attachmentsAllowed?: boolean
+  initialData: ChestDependentBundle
 }) {
-  const [items, setItems] = useState(initialItems)
+  const invalidateChest = useInvalidateChest()
+  const { data } = useChestDependentBundle(houseId, initialData)
+  const items = data.items
+  const attachmentsAllowed = data.attachmentsAllowed
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-dependent', 'created:desc')
 
-  // O componente é montado com `key={house.id}`, então a troca de casa já
-  // remonta. O que ainda precisa é pegar a prop nova quando ela chega no mesmo
-  // mount — um `router.refresh()` posterior a uma escrita (as actions revalidam
-  // `/chest`). Ajustar o estado **durante o render** é o padrão do React para
-  // "prop mudou": sem efeito, sem cascata de render.
-  const [syncedProp, setSyncedProp] = useState(initialItems)
-  if (initialItems !== syncedProp) {
-    setSyncedProp(initialItems)
-    setItems(initialItems)
-  }
-
-  // Realtime: o baú é catálogo, então item novo aparece sem F5 (ADR-0024, item
-  // 12). Sem notificação — a lista é o canal.
+  // Realtime: o baú é catálogo — invalida o bundle na mudança.
   usePostgresChanges<ChestItemView>({
     table: 'chest_items',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setItems((current) => {
-        const next = current.filter((item) => item.id !== row.id)
-        next.push(row)
-        return next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-      })
-    },
-    onDelete: (id) => setItems((current) => current.filter((item) => item.id !== id)),
+    onUpsert: () => invalidateChest(houseId),
+    onDelete: () => invalidateChest(houseId),
   })
 
   const filtered = useMemo(() => {

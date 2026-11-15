@@ -1,13 +1,9 @@
 import type { Metadata } from 'next'
-import type { Tables } from '@/types/database'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
-  getHouseAssignees,
-  getProfileNames,
   getSessionProfile,
 } from '@/utils/house'
 import {
@@ -17,7 +13,7 @@ import {
   getHouseTextLimitsSettings,
   getHouseAttachmentSettings,
 } from '@/utils/house-settings'
-import type { ChestItemView } from '@/components/chest/chest-types'
+import { listTasks } from '@/actions/tasks-reads'
 import { TasksAdmin } from '@/components/tasks/tasks-admin'
 import { TasksDependent } from '@/components/tasks/tasks-dependent'
 import {
@@ -33,28 +29,6 @@ export const metadata: Metadata = {
 }
 
 export const dynamic = 'force-dynamic'
-
-type TaskRow = Tables<'tasks'>
-
-/** Carrega o mapa id → item do baú para as tarefas que usam espelho. */
-async function loadChestItems(
-  admin: ReturnType<typeof createAdminClient>,
-  rows: TaskRow[]
-): Promise<Record<string, ChestItemView>> {
-  const ids = [
-    ...new Set(
-      rows
-        .map((task) => task.attachment_chest_item_id)
-        .filter((id): id is string => Boolean(id))
-    ),
-  ]
-  if (ids.length === 0) return {}
-  const { data } = await admin
-    .from('chest_items')
-    .select('*')
-    .in('id', ids)
-  return Object.fromEntries((data ?? []).map((item) => [item.id, item]))
-}
 
 function NoHouseCard({ role }: { role: 'ADMIN' | 'DEPENDENT' }) {
   return (
@@ -90,8 +64,9 @@ export default async function TasksPage() {
 
   // Service-role: a visibilidade é decidida pela posse/co-controle da casa
   // (sessão), não por policies RLS — o co-gerente precisa ver as tarefas da
-  // casa mesmo não sendo o `owner_id`.
-  const admin = createAdminClient()
+  // casa mesmo não sendo o `owner_id`. As leituras abaixo passam pela action
+  // `listTasks`, que deriva o escopo da sessão e monta o bundle (tarefas +
+  // itens do baú + assignees/nomes) — o mesmo payload do query cache.
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -133,23 +108,13 @@ export default async function TasksPage() {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const [{ data: tasks }, assignees] = await Promise.all([
-        admin
-          .from('tasks')
-          .select('*')
-          .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: false }),
-        getHouseAssignees(activeHouse.id),
-      ])
-      const chestItems = await loadChestItems(admin, tasks ?? [])
+      const initialData = await listTasks(activeHouse.id)
 
       content = (
         <TasksAdmin
           key={activeHouse.id}
           houseId={activeHouse.id}
-           initialTasks={tasks ?? []}
-           chestItems={chestItems}
-          assignees={assignees}
+          initialData={initialData}
           defaultDueDays={taskSlaSettings?.defaultDueDays}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           extensionDayOptions={extensionRulesSettings?.dayOptions}
@@ -164,29 +129,13 @@ export default async function TasksPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const { data: tasks } = await admin
-        .from('tasks')
-        .select('*')
-        .eq('house_id', dependentHouse.id)
-        .eq('assigned_to', user.id)
-        // Tarefa em espera (ON_HOLD) fica INVISÍVEL para o dependente — o mesmo
-        // guarantee das guards das actions (que exigem PENDING/IN_PROGRESS).
-        .neq('status', 'ON_HOLD')
-        .order('created_at', { ascending: false })
-
-      const taskList = tasks ?? []
-      const chestItems = await loadChestItems(admin, taskList)
-      const creatorNames = await getProfileNames(
-        taskList.map((task) => task.created_by)
-      )
+      const initialData = await listTasks(dependentHouse.id)
 
       content = (
         <TasksDependent
           key={dependentHouse.id}
           houseId={dependentHouse.id}
-          initialTasks={taskList}
-          chestItems={chestItems}
-          creatorNames={creatorNames}
+          initialData={initialData}
           dueSoonHours={taskSlaSettings?.dueSoonHours}
           taskDecay={taskDecaySettings}
           attachmentsAllowed={attachmentSettings?.tasksAllowed}

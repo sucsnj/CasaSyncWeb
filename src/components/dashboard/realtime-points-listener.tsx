@@ -1,7 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { qk } from '@/lib/query/keys'
 import type { Tables } from '@/types/database'
 
 /**
@@ -18,12 +20,16 @@ import type { Tables } from '@/types/database'
  */
 export function RealtimePointsListener({ userId }: { userId: string }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   usePostgresChanges<Tables<'profiles'>>({
     table: 'profiles',
     filter: `id=eq.${userId}`,
     event: 'UPDATE',
     onUpsert: () => {
+      // Saldo no query cache (pontos da tela de recompensas) invalida já;
+      // o refresh continua para o RSC do dashboard/nav refletir o badge.
+      void queryClient.invalidateQueries({ queryKey: qk.points(userId) })
       router.refresh()
     },
   })

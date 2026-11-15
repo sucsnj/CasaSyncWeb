@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { parseRichText } from '@/components/ui/rich-text'
 import { QuickMessageComposer } from '@/components/notifications/quick-message-composer'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useNotifications, useNotificationsCache } from '@/hooks/queries/use-notifications'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
 import type { QuickMessageSettings } from '@/utils/settings'
 import {
@@ -119,7 +120,8 @@ export function NotificationsBell({
   houseNames?: Record<string, string>
 }) {
   const router = useRouter()
-  const [items, setItems] = useState<NotificationRow[]>(initialNotifications)
+  const cache = useNotificationsCache(userId)
+  const { data: items = [] } = useNotifications(userId, initialNotifications)
   const [open, setOpen] = useState(false)
   // Cards de mensagem rápida colapsáveis — todos recolhidos por padrão.
   const { isExpanded, toggle } = useExpandedIds()
@@ -132,28 +134,12 @@ export function NotificationsBell({
     table: 'notifications',
     filter: `recipient_id=eq.${userId}`,
     event: '*',
-    onUpsert: (row) =>
-      setItems((prev) => {
-        const exists = prev.some((item) => item.id === row.id)
-        const next = exists
-          ? prev.map((item) => (item.id === row.id ? row : item))
-          : [row, ...prev]
-        return next.sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )
-      }),
-    onDelete: (id) => setItems((prev) => prev.filter((item) => item.id !== id)),
+    onUpsert: (row) => cache.upsert(row),
+    onDelete: (id) => cache.remove(id),
   })
 
   function markRead(id: string) {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id && !item.read_at
-          ? { ...item, read_at: new Date().toISOString() }
-          : item
-      )
-    )
+    cache.markRead(id)
     void markNotificationRead(id).catch(() => {})
   }
 
@@ -209,20 +195,17 @@ export function NotificationsBell({
   }
 
   function markAllRead() {
-    const now = new Date().toISOString()
-    setItems((prev) =>
-      prev.map((item) => (item.read_at ? item : { ...item, read_at: now }))
-    )
+    cache.markAllRead()
     void markAllNotificationsRead().catch(() => {})
   }
 
   function removeItem(id: string) {
-    setItems((prev) => prev.filter((item) => item.id !== id))
+    cache.remove(id)
     void deleteNotification(id).catch(() => {})
   }
 
   function removeAll() {
-    setItems([])
+    cache.clear()
     void deleteAllNotifications().catch(() => {})
   }
 

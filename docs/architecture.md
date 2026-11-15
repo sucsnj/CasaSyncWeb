@@ -17,7 +17,7 @@
 - **Controle de Casa:** Baseado em membresia (`house_members.role = 'ADMIN'`), não em `owner_id`.
 
 ## Realtime & Fuso Horário
-- **Realtime:** Hooks `use-postgres-changes.ts` e `use-profile-points.ts`. Exigem `getSession()` + `realtime.setAuth(access_token)` **antes** de assinar (evita falha silenciosa de RLS).
+- **Realtime:** Hook `use-postgres-changes.ts` (o antigo `use-profile-points.ts` foi removido). Exige `getSession()` + `realtime.setAuth(access_token)` **antes** de assinar (evita falha silenciosa de RLS). Desde a Fase 2, o Realtime **invalida as chaves do query cache** (`@tanstack/react-query` + IndexedDB via `idb-keyval`, persistência em `src/lib/query/persist.ts`, chaves namespaced em `src/lib/query/keys.ts`) ou patcha o cache direto — o `router.refresh()` só permanece em casos pontuais (ex.: dashboard RSC).
 - **Datas & Fuso:** Prazos aceitam apenas strings ISO com fuso (`normalizeDueDate`). O cliente usa `datetimeLocalToIso`. Exibição sempre via `FormattedDateTime` para evitar hydration mismatch entre SSR e browser.
 
 ## Capacitor & Push Nativo

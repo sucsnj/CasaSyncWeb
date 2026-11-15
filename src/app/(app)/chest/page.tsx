@@ -1,19 +1,13 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
   getSessionProfile,
 } from '@/utils/house'
+import { listChest } from '@/actions/chest-reads'
 import { ChestAdmin } from '@/components/chest/chest-admin'
 import { ChestDependent } from '@/components/chest/chest-dependent'
-import {
-  getHouseAttachmentBudgetSettings,
-  getHouseAttachmentSettings,
-} from '@/utils/house-settings'
-import { houseAttachmentBytes } from '@/utils/attachment-usage'
-import type { ChestItemView } from '@/components/chest/chest-types'
 
 export const metadata: Metadata = {
   title: 'Baú',
@@ -41,7 +35,6 @@ export default async function ChestPage() {
     redirect('/login')
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   let content: React.ReactNode
@@ -63,32 +56,16 @@ export default async function ChestPage() {
         </p>
       )
     } else {
-      // Itens + configuração da casa + **peso** dos anexos da casa, em paralelo;
-      // os getters saem do mesmo `getHouseSettingsMap` da casa ativa (2 leituras,
-      // não 3). O peso é 1 leitura de storage a mais nesta tela — o número que o
-      // form mostra é do arquivo real, não de uma coluna que o app não tem
-      // (ADR-0027). Já `/tasks` e `/dashboard/dependent` não pagam nada disso.
-      const [{ data: items }, attachmentBudget, attachments, usageBytes] =
-        await Promise.all([
-          admin
-            .from('chest_items')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: false }),
-          getHouseAttachmentBudgetSettings(activeHouse.id),
-          getHouseAttachmentSettings(activeHouse.id),
-          houseAttachmentBytes(admin, activeHouse.id).catch(() => 0),
-        ])
+      const bundle = await listChest(activeHouse.id)
+      if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       content = (
         <ChestAdmin
           key={activeHouse.id}
-          initialItems={(items ?? []) satisfies ChestItemView[]}
           houseId={activeHouse.id}
           houseName={activeHouse.name}
-          maxMb={attachmentBudget.maxMb}
-          usageBytes={usageBytes}
-          attachmentsAllowed={attachments.chestAllowed}
+          initialData={initialData}
         />
       )
     }
@@ -102,22 +79,17 @@ export default async function ChestPage() {
         </p>
       )
     } else {
-      const { data: items } = await admin
-        .from('chest_items')
-        .select('*')
-        .eq('house_id', house.id)
-        .order('created_at', { ascending: false })
-
-      // A casa desligou os anexos do baú? (ADR-0026) — o item continua listado,
-      // mas o arquivo não abre. Sai do mesmo mapa por casa das outras leituras.
-      const { chestAllowed } = await getHouseAttachmentSettings(house.id)
+      // Anexos do baú em relação à casa (ADR-0026) — o bundle traz os itens
+      // e o flag de `chestAllowed` num único payload.
+      const bundle = await listChest(house.id)
+      if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       content = (
         <ChestDependent
           key={house.id}
           houseId={house.id}
-          attachmentsAllowed={chestAllowed}
-          initialItems={items ?? []}
+          initialData={initialData}
         />
       )
     }

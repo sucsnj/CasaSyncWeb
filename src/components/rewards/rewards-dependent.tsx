@@ -1,12 +1,17 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Coins, ChevronDown, Gift, Lightbulb, PartyPopper, Search } from 'lucide-react'
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
-import { useProfilePoints } from '@/hooks/use-profile-points'
+import { useQueryClient } from '@tanstack/react-query'
+import { useMyPoints, applyMyPoints } from '@/hooks/queries/use-points'
+import {
+  useRewardsDependentBundle,
+  useInvalidateRewards,
+} from '@/hooks/queries/use-rewards'
+import type { RewardsBundle } from '@/actions/rewards-reads'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Button } from '@/components/ui/button'
@@ -43,37 +48,24 @@ import {
 import {
   groupRedemptionsByStatus,
   getRedemptionDisplayDate,
-  type RedemptionView,
 } from '@/utils/redemptions'
 
 type Reward = Tables<'rewards'>
 type Redemption = Tables<'reward_redemptions'>
 
-type SuggestionView = {
-  id: string
-  title: string
-  description: string | null
-  points_cost: number | null
-  status: Tables<'reward_suggestions'>['status']
-  created_at: string
-}
-
 export function RewardsDependent({
   houseId,
   myId,
   initialPoints,
-  initialRewards,
-  initialRedemptions,
   dayStartIso,
   monthStartIso,
-  initialSuggestions,
+  initialData,
   textLimits,
 }: {
   houseId: string
   myId: string
   initialPoints: number
-  initialRewards: Reward[]
-  initialRedemptions: RedemptionView[]
+  initialData: Extract<RewardsBundle, { role: 'DEPENDENT' }>
   /**
    * Fronteira do dia/mês corrente no **fuso da casa** (calculada no servidor) —
    * é o que define a janela do limitador de resgate. O client só compara
@@ -81,7 +73,6 @@ export function RewardsDependent({
    */
   dayStartIso?: string
   monthStartIso?: string
-  initialSuggestions: SuggestionView[]
   /**
    * Teto de caracteres da descrição da sugestão (0 = sem limite) - settings.casa.
    * Mesmo teto da recompensa, porque a sugestão vira recompensa na aprovação.
@@ -89,15 +80,12 @@ export function RewardsDependent({
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const router = useRouter()
-  const [points, setPoints] = useState(initialPoints)
-  const [rewards, setRewards] = useState<Reward[]>(initialRewards)
-  const [redemptions, setRedemptions] = useState<RedemptionView[]>(
-    initialRedemptions
-  )
-  const [suggestions, setSuggestions] = useState<SuggestionView[]>(
-    initialSuggestions
-  )
+  const queryClient = useQueryClient()
+  const invalidateRewards = useInvalidateRewards()
+  const { data } = useRewardsDependentBundle(houseId, initialData)
+  const { rewards, redemptions, suggestions } = data
+  const { data: pointsData } = useMyPoints(myId, initialPoints)
+  const points = pointsData.points
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSuggestionModal, setShowSuggestionModal] = useState(false)
@@ -139,9 +127,14 @@ export function RewardsDependent({
     return sortBy(filteredRewards, getter, direction === 'desc' ? 'desc' : 'asc')
   }, [filteredRewards, sort])
 
-  // Saldo ao vivo: quando o ADMIN aprova uma tarefa ou um resgate, o
-  // `profiles.points` muda e este listener atualiza o contador na hora.
-  useProfilePoints(myId, setPoints)
+  // Saldo ao vivo e listas: Realtime invalida o bundle/patcha o cache — a
+  // tela atualiza sem piscar e sem refresh.
+  usePostgresChanges<{ id: string; points: number }>({
+    table: 'profiles',
+    filter: `id=eq.${myId}`,
+    event: 'UPDATE',
+    onUpsert: (row) => applyMyPoints(queryClient, myId, row.points),
+  })
 
   // Uso dos limitadores de resgate: quantos resgates o dependente já fez desta
   // recompensa dentro da janela (dia/mês). Só entra em conta quem **ocupa** a
@@ -167,61 +160,29 @@ export function RewardsDependent({
     return map
   }, [rewards, redemptions, dayStartIso, monthStartIso])
 
-  usePostgresChanges<Redemption>({
+  usePostgresChanges<Tables<'reward_redemptions'>>({
     table: 'reward_redemptions',
     filter: `house_id=eq.${houseId}`,
     onUpsert: (row) => {
-      if (row.profile_id !== myId) return
-      setRedemptions((prev) => {
-        const view: RedemptionView = {
-          id: row.id,
-          status: row.status,
-          points_cost: row.points_cost,
-          created_at: row.created_at,
-          resolved_at: row.resolved_at,
-          reward_id: row.reward_id,
-          rewardTitle: rewardById.get(row.reward_id)?.title ?? 'Recompensa',
-        }
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? view : item))
-          : [view, ...prev]
-      })
+      if (row.profile_id === myId) void invalidateRewards(houseId)
     },
+    onDelete: () => void invalidateRewards(houseId),
   })
 
-  usePostgresChanges<Reward>({
+  usePostgresChanges<Tables<'rewards'>>({
     table: 'rewards',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) =>
-      setRewards((prev) => {
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? row : item))
-          : [row, ...prev]
-      }),
+    onUpsert: () => void invalidateRewards(houseId),
+    onDelete: () => void invalidateRewards(houseId),
   })
 
   usePostgresChanges<Tables<'reward_suggestions'>>({
     table: 'reward_suggestions',
     filter: `house_id=eq.${houseId}`,
     onUpsert: (row) => {
-      if (row.profile_id !== myId) return
-      setSuggestions((prev) => {
-        const view: SuggestionView = {
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          points_cost: row.points_cost,
-          status: row.status,
-          created_at: row.created_at,
-        }
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? view : item))
-          : [view, ...prev]
-      })
+      if (row.profile_id === myId) void invalidateRewards(houseId)
     },
+    onDelete: () => void invalidateRewards(houseId),
   })
 
   function handleSuggest(event: React.FormEvent<HTMLFormElement>) {
@@ -247,7 +208,7 @@ export function RewardsDependent({
         form.reset()
         setShowSuggestionModal(false)
         setSuggestionImageUrl(null)
-        router.refresh()
+        void invalidateRewards(houseId)
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)
@@ -269,8 +230,8 @@ export function RewardsDependent({
           return
         }
         toast.success('Resgate solicitado! Aguardando aprovação.')
-        // O INSERT chega também via Realtime; refresh é a rede de segurança.
-        router.refresh()
+        // O INSERT chega também via Realtime; a invalidação é a rede de segurança.
+        void invalidateRewards(houseId)
       } catch {
         const msg = 'Falha de conexão. Tente novamente.'
         setError(msg)

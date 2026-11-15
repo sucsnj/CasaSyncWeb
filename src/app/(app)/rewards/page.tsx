@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
@@ -8,17 +7,15 @@ import {
 } from '@/utils/house'
 import { getHouseTextLimitsSettings, getHouseTimezoneSettings } from '@/utils/house-settings'
 import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
+import { listRewards } from '@/actions/rewards-reads'
 import { RewardsAdmin } from '@/components/rewards/rewards-admin'
 import { RewardsDependent } from '@/components/rewards/rewards-dependent'
-import type { Tables } from '@/types/database'
 
 export const metadata: Metadata = {
   title: 'Recompensas',
 }
 
 export const dynamic = 'force-dynamic'
-
-type Redemption = Tables<'reward_redemptions'>
 
 export default async function RewardsPage() {
   const { user, profile } = await getSessionProfile()
@@ -29,8 +26,9 @@ export default async function RewardsPage() {
 
   // Service-role: a visibilidade é decidida pela posse/co-controle da casa
   // (sessão), não por policies RLS — o co-gerente precisa ver a loja/resgates
-  // da casa mesmo não sendo o `owner_id`.
-  const admin = createAdminClient()
+  // da casa mesmo não sendo o `owner_id`. As leituras passam pela action
+  // `listRewards`, que deriva o escopo da sessão e monta o bundle (catálogo +
+  // resgates + sugestões + dependentes) — o mesmo payload do query cache.
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -62,84 +60,16 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
-        await Promise.all([
-          admin
-            .from('rewards')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_redemptions')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('house_members')
-            .select('profile_id')
-            .eq('house_id', activeHouse.id)
-            .eq('role', 'DEPENDENT'),
-          admin
-            .from('reward_suggestions')
-            .select('*')
-            .eq('house_id', activeHouse.id)
-            .order('created_at', { ascending: false }),
-        ])
-
-      const profileIds = members?.map((member) => member.profile_id) ?? []
-      const nameById = new Map<string, string>()
-      if (profileIds.length > 0) {
-        const { data: profiles } = await admin
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', profileIds)
-          ; (profiles ?? []).forEach((p) =>
-            nameById.set(p.id, p.full_name ?? 'Sem nome')
-          )
-      }
-
-      const rewardTitleById = new Map(
-        (rewards ?? []).map((reward) => [reward.id, reward.title])
-      )
-
-      const redemptionViews = (redemptions ?? []).map(
-        (redemption: Redemption) => ({
-          id: redemption.id,
-          status: redemption.status,
-          points_cost: redemption.points_cost,
-          created_at: redemption.created_at,
-          resolved_at: redemption.resolved_at,
-          reward_id: redemption.reward_id,
-          rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
-          dependentName: nameById.get(redemption.profile_id) ?? 'Dependente',
-        })
-      )
-
-      const suggestionViews = (suggestions ?? []).map((suggestion) => ({
-        id: suggestion.id,
-        title: suggestion.title,
-        description: suggestion.description,
-        points_cost: suggestion.points_cost,
-        image_url: suggestion.image_url,
-        status: suggestion.status,
-        created_at: suggestion.created_at,
-        profileName: nameById.get(suggestion.profile_id) ?? 'Dependente',
-      }))
+      const bundle = await listRewards(activeHouse.id)
+      if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       content = (
         <RewardsAdmin
-          key={`${activeHouse.id}:${(redemptions ?? [])
-            .map((redemption) => `${redemption.id}-${redemption.status}`)
-            .join(',')}`}
+          key={activeHouse.id}
           houseId={activeHouse.id}
           userId={user.id}
-          initialRewards={rewards ?? []}
-          initialRedemptions={redemptionViews}
-          initialSuggestions={suggestionViews}
-          dependents={Array.from(nameById, ([id, full_name]) => ({
-            id,
-            full_name,
-          }))}
+          initialData={initialData}
           textLimits={textLimitsSettings}
         />
       )
@@ -152,42 +82,9 @@ export default async function RewardsPage() {
         </p>
       )
     } else {
-      const [{ data: rewards }, { data: redemptions }, { data: suggestions }] =
-        await Promise.all([
-          admin
-            .from('rewards')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_redemptions')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .eq('profile_id', user.id)
-            .order('created_at', { ascending: true }),
-          admin
-            .from('reward_suggestions')
-            .select('*')
-            .eq('house_id', dependentHouse.id)
-            .eq('profile_id', user.id)
-            .order('created_at', { ascending: false }),
-        ])
-
-      const rewardTitleById = new Map(
-        (rewards ?? []).map((reward) => [reward.id, reward.title])
-      )
-
-      const redemptionViews = (redemptions ?? []).map(
-        (redemption: Redemption) => ({
-          id: redemption.id,
-          status: redemption.status,
-          points_cost: redemption.points_cost,
-          created_at: redemption.created_at,
-          resolved_at: redemption.resolved_at,
-          reward_id: redemption.reward_id,
-          rewardTitle: rewardTitleById.get(redemption.reward_id) ?? 'Recompensa',
-        })
-      )
+      const bundle = await listRewards(dependentHouse.id)
+      if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       // Fronteiras das janelas do limitador de resgate (dia/mês corrente no fuso
       // da CASA) — calculadas no servidor para o client só comparar instantes.
@@ -202,18 +99,9 @@ export default async function RewardsPage() {
           houseId={dependentHouse.id}
           myId={user.id}
           initialPoints={profile.points}
-          initialRewards={rewards ?? []}
-          initialRedemptions={redemptionViews}
+          initialData={initialData}
           dayStartIso={dayStartIso}
           monthStartIso={monthStartIso}
-          initialSuggestions={(suggestions ?? []).map((suggestion) => ({
-            id: suggestion.id,
-            title: suggestion.title,
-            description: suggestion.description,
-            points_cost: suggestion.points_cost,
-            status: suggestion.status,
-            created_at: suggestion.created_at,
-          }))}
           textLimits={textLimitsSettings}
         />
       )

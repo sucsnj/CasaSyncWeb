@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   approveRedemption,
   createReward,
@@ -14,6 +14,12 @@ import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useOptimisticAction } from '@/hooks/use-optimistic-action'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
+import {
+  useRewardsAdminBundle,
+  useInvalidateRewards,
+  patchRewards,
+} from '@/hooks/queries/use-rewards'
+import type { RewardsBundle, SuggestionAdminView } from '@/actions/rewards-reads'
 import type { NotificationRow } from '@/types/notifications'
 import type { Tables } from '@/types/database'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -52,50 +58,30 @@ import {
 } from '@/utils/redemptions'
 
 type Reward = Tables<'rewards'>
-type Redemption = Tables<'reward_redemptions'>
 
-type SuggestionView = {
-  id: string
-  title: string
-  description: string | null
-  points_cost: number | null
-  image_url: string | null
-  status: Tables<'reward_suggestions'>['status']
-  created_at: string
-  profileName: string
-}
+type SuggestionView = SuggestionAdminView
 
 export function RewardsAdmin({
   houseId,
   userId,
-  initialRewards,
-  initialRedemptions,
-  initialSuggestions,
-  dependents,
+  initialData,
   textLimits,
 }: {
   houseId: string
   userId: string
-  initialRewards: Reward[]
-  initialRedemptions: RedemptionView[]
-  initialSuggestions: SuggestionView[]
-  dependents: { id: string; full_name: string }[]
+  initialData: Extract<RewardsBundle, { role: 'ADMIN' }>
   /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const router = useRouter()
-  const [rewards, setRewards] = useState<Reward[]>(initialRewards)
-  const [redemptions, setRedemptions] = useState<RedemptionView[]>(
-    initialRedemptions
-  )
-  const [suggestions, setSuggestions] = useState<SuggestionView[]>(
-    initialSuggestions
-  )
+  const queryClient = useQueryClient()
+  const invalidateRewards = useInvalidateRewards()
+  const { data } = useRewardsAdminBundle(houseId, initialData)
+  const { rewards, redemptions, suggestions } = data
   const [pending, startTransition] = useTransition()
   // Pending/otimista por item compartilhado com tasks. `pending` fica só para
   // os forms (ação de escopo único).
-  const { isPending, markServer, runOptimistic } = useOptimisticAction()
+  const { isPending, runOptimistic } = useOptimisticAction()
   const [showRewardForm, setShowRewardForm] = useState(false)
 
   useKeyAction('Escape', () => setShowRewardForm(false), { enabled: showRewardForm })
@@ -143,90 +129,40 @@ export function RewardsAdmin({
     return sortBy(filteredRewards, getter, direction === 'desc' ? 'desc' : 'asc')
   }, [filteredRewards, sortCatalog])
 
-  const dependentNameById = useMemo(
-    () => new Map(dependents.map((dependent) => [dependent.id, dependent.full_name])),
-    [dependents]
-  )
-
-  function toView(row: Redemption): RedemptionView {
-    return {
-      id: row.id,
-      status: row.status,
-      points_cost: row.points_cost,
-      created_at: row.created_at,
-      resolved_at: row.resolved_at,
-      rewardTitle: rewardById.get(row.reward_id)?.title ?? 'Recompensa',
-      dependentName: dependentNameById.get(row.profile_id) ?? 'Dependente',
-      reward_id: row.reward_id,
-    }
-  }
-
-  usePostgresChanges<Redemption>({
+  // Realtime: qualquer mudança em resgates/catálogo/sugestões invalida o
+  // bundle — a lista re-renderiza com dado novo sem refresh nem piscar.
+  // O canal de notificações continua como fallback do INSERT de resgate (a
+  // publicação de reward_redemptions pode não entregar o evento direto).
+  usePostgresChanges<Tables<'reward_redemptions'>>({
     table: 'reward_redemptions',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      markServer(row.id)
-      setRedemptions((prev) => {
-        const view = toView(row)
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? view : item))
-          : [view, ...prev]
-      })
-    },
+    onUpsert: () => void invalidateRewards(houseId),
+    onDelete: () => void invalidateRewards(houseId),
   })
 
-  // O INSERT do resgate já dispara uma notificação aos ADMINs. Usamos esse
-  // canal como fallback para atualizar a página quando a publicação/RLS de
-  // reward_redemptions não entregar o evento diretamente.
   usePostgresChanges<NotificationRow>({
     table: 'notifications',
     filter: `recipient_id=eq.${userId}`,
     event: 'INSERT',
     onUpsert: (notification) => {
       if (notification.type === 'REDEMPTION_REQUESTED') {
-        router.refresh()
+        void invalidateRewards(houseId)
       }
     },
   })
 
-  usePostgresChanges<Reward>({
+  usePostgresChanges<Tables<'rewards'>>({
     table: 'rewards',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      markServer(row.id)
-      setRewards((prev) => {
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? row : item))
-          : [row, ...prev]
-      })
-    },
+    onUpsert: () => void invalidateRewards(houseId),
+    onDelete: () => void invalidateRewards(houseId),
   })
 
-  // Sugestões: nova sugestão (INSERT) e resolução (UPDATE) chegam ao vivo.
   usePostgresChanges<Tables<'reward_suggestions'>>({
     table: 'reward_suggestions',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      markServer(row.id)
-      setSuggestions((prev) => {
-        const view: SuggestionView = {
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          points_cost: row.points_cost,
-          image_url: row.image_url,
-          status: row.status,
-          created_at: row.created_at,
-          profileName: dependentNameById.get(row.profile_id) ?? 'Dependente',
-        }
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? view : item))
-          : [view, ...prev]
-      })
-    },
+    onUpsert: () => void invalidateRewards(houseId),
+    onDelete: () => void invalidateRewards(houseId),
   })
 
   function handleCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -257,7 +193,7 @@ export function RewardsAdmin({
       setShowRewardForm(false)
       setRewardEmoji(null)
       setRewardImageUrl(null)
-      router.refresh()
+      void invalidateRewards(houseId)
     })
   }
 
@@ -288,7 +224,7 @@ export function RewardsAdmin({
       toast.success('Recompensa atualizada!')
       setEditingReward(null)
       setEditImageUrl(null)
-      router.refresh()
+      void invalidateRewards(houseId)
     })
   }
 
@@ -299,13 +235,14 @@ export function RewardsAdmin({
       current: reward,
       optimistic: { ...reward, active: nextActive },
       apply: (item) =>
-        setRewards((prev) =>
-          prev.map((row) => (row.id === item.id ? item : row))
-        ),
+        patchRewards(queryClient, houseId, (bundle) => ({
+          ...bundle,
+          rewards: bundle.rewards.map((row) => (row.id === item.id ? item : row)),
+        })),
       action: () => setRewardActive(reward.id, nextActive),
       onSuccess: () => {
         toast.success(nextActive ? 'Recompensa reativada!' : 'Recompensa desativada.')
-        router.refresh()
+        void invalidateRewards(houseId)
       },
       onError: (message) => {
         setFormError(message)
@@ -321,9 +258,12 @@ export function RewardsAdmin({
       current: redemption,
       optimistic: { ...redemption, status: nextStatus, resolved_at: resolvedAt },
       apply: (item) =>
-        setRedemptions((prev) =>
-          prev.map((row) => (row.id === item.id ? item : row))
-        ),
+        patchRewards(queryClient, houseId, (bundle) => ({
+          ...bundle,
+          redemptions: bundle.redemptions.map((row) =>
+            row.id === item.id ? item : row
+          ),
+        })),
       action: () =>
         approve
           ? approveRedemption(redemption.id)
@@ -334,7 +274,7 @@ export function RewardsAdmin({
         } else {
           toast.info('Resgate rejeitado.')
         }
-        router.refresh()
+        void invalidateRewards(houseId)
       },
       onError: (message) => {
         setFormError(message)
@@ -350,9 +290,12 @@ export function RewardsAdmin({
       current: suggestion,
       optimistic: { ...suggestion, status: nextStatus },
       apply: (item) =>
-        setSuggestions((prev) =>
-          prev.map((row) => (row.id === item.id ? item : row))
-        ),
+        patchRewards(queryClient, houseId, (bundle) => ({
+          ...bundle,
+          suggestions: bundle.suggestions.map((row) =>
+            row.id === item.id ? item : row
+          ),
+        })),
       action: () => resolveRewardSuggestion(suggestion.id, approve),
       onSuccess: () => {
         if (approve) {
@@ -360,7 +303,7 @@ export function RewardsAdmin({
         } else {
           toast.info('Sugestão rejeitada.')
         }
-        router.refresh()
+        void invalidateRewards(houseId)
       },
       onError: (message) => {
         setFormError(message)

@@ -37,7 +37,7 @@ src/
 ├─ app/            # rotas do App Router (+ grupo (auth): /login, /register)
 ├─ actions/        # Server Actions por domínio (auth, houses, tasks, rewards, notifications)
 ├─ components/     # ui/ · auth/ · dashboard/ · tasks/ · rewards/ · houses/ · notifications/
-├─ hooks/          # use-postgres-changes · use-profile-points
+├─ hooks/          # use-postgres-changes · queries/*
 ├─ utils/          # house · notifications · media · task-sla · supabase/{server,client,admin,middleware}
 ├─ types/          # database · notifications
 └─ proxy.ts        # proxy (substitui middleware no Next 16)

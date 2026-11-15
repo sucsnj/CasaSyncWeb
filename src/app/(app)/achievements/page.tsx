@@ -1,14 +1,13 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createAdminClient } from '@/utils/supabase/admin'
 import {
   getActiveAdminHouse,
   getDependentHouse,
-  getHouseAssignees,
   getSessionProfile,
 } from '@/utils/house'
 import { getHouseTextLimitsSettings } from '@/utils/house-settings'
+import { listAchievements } from '@/actions/achievements-reads'
 import { AchievementsAdmin } from '@/components/achievements/achievements-admin'
 import { AchievementsDependent } from '@/components/achievements/achievements-dependent'
 import {
@@ -57,7 +56,6 @@ export default async function AchievementsPage() {
     redirect('/login')
   }
 
-  const admin = createAdminClient()
   const isAdmin = profile.user_role === 'ADMIN'
 
   // A casa que dá contexto à tela (ativa p/ ADMIN, do dependente). O shell
@@ -79,28 +77,17 @@ export default async function AchievementsPage() {
     if (!activeHouse) {
       content = <NoHouseCard role="ADMIN" />
     } else {
-      const [achievements, progress, dependents] = await Promise.all([
-        admin
-          .from('achievements')
-          .select('*')
-          .eq('house_id', activeHouse.id)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('dependent_achievements')
-          .select(
-            'id, achievement_id, profile_id, level, current_progress, unlocked_at'
-          )
-          .eq('house_id', activeHouse.id),
-        getHouseAssignees(activeHouse.id),
-      ])
+      // Bundle via service role, com escopo derivado da sessão (ADR-0006) —
+      // o mesmo payload do query cache.
+      const bundle = await listAchievements(activeHouse.id)
+      if (bundle.role !== 'ADMIN') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       content = (
         <AchievementsAdmin
           key={activeHouse.id}
           houseId={activeHouse.id}
-          initialAchievements={achievements?.data ?? []}
-          dependents={dependents}
-          initialProgress={progress?.data ?? []}
+          initialData={initialData}
           textLimits={textLimitsSettings}
         />
       )
@@ -109,33 +96,15 @@ export default async function AchievementsPage() {
     if (!dependentHouse) {
       content = <NoHouseCard role="DEPENDENT" />
     } else {
-      const [achievements, progress] = await Promise.all([
-        admin
-          .from('achievements')
-          .select('*')
-          .eq('house_id', dependentHouse.id)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('dependent_achievements')
-          .select('id, achievement_id, level, current_progress, unlocked_at')
-          .eq('house_id', dependentHouse.id)
-          .eq('profile_id', user.id),
-      ])
-
-      const views = (achievements?.data ?? []).map((achievement) => ({
-        achievement,
-        progress:
-          progress?.data?.find(
-            (entry) => entry.achievement_id === achievement.id
-          ) ?? null,
-      }))
+      const bundle = await listAchievements(dependentHouse.id)
+      if (bundle.role !== 'DEPENDENT') throw new Error('ROLE_MISMATCH')
+      const initialData = bundle
 
       content = (
         <AchievementsDependent
           key={dependentHouse.id}
           houseId={dependentHouse.id}
-          userId={user.id}
-          initialViews={views}
+          initialData={initialData}
         />
       )
     }

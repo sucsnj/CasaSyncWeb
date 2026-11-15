@@ -40,19 +40,19 @@ import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useAchievementsAdminBundle,
+  patchAchievementsAdmin,
+  useInvalidateAchievements,
+} from '@/hooks/queries/use-achievements'
+import type {
+  AchievementsAdminBundle,
+  AchievementProgressEntry,
+} from '@/actions/achievements-reads'
 import type { Tables } from '@/types/database'
 
 type Achievement = Tables<'achievements'>
-type DependentAchievement = Tables<'dependent_achievements'>
-
-type AchievementProgressEntry = {
-  id: string
-  achievement_id: string
-  profile_id: string
-  level: number
-  current_progress: number
-  unlocked_at: string | null
-}
 
 type AchievementForm = {
   title: string
@@ -95,26 +95,19 @@ const METRIC_OPTIONS: Array<{ value: AchievementMetricType; label: string }> = [
 
 export function AchievementsAdmin({
   houseId,
-  initialAchievements,
-  dependents,
-  initialProgress,
+  initialData,
   textLimits,
 }: {
   houseId: string
-  initialAchievements: Achievement[]
-  dependents: { id: string; full_name: string }[]
-  initialProgress: AchievementProgressEntry[]
+  initialData: AchievementsAdminBundle
   /** Teto de caracteres da descrição (0 = sem limite) - settings.casa. */
   textLimits?: TextLimitsSettings
 }) {
   const limits = textLimits ?? DEFAULT_TEXT_LIMITS
-  const [achievements, setAchievements] = useState<Achievement[]>(
-    initialAchievements
-  )
+  const queryClient = useQueryClient()
+  const { data } = useAchievementsAdminBundle(houseId, initialData)
+  const { achievements, progress, dependents } = data
   const [sort, setSort] = usePersistedSort('sort:achievements-admin', 'title:asc')
-  const [progress, setProgress] = useState<AchievementProgressEntry[]>(
-    initialProgress
-  )
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -137,44 +130,20 @@ export function AchievementsAdmin({
   const titleRef = useRef<HTMLInputElement>(null)
 
   // Realtime: conquistas/progresso criados/alterados por outro ADMIN ou pelas
-  // aprovações de tarefas chegam ao vivo (confere também no `router.refresh`).
+  // aprovações de tarefas chegam ao vivo — invalida o bundle.
+  const invalidateAchievements = useInvalidateAchievements()
   usePostgresChanges<Achievement>({
     table: 'achievements',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setAchievements((prev) => {
-        const exists = prev.some((item) => item.id === row.id)
-        return exists
-          ? prev.map((item) => (item.id === row.id ? row : item))
-          : [row, ...prev]
-      })
-    },
-    onDelete: (id) => {
-      setAchievements((prev) => prev.filter((item) => item.id !== id))
-    },
+    onUpsert: () => invalidateAchievements(houseId),
+    onDelete: () => invalidateAchievements(houseId),
   })
 
-  usePostgresChanges<DependentAchievement>({
+  usePostgresChanges<Tables<'dependent_achievements'>>({
     table: 'dependent_achievements',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setProgress((prev) => {
-        // Reconcilia por (conquista, dependente): a linha pode ter nascido de um
-        // ajuste otimista (id sintético) e precisa ser substituída pela real.
-        const index = prev.findIndex(
-          (item) =>
-            item.achievement_id === row.achievement_id &&
-            item.profile_id === row.profile_id
-        )
-        if (index === -1) return [...prev, row]
-        const next = [...prev]
-        next[index] = row
-        return next
-      })
-    },
-    onDelete: (id) => {
-      setProgress((prev) => prev.filter((item) => item.id !== id))
-    },
+    onUpsert: () => invalidateAchievements(houseId),
+    onDelete: () => invalidateAchievements(houseId),
   })
 
   const progressMap = useMemo(() => {
@@ -271,26 +240,27 @@ export function AchievementsAdmin({
           return
         }
         const entry = payload
-        setAchievements((prev) =>
-          prev.map((item) =>
+        patchAchievementsAdmin(queryClient, houseId, (bundle) => ({
+          ...bundle,
+          achievements: bundle.achievements.map((item) =>
             item.id === editingId
               ? {
-                ...item,
-                title: entry.title.trim(),
-                description: entry.description,
-                icon: entry.icon,
-                image_url: entry.imageUrl,
-                reward_points: entry.rewardPoints,
-                target_count: entry.targetCount,
-                metric_type: entry.metricType,
-                is_repeatable: entry.isRepeatable,
-                max_level: entry.maxLevel,
-                level_multiplier: entry.levelMultiplier,
-                is_secret: entry.isSecret,
-              }
+                  ...item,
+                  title: entry.title.trim(),
+                  description: entry.description,
+                  icon: entry.icon,
+                  image_url: entry.imageUrl,
+                  reward_points: entry.rewardPoints,
+                  target_count: entry.targetCount,
+                  metric_type: entry.metricType,
+                  is_repeatable: entry.isRepeatable,
+                  max_level: entry.maxLevel,
+                  level_multiplier: entry.levelMultiplier,
+                  is_secret: entry.isSecret,
+                }
               : item
-          )
-        )
+          ),
+        }))
         toast.success(res.message ?? 'Conquista atualizada.')
       } else {
         const res = await createAchievement(payload)
@@ -300,11 +270,12 @@ export function AchievementsAdmin({
         }
         const created = res.data?.achievement
         if (created) {
-          setAchievements((prev) =>
-            prev.some((item) => item.id === created.id)
-              ? prev
-              : [...prev, created]
-          )
+          patchAchievementsAdmin(queryClient, houseId, (bundle) => ({
+            ...bundle,
+            achievements: bundle.achievements.some((item) => item.id === created.id)
+              ? bundle.achievements
+              : [...bundle.achievements, created],
+          }))
         }
         toast.success(res.message ?? 'Conquista criada.')
       }
@@ -326,10 +297,13 @@ export function AchievementsAdmin({
         toast.error(res.error)
         return
       }
-      setAchievements((prev) => prev.filter((item) => item.id !== target.id))
-      setProgress((prev) =>
-        prev.filter((item) => item.achievement_id !== target.id)
-      )
+      patchAchievementsAdmin(queryClient, houseId, (bundle) => ({
+        ...bundle,
+        achievements: bundle.achievements.filter((item) => item.id !== target.id),
+        progress: bundle.progress.filter(
+          (item) => item.achievement_id !== target.id
+        ),
+      }))
       toast.success(res.message ?? 'Conquista excluída.')
     } catch {
       toast.error('Falha ao excluir a conquista.')
@@ -350,25 +324,29 @@ export function AchievementsAdmin({
     delta: 1 | -1,
     targetCount: number
   ) {
-    setProgress((prev) => {
+    patchAchievementsAdmin(queryClient, houseId, (bundle) => {
+      const prev = bundle.progress
       const index = prev.findIndex(
         (item) =>
           item.achievement_id === achievementId && item.profile_id === profileId
       )
 
       if (index === -1) {
-        if (delta < 0) return prev
-        return [
-          ...prev,
-          {
-            id: `optimistic:${achievementId}:${profileId}`,
-            achievement_id: achievementId,
-            profile_id: profileId,
-            level: 1,
-            current_progress: capAchievementProgress(delta, targetCount),
-            unlocked_at: null,
-          },
-        ]
+        if (delta < 0) return bundle
+        return {
+          ...bundle,
+          progress: [
+            ...prev,
+            {
+              id: `optimistic:${achievementId}:${profileId}`,
+              achievement_id: achievementId,
+              profile_id: profileId,
+              level: 1,
+              current_progress: capAchievementProgress(delta, targetCount),
+              unlocked_at: null,
+            },
+          ],
+        }
       }
 
       const next = [...prev]
@@ -380,7 +358,7 @@ export function AchievementsAdmin({
           delta
         ),
       }
-      return next
+      return { ...bundle, progress: next }
     })
   }
 
@@ -393,15 +371,16 @@ export function AchievementsAdmin({
     profileId: string,
     saved: { level: number; current_progress: number; unlocked_at: string | null }
   ) {
-    setProgress((prev) => {
+    patchAchievementsAdmin(queryClient, houseId, (bundle) => {
+      const prev = bundle.progress
       const index = prev.findIndex(
         (item) =>
           item.achievement_id === achievementId && item.profile_id === profileId
       )
-      if (index === -1) return prev
+      if (index === -1) return bundle
       const next = [...prev]
       next[index] = { ...next[index], ...saved }
-      return next
+      return { ...bundle, progress: next }
     })
   }
 
@@ -422,7 +401,7 @@ export function AchievementsAdmin({
     try {
       const res = await adjustAchievementProgress(achievement.id, profileId, delta)
       if (!res.ok) {
-        setProgress(snapshot)
+        patchAchievementsAdmin(queryClient, houseId, (bundle) => ({ ...bundle, progress: snapshot }))
         toast.error(res.error)
         return
       }
@@ -432,7 +411,7 @@ export function AchievementsAdmin({
 
       toast.success(res.message ?? 'Progresso ajustado.')
     } catch {
-      setProgress(snapshot)
+      patchAchievementsAdmin(queryClient, houseId, (bundle) => ({ ...bundle, progress: snapshot }))
       toast.error('Falha ao ajustar o progresso.')
     } finally {
       setAdjustingKey(null)
@@ -457,7 +436,7 @@ export function AchievementsAdmin({
     try {
       const res = await resetAchievementProgress(achievement.id, profileId)
       if (!res.ok) {
-        setProgress(snapshot)
+        patchAchievementsAdmin(queryClient, houseId, (bundle) => ({ ...bundle, progress: snapshot }))
         toast.error(res.error)
         return
       }
@@ -467,7 +446,7 @@ export function AchievementsAdmin({
 
       toast.success(res.message ?? 'Contagem zerada.')
     } catch {
-      setProgress(snapshot)
+      patchAchievementsAdmin(queryClient, houseId, (bundle) => ({ ...bundle, progress: snapshot }))
       toast.error('Falha ao zerar a contagem.')
     } finally {
       setAdjustingKey(null)

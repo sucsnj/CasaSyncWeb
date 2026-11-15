@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Lock, Package, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createChestItem, deleteChestItem, updateChestItem } from '@/actions/chest'
@@ -26,6 +26,11 @@ import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
 import { useKeyAction } from '@/hooks/use-key-action'
+import {
+  useChestAdminBundle,
+  useInvalidateChest,
+} from '@/hooks/queries/use-chest'
+import type { ChestAdminBundle } from '@/actions/chest-reads'
 import {
   CHEST_ITEM_FOLDER,
   CHEST_ITEM_TITLE_MAX,
@@ -53,34 +58,19 @@ import type { Tables } from '@/types/database'
  * sentido entre casas). Trocar a casa ativa já troca o acervo exibido.
  */
 export function ChestAdmin({
-  initialItems,
   houseId,
   houseName,
-  maxMb,
-  usageBytes,
-  attachmentsAllowed = true,
+  initialData,
 }: {
-  initialItems: ChestItemView[]
   /** Casa ativa — é dela o acervo e é nela que o item novo nasce. */
   houseId: string
   /** Nome da casa ativa, só para o texto do form. */
   houseName: string
-  /** Teto de peso dos anexos da casa, em MB (`attachment_budget`, 0 = sem teto). */
-  maxMb: number
-  /**
-   * Peso já usado pela casa em anexos (`tasks/` + `chest/`), em bytes — medido
-   * no servidor a partir dos objetos do storage (ADR-0027). O componente só
-   * aplica o **predicado** (`attachmentBudgetState`), que é o mesmo do servidor.
-   */
-  usageBytes: number
-  /**
-   * A casa permite anexos no baú? (ADR-0026). Default ligado, igual à
-   * configuração da casa; o bloqueio real está no `createChestItem` e nas rotas
-   * `/api/...`.
-   */
-  attachmentsAllowed?: boolean
+  initialData: ChestAdminBundle
 }) {
-  const [items, setItems] = useState(initialItems)
+  const invalidateChest = useInvalidateChest()
+  const { data } = useChestAdminBundle(houseId, initialData)
+  const { items, maxMb, usageBytes, attachmentsAllowed } = data
   const [search, setSearch] = useState('')
   const [sort, setSort] = usePersistedSort('sort:chest-admin', 'created:desc')
 
@@ -107,38 +97,12 @@ export function ChestAdmin({
   const formRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
 
-  // Prop do servidor → estado local, pulando enquanto há operação em voo (o
-  // mesmo cuidado de `tasks-admin.tsx`: sobrescrever o card que acabou de mudar
-  // é pior do que esperar o Realtime).
-  //
-  // A flag vive numa ref porque o efeito abaixo **precisa** do valor atual sem
-  // re-assinar quando um save começa — ler `pending` direto faria o efeito rodar
-  // de novo no meio da operação. Ela é escrita num efeito (nunca no render) e
-  // lida pelo efeito seguinte, que roda logo depois no mesmo commit.
-  const busyRef = useRef(false)
-  useEffect(() => {
-    busyRef.current = pending || Boolean(editingId) || deleting
-  })
-
-  useEffect(() => {
-    if (busyRef.current) return
-    setItems(initialItems)
-  }, [initialItems])
-
-  // Realtime: o baú é catálogo (como a loja de recompensas), então item novo,
-  // edição e exclusão chegam sem F5. O filtro é pela **casa ativa** — o acervo é
-  // dela, não do ADMIN (ver ADR-0024 e a emenda "baú por casa").
+  // Realtime: o baú é catálogo — invalida o bundle com a casa selecionada.
   usePostgresChanges<Tables<'chest_items'>>({
     table: 'chest_items',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setItems((current) => {
-        const next = current.filter((item) => item.id !== row.id)
-        next.push(row)
-        return next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-      })
-    },
-    onDelete: (id) => setItems((current) => current.filter((item) => item.id !== id)),
+    onUpsert: () => invalidateChest(houseId),
+    onDelete: () => invalidateChest(houseId),
   })
 
   const filtered = useMemo(() => {
@@ -243,16 +207,9 @@ export function ChestAdmin({
         return
       }
 
-      // A linha autoritativa volta da action (tipo resolvido e `updated_at` são
-      // do servidor) — entra no estado sem esperar o Realtime.
-      if (result.data) {
-        const row = result.data
-        setItems((current) =>
-          [...current.filter((item) => item.id !== row.id), row].sort((a, b) =>
-            a.created_at < b.created_at ? 1 : -1
-          )
-        )
-      }
+      // A linha autoritativa volta da action — invalida o bundle para o
+      // acervo e o peso (`usageBytes`) refletirem.
+      void invalidateChest(houseId)
 
       toast.success(result.message ?? 'Item salvo.')
       setShowForm(false)
@@ -273,7 +230,7 @@ export function ChestAdmin({
         toast.error(result.error)
         return
       }
-      setItems((current) => current.filter((item) => item.id !== confirmDelete.id))
+      void invalidateChest(houseId)
       toast.success(result.message ?? 'Item excluído.')
       setConfirmDelete(null)
     } catch {

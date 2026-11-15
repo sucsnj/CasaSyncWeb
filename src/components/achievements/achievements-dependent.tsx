@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, PartyPopper, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -18,6 +17,13 @@ import {
 } from '@/utils/achievements'
 import { setClaimableAchievements } from '@/hooks/use-claimable-achievement'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useAchievementsDependentBundle,
+  useInvalidateAchievements,
+} from '@/hooks/queries/use-achievements'
+import { qk } from '@/lib/query/keys'
+import type { AchievementsBundle } from '@/actions/achievements-reads'
 import { AchievementIcon } from './achievement-icon'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -38,51 +44,31 @@ export type AchievementView = {
 
 export function AchievementsDependent({
   houseId,
-  initialViews,
+  initialData,
 }: {
   houseId: string
-  userId: string
-  initialViews: AchievementView[]
+  initialData: Extract<AchievementsBundle, { role: 'DEPENDENT' }>
 }) {
-  const router = useRouter()
-  const [views, setViews] = useState<AchievementView[]>(initialViews)
+  const queryClient = useQueryClient()
+  const invalidateAchievements = useInvalidateAchievements()
+  const { data } = useAchievementsDependentBundle(houseId, initialData)
+  const views = data.views
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [sort, setSort] = usePersistedSort('sort:achievements-dependent', 'title:asc')
 
   // Realtime: quando o ADMIN aprova uma tarefa em outra aba, o progresso aqui
-  // acompanha sozinho (e a página re-sincroniza o saldo no `router.refresh`).
-  usePostgresChanges<{
-    id: string
-    achievement_id: string
-    level: number
-    current_progress: number
-    unlocked_at: string | null
-  }>({
+  // acompanha sozinho — invalida o bundle de conquistas.
+  usePostgresChanges<Tables<'dependent_achievements'>>({
     table: 'dependent_achievements',
     event: 'UPDATE',
     filter: `house_id=eq.${houseId}`,
-    onUpsert: (row) => {
-      setViews((prev) =>
-        prev.map((view) =>
-          view.achievement.id === row.achievement_id
-            ? {
-                ...view,
-                progress: {
-                  level: row.level,
-                  current_progress: row.current_progress,
-                  unlocked_at: row.unlocked_at,
-                },
-              }
-            : view
-        )
-      )
-    },
+    onUpsert: () => invalidateAchievements(houseId),
   })
 
   // Publica "há resgate disponível?" para o badge dourado do item "Conquistas"
   // da nav: é esta tela que tem a lista completa (inclusive `is_repeatable`),
   // então o valor é exato e muda junto com o resgate (otimista) e com o
-  // Realtime — sem esperar `router.refresh()`.
+  // Realtime — sem esperar invalidação manual dos cards.
   const hasClaimable = useMemo(
     () =>
       views.some((view) =>
@@ -123,31 +109,40 @@ export function AchievementsDependent({
       }
       const { nextLevel } = res.data
 
-      setViews((prev) =>
-        prev.map((entry) => {
-          if (entry.achievement.id !== view.achievement.id || !entry.progress) {
-            return entry
+      queryClient.setQueryData<Extract<AchievementsBundle, { role: 'DEPENDENT' }>>(
+        qk.achievements(houseId),
+        (old) =>
+          old && {
+            ...old,
+            views: old.views.map((entry) => {
+              if (
+                entry.achievement.id !== view.achievement.id ||
+                !entry.progress
+              ) {
+                return entry
+              }
+              const { is_repeatable } = view.achievement
+              // Resgate consumiu o ciclo inteiro: o próximo começa em 0 (o
+              // progresso era travado no objetivo, não havia excedente).
+              const progress = is_repeatable
+                ? {
+                    level: nextLevel,
+                    current_progress: 0,
+                    unlocked_at: null as string | null,
+                  }
+                : {
+                    level: nextLevel,
+                    current_progress: entry.progress.current_progress,
+                    unlocked_at: entry.progress.unlocked_at,
+                  }
+              return { ...entry, progress }
+            }),
           }
-          const { is_repeatable } = view.achievement
-          // Resgate consumiu o ciclo inteiro: o próximo começa em 0 (o
-          // progresso era travado no objetivo, não havia excedente).
-          const progress = is_repeatable
-            ? {
-                level: nextLevel,
-                current_progress: 0,
-                unlocked_at: null as string | null,
-              }
-            : {
-                level: nextLevel,
-                current_progress: entry.progress.current_progress,
-                unlocked_at: entry.progress.unlocked_at,
-              }
-          return { ...entry, progress }
-        })
       )
 
       toast.success(res.message)
-      router.refresh()
+      // Garante o merge com o valor autoritativo do servidor (Pontos/nível).
+      invalidateAchievements(houseId)
     } catch {
       toast.error('Falha ao resgatar a conquista.')
     } finally {
