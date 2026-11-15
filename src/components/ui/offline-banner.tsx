@@ -1,25 +1,50 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 
 /**
  * Aviso de dispositivo offline: enquanto não houver rede, as telas renderizam
  * o cache persistido (IndexedDB) — aviso fixo no rodapé. Assim que a conexão
  * voltar, o React Query dispara `refetchOnReconnect` sozinho e o banner some.
+ *
+ * No WebView do Capacitor (Android/iOS) `navigator.onLine` pode responder `false`
+ * mesmo com rede disponível — bug conhecido do WebView. Por isso, no nativo o
+ * banner é controlado por `@capacitor/network` (`getStatus` + `networkStatusChange`);
+ * no navegador comum, apenas pelos eventos `online`/`offline` (que não disparam falsos positivos).
  */
 export function OfflineBanner() {
-  const [online, setOnline] = useState(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true
-  )
+  const [online, setOnline] = useState(true)
 
   useEffect(() => {
-    const update = () => setOnline(navigator.onLine)
-    update()
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
+    let mounted = true
+
+    if (Capacitor.isNativePlatform()) {
+      let removeListener: (() => Promise<void>) | undefined
+      void import('@capacitor/network').then(({ Network }) => {
+        if (!mounted) return
+        Network.getStatus().then((status) => {
+          if (mounted) setOnline(status.connected)
+        })
+        Network.addListener('networkStatusChange', (status) => {
+          setOnline(status.connected)
+        }).then((handle) => {
+          removeListener = () => handle.remove()
+        })
+      })
+      return () => {
+        mounted = false
+        void removeListener?.()
+      }
+    }
+
+    const onOnline = () => setOnline(true)
+    const onOffline = () => setOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
     return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
     }
   }, [])
 

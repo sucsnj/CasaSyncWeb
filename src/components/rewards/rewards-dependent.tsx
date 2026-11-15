@@ -5,7 +5,7 @@ import { Coins, ChevronDown, Gift, Lightbulb, PartyPopper, Search } from 'lucide
 import { createRewardSuggestion, requestRedemption } from '@/actions/rewards'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useExpandedIds } from '@/hooks/use-expanded-ids'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   useRewardsDependentBundle,
   useInvalidateRewards,
@@ -83,7 +83,27 @@ export function RewardsDependent({
   const limits = data?.textLimits ?? DEFAULT_TEXT_LIMITS
   const queryClient = useQueryClient()
   const invalidateRewards = useInvalidateRewards()
-  const [pendingId, setPendingId] = useState<string | null>(null)
+  // Mutation por item: a requisição de resgate é uma mutação do item, com
+  // estado de pending por recompensa via `mutation.variables`.
+  const redeemMutation = useMutation({
+    mutationFn: async (rewardId: string) => {
+      const result = await requestRedemption(rewardId)
+      if (!result.ok) {
+        throw new Error(result.error)
+      }
+      return result
+    },
+    onSuccess: () => {
+      toast.success('Resgate solicitado! Aguardando aprovação.')
+      // O INSERT chega também via Realtime; a invalidação é a rede de segurança.
+      void invalidateRewards(houseId)
+    },
+    onError: (error) => {
+      setError(error.message)
+      toast.error(error.message)
+    },
+  })
+  const pendingId = redeemMutation.isPending ? redeemMutation.variables : null
   const [error, setError] = useState<string | null>(null)
   const [showSuggestionModal, setShowSuggestionModal] = useState(false)
   const [suggestionImageUrl, setSuggestionImageUrl] = useState<string | null>(
@@ -216,28 +236,9 @@ export function RewardsDependent({
   }
 
   function handleRedeem(reward: Reward) {
+    if (redeemMutation.isPending) return
     setError(null)
-    setPendingId(reward.id)
-
-    void (async () => {
-      try {
-        const result = await requestRedemption(reward.id)
-        if (!result.ok) {
-          setError(result.error)
-          toast.error(result.error)
-          return
-        }
-        toast.success('Resgate solicitado! Aguardando aprovação.')
-        // O INSERT chega também via Realtime; a invalidação é a rede de segurança.
-        void invalidateRewards(houseId)
-      } catch {
-        const msg = 'Falha de conexão. Tente novamente.'
-        setError(msg)
-        toast.error(msg)
-      } finally {
-        setPendingId(null)
-      }
-    })()
+    redeemMutation.mutate(reward.id)
   }
 
   const myRedemptions = redemptions

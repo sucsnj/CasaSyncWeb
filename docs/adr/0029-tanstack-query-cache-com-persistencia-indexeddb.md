@@ -12,6 +12,7 @@ Entregável por fases:
 - **Fase 2** (rotas críticas): leituras extraídas para Server Actions `src/actions/*-reads.ts` (autorização por `assertHouseAccess`, escopo derivado da sessão), rotas `/tasks`, `/rewards`, `/achievements`, `/chest` migradas para o query cache; Realtime → `invalidateQueries`/`setQueryData` no cache; `sync effects` de prop→estado removidos.
 - **Fase 2.1** (navegação 0ms): `page.tsx` dessas 4 rotas virou shell estático sem `await`/`force-dynamic`; `(app)/layout.tsx` sem `cookies()`; `AppSessionProvider` (`src/components/session/app-session.tsx`) com `{userId, role, houseId, houseName}` lido no cliente; `<PageSkeleton />` só quando `isPending && !data`; `<QueryError />` com retry.
 - **Fase 3** (saneamento): `revalidatePath` restante apenas para rotas RSC (`/dashboard/**`, `/abrir-anexo`); `HOUSE_CONTEXT_ROUTES` reduzida a 3 dashboards; banner offline; `use-profile-points.ts` (canal cru sem `setAuth`, violava ADR-0010) removido em favor de `useMyPoints` + invalidação.
+- **Fase 3.1** (padronização de mutação): `useOptimisticAction` reescrito internamente sobre `useMutation` do TanStack (pending por-item via `pendingIds`, rollback condicionado a `optimisticIdsRef`, mesmo contrato público); `rewards-dependent.tsx` convertido de `useState` local `pendingId` para `useMutation` nativo (`mutation.variables` como pending por item); demais handlers (form único, `useTransition` do formulário de criação de tarefa, ajuste de progresso por-item em conquistas) mantidos — nenhum deles se beneficia da abstração completa e todos são poucos e especializados.
 - **Fase 4** (documentação): esta ADR. Nenhuma migração adicional será feita sem uma nova decisão explícita (ver "Decisão 6").
 
 ## Decisão
@@ -29,7 +30,7 @@ Entregável por fases:
 ## Consequências
 
 - Navegação entre `/tasks`, `/rewards`, `/achievements`, `/chest` ocorre em 0ms em visitas subsequentes (SWR: render do IndexedDB + revalidate em background), com o badge de pontos, catálogo e demais dados refletindo o tempo real.
-- Mutações são otimistas com rollback (componentes mantidos em `useOptimisticAction` por decisão explícita — `useMutation` por-item exigiria escopo de `Form`/`listId` por item como debt).
+- Mutações são otimistas com rollback sobre o mesmo mecanismo do TanStack (`useMutation` internamente em `useOptimisticAction`) — nenhum caminho paralelo de mutation-estado-manual permanece nas telas migradas.
 - `revalidatePath` não foi extinto em rotas RSC (`/dashboard/**`, `/abrir-anexo`); `HOUSE_CONTEXT_ROUTES` reduzido a renderizadores RSC. Bundles client não dependem dele.
 - 1ª visita exige rede; capturas de IndexedDB persistem por 24h; clear por conta via `SessionCachePurge` evita vazamento entre usuários no mesmo navegador/WebView.
 - Comunicações pendentes e penalidades (punishments) nunca são gravadas em disco.
