@@ -1,8 +1,11 @@
 'use client'
 
 import { useTransition } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { del } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 import { unregisterAllPushSubscriptions } from '@/actions/push'
+import { PERSIST_KEY } from '@/lib/query/persist'
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,6 +17,7 @@ export function SignOutButton({
   variant?: 'button' | 'nav'
   className?: string
 }) {
+  const queryClient = useQueryClient()
   const [pending, startTransition] = useTransition()
 
   function handleSignOut() {
@@ -22,6 +26,10 @@ export function SignOutButton({
       // Revoga as push subscriptions no servidor ANTES do signOut: depois
       // dele a sessão some e a action não teria como autorizar a remoção.
       await unregisterAllPushSubscriptions()
+      // Descarta a memória e o IndexedDB do query cache: outra conta que
+      // entrar neste dispositivo não pode ver dados residuais.
+      queryClient.clear()
+      await del(PERSIST_KEY).catch(() => undefined)
       await supabase.auth.signOut()
       // Full reload: evita a corrida em que o proxy redireciona de volta para
       // o dashboard (router.push + refresh dispara o redirect com a sessão

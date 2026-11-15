@@ -3,6 +3,7 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
+import { Providers } from "@/app/providers";
 import { NativeServiceWorkerGuard } from "@/components/pwa/native-sw-guard";
 import { PullToRefresh } from "@/components/pwa/pull-to-refresh";
 import { AndroidBackButton } from "@/components/pwa/android-back-button";
@@ -43,7 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="pt-BR" className={cn("font-sans", geist.variable)}>
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
         <AndroidBackButton /> {/* <-- Monte o componente aqui */}
-        {children}
+        <Providers>{children}</Providers>
         <ServiceWorkerRegistration />
         <NativeServiceWorkerGuard />
         <PullToRefresh />
