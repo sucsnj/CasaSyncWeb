@@ -35,8 +35,12 @@ ser invalidado por tag).
   (detacha os espelhos). `deleteHouse`/`expelMember`/`deleteDependentAccount`
   expiram `rewards`/`chest`/`house-settings`/`house-members`/`tasks`.
 - **Achievements ficam de fora** (2 queries; caminho de escrita é frágil —
-  progresso nasce de `after()`/`registerLoginDay` sem ação caller). O shell
-  (nav, sino, punição, comunicados, perfil) **permanece RSC** fora do cache.
+  progresso nasce de `after()`/`registerLoginDay` sem ação caller). **Pré-condição
+  para cacheá-los:** o login-streak precisa de um caminho de invalidação
+  próprio (ex.: `revalidateTag` no próprio fluxo do `registerLoginDay`, ou o
+  streak sair do `after()`); sem isso, a tela de conquistas ficaria
+  permanentemente atrasada. O shell (nav, sino, punição, comunicados, perfil)
+  **permanece RSC** fora do cache.
 - `revalidatePath` atual **mantido** como higiene de Router/RSC cache; ele não
   invalida o Data Cache — a consistência do cache depende exclusivamente das
   tags.

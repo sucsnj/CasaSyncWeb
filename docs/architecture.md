@@ -43,6 +43,7 @@
 
 - `useQueryList` (`src/hooks/use-query-list.ts`): lista única (baú, tarefas) — API `setData(prev => next)` compatível com o `useState` anterior.
 - `useQueryScreen` (`src/hooks/use-query-screen.ts`): tela com várias listas que mudam juntas (catálogo + resgates + sugestões; conquistas + progresso) — **uma** chave → **uma** Server Action na revalidação (o Next enfileira actions concorrentes na mesma tela).
+- **Persistência no IndexedDB** (`casasync-rq-v1`, `src/lib/persist-cache.ts`): o cache das 4 telas é desidratado e gravado no IndexedDB (throttled, cada mutação no cache), restaurado ao reabrir a aba/app — **máximo 5 min de idade** (`maxAge`). `staleTime = gcTime = 5min`. Chaves são segregadas por casa/usuário. O **sign-out apaga o cache em memória e o blob** (`queryClient.clear()` + `purgePersistedCache()`), senão a sessão seguinte no mesmo navegador herdaria os dados do usuário anterior.
 
 ## Cache de Servidor (Next Data Cache) — "opção A" (ADR-0029)
 - **Módulo:** `src/utils/data-cache.ts` (sem `'use server'`). Leituras puras (POJOs serializáveis) envelopadas em `unstable_cache` com **tags por casa** (`tasks:{hid}`, `rewards:{hid}`, `chest:{hid}`, `house-settings:{hid}`, `house-members:{hid}`) — nunca sem `houseId` (isolamento multi-tenant). `React.cache` por cima deduplica dentro do request.

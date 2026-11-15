@@ -2,7 +2,9 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/utils/supabase/client'
+import { purgePersistedCache } from '@/lib/persist-cache'
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -15,10 +17,16 @@ export function SignOutButton({
   className?: string
 }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [pending, startTransition] = useTransition()
 
   function handleSignOut() {
     startTransition(async () => {
+      // Purge do cache do usuário atual ANTES de sair: zera o cache em
+      // memória e apaga o blob persistido — senão a próxima sessão na mesma
+      // aba/aparelho herda os dados deste usuário.
+      queryClient.clear()
+      await purgePersistedCache()
       const supabase = createClient()
       await supabase.auth.signOut()
       router.push('/login')

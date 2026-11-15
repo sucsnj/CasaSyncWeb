@@ -9,6 +9,7 @@
 - Invalidação via helper único `invalidateHouseCache(houseId, ...escopos)` — uma linha por action, sem arrays de tags soltos. Regra escrita no `AGENTS.md` ("revalidatePath NÃO invalida o Data Cache").
 - `updateTag()` em todos os paths de escrita mapeados (tasks 12 · rewards 8 · chest 3 mutações + backfill + detach-tasks · settings 2 · houses 16 tags distribuídas em 7 actions, cobrindo exclusões de casa/membro/conta que apagam `rewards`/`chest`/`house-members`/`tasks`).
 - `/rewards` ADMIN não re-lê mais `house_members`/`profiles` (duplicação removida); storage do baú sai do caminho crítico (cache 300s); itens espelho do baú em `/tasks` via leitura cacheada tag `chest:{hid}`.
+- **Persistência do cache do cliente** (`src/lib/persist-cache.ts`): IndexedDB `casasync-rq-v1`, `staleTime = gcTime = 5min`, `maxAge` 5 min; só as 4 telas persistem; sign-out apaga cache + blob.
 - **Limitação reconhecida:** escrita fora de action (SQL manual, edição direta no banco) não invalida o Data Cache — ver ADR-0029.
 - Validação: `lint` 0 warnings · `tsc` ✅ · `build` ✅ · `check:encoding` ✅ · smoke autenticado 4 rotas × 2 papéis (200 + hidratação + escopo do dependente) ✅; `.next/cache/fetch-cache` confirmado como store ativo.
 - Nada commitado.
