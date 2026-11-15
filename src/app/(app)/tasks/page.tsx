@@ -35,8 +35,6 @@ export const metadata: Metadata = {
   title: 'Tarefas',
 }
 
-export const dynamic = 'force-dynamic'
-
 type TaskRow = Tables<'tasks'>
 
 /** Carrega o mapa id → item do baú para as tarefas que usam espelho. */

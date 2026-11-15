@@ -45,6 +45,12 @@
 - `useQueryScreen` (`src/hooks/use-query-screen.ts`): tela com várias listas que mudam juntas (catálogo + resgates + sugestões; conquistas + progresso) — **uma** chave → **uma** Server Action na revalidação (o Next enfileira actions concorrentes na mesma tela).
 - **Persistência no IndexedDB** (`casasync-rq-v1`, `src/lib/persist-cache.ts`): o cache das 4 telas é desidratado e gravado no IndexedDB (throttled, cada mutação no cache), restaurado ao reabrir a aba/app — **máximo 5 min de idade** (`maxAge`). `staleTime = gcTime = 5min`. Chaves são segregadas por casa/usuário. O **sign-out apaga o cache em memória e o blob** (`queryClient.clear()` + `purgePersistedCache()`), senão a sessão seguinte no mesmo navegador herdaria os dados do usuário anterior.
 
+## Cache Components & PPR (ADR-0030)
+- **`cacheComponents: true`** em `next.config.ts` (exportação híbrida mantida: `module.exports` + `export default` — o CJS sobrescreve, por isso o flag vai nos dois).
+- **Partial Prerendering em todas as rotas** — o shell estático paints na hora; o dinamismo streama atrás de `<Suspense>`. `loading.tsx` já existia e segue como moldura.
+- **Adoção incremental**: `instant = false` nas rotas ainda não migradas (layouts dashboard, chest, achievements, abrir-anexo, login). `/tasks`, `/rewards`, `src/app/layout.tsx` e `src/app/(app)/layout.tsx` **sem opt-out** — alvo da validação.
+- `force-dynamic`/`dynamic` removido de todas as rotas (config incompatível). `use cache`/`use cache: private` ainda não usados — tudo passa pelo caminho de `unstable_cache` + HydrationBoundary como antes.
+
 ## Cache de Servidor (Next Data Cache) — "opção A" (ADR-0029)
 - **Módulo:** `src/utils/data-cache.ts` (sem `'use server'`). Leituras puras (POJOs serializáveis) envelopadas em `unstable_cache` com **tags por casa** (`tasks:{hid}`, `rewards:{hid}`, `chest:{hid}`, `house-settings:{hid}`, `house-members:{hid}`) — nunca sem `houseId` (isolamento multi-tenant). `React.cache` por cima deduplica dentro do request.
 - **TTL de fallback de 300s** (SWR) em **todas** as entradas — `updateTag` continua expirando imediatamente; o TTL só limita escrita invisível (fora de action) a ~5 min. Invalidação por `updateTag()` **apenas dentro de Server Actions** (read-your-writes), sempre via o helper `invalidateHouseCache(houseId, ...escopos)`. Achievements **fora** de cache de propósito; shell **continua RSC**.

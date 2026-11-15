@@ -10,11 +10,14 @@ import { HousesManager } from '@/components/houses/houses-manager'
 import { getHouseActivePunishments } from '@/utils/active-punishment'
 import type { HouseActivePunishment } from '@/utils/punishments'
 
+// @next-codemod-ignore Cache Components adoption: this segment temporarily allows blocking.
+// Remove this opt-out after verifying the segment passes validation without it.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = {
   title: 'Casas',
 }
-
-export const dynamic = 'force-dynamic'
 
 export default async function AdminHousesPage() {
   const { user, profile } = await getSessionProfile()

@@ -10,6 +10,11 @@ import { RealtimeToastListener } from '@/components/notifications/realtime-toast
 import { PushNotificationsSetup } from '@/components/notifications/push-notifications-setup'
 import { PushPermissionPrompt } from '@/components/notifications/push-permission-prompt'
 
+// @next-codemod-ignore Cache Components adoption: this segment temporarily allows blocking.
+// Remove this opt-out after verifying the segment passes validation without it.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export default async function AdminDashboardLayout({
   children,
 }: {

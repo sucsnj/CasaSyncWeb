@@ -6,11 +6,14 @@ import { getHouseAttachmentSettings } from '@/utils/house-settings'
 import { loadHtmlAttachment, type HtmlAttachmentKind } from '@/utils/attachment-html'
 import { OpenHtmlAttachment } from '@/components/attachments/open-html-attachment'
 
+// @next-codemod-ignore Cache Components adoption: this segment temporarily allows blocking.
+// Remove this opt-out after verifying the segment passes validation without it.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = {
   title: 'Abrir anexo',
 }
-
-export const dynamic = 'force-dynamic'
 
 /**
  * AVISO ANTES DE ABRIR UM ANEXO HTML (ADR-0025).

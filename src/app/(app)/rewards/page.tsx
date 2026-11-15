@@ -19,8 +19,6 @@ export const metadata: Metadata = {
   title: 'Recompensas',
 }
 
-export const dynamic = 'force-dynamic'
-
 export default async function RewardsPage() {
   const { user, profile } = await getSessionProfile()
 

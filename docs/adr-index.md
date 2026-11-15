@@ -28,3 +28,4 @@
 | ADR-0026 | Anexos da casa ligáveis/desligáveis, com PIN do sistema | Aceito | docs/adr/0026-anexos-da-casa-com-pin-do-sistema.md |
 | ADR-0028 | Capacitor e push híbrido (Web Push + FCM nativo) | Aceito | docs/adr/0028-capacitor-e-push-hibrido.md |
 | ADR-0029 | Cache de servidor com tags por casa (`unstable_cache`) | Aceito | docs/adr/0029-cache-de-servidor-com-tags-por-casa.md |
+| ADR-0030 | Cache Components + PPR — validação incremental, `/tasks` e `/rewards` primeiro | Aceito | docs/adr/0030-cache-components-ppr-tasks-rewards.md |

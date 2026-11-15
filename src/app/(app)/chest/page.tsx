@@ -17,11 +17,14 @@ import {
 } from '@/utils/house-settings'
 import { getCachedChestStorageBytes } from '@/utils/data-cache'
 
+// @next-codemod-ignore Cache Components adoption: this segment temporarily allows blocking.
+// Remove this opt-out after verifying the segment passes validation without it.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = {
   title: 'Baú',
 }
-
-export const dynamic = 'force-dynamic'
 
 /**
  * BAÚ DA CASA (ADR-0024) — rota role-aware no grupo `(app)`, então herda o shell
