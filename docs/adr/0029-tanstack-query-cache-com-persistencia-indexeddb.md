@@ -1,0 +1,37 @@
+# ADR-0029: TanStack Query com persistência em IndexedDB por tenant (migração SWR/Local-First)
+
+**Status:** aceito — **Data:** 2026-11
+
+## Contexto
+
+A navegação entre `/tasks`, `/rewards`, `/achievements` e `/chest` sofria dependência estrita de RSC+Data Cache do Next.js (`force-dynamic` em todas as páginas, `React.cache` apenas por request). Medimos latência de ~85–89ms por round-trip TSPOST para a API e escolhemos evitar a refactorização em massa para RSC+revalidate adequado. O objetivo era atingir experiência de app nativo (Nubank): primeira visita com skeleton, visitas repetidas instantâneas a partir de cache local persistente, revalidação em background, UI otimista com rollback em falhas — sem expor credenciais e sem vazar dados entre contas multi-tenant.
+
+Entregável por fases:
+- **Fase 0** (pré-requisitos): SW resiliente (`casasync-v5`), `isLeftButton`, `skipWaiting/activate` dentro de `waitUntil`, poda de cache antigo, remoção do `public/manifest.webmanifest` (conflitava com o `src/app/manifest.ts`), `NativeServiceWorkerGuard` no root layout, `AndroidBackButton` deduplicado, `error.tsx`/`not-found.tsx`, logout revoga Web Push com `window.location.replace('/login')`, expurgo dos órfãos `@tanstack/*`/`idb-keyval` que já estavam em `node_modules` mas não em `package.json`.
+- **Fase 1** (infraestrutura): `@tanstack/react-query` 5.107.1 + `@tanstack/react-query-persist-client` + `idb-keyval` 6.3.0, `QueryClientProvider`+`PersistQueryClientProvider` global (`src/app/providers.tsx`), cache persistido em IndexedDB sob chave `casasync:qc`, buster `casasync-v1`, limite `maxAge` de 24h, **comunicados e punishments excluídos do persist** (`shouldDehydrateQuery` — segurança infantil e matching com o ADR-0020 de castigo), chaves namespaced multi-tenant (`qk.shell(userId)`, `qk.tasks(houseId)` etc. em `src/lib/query/keys.ts`), `SessionCachePurge` limpa todo o cache quando `casasync:last-user` muda (isolamento por conta/dispositivo), logout limpa memória + IndexedDB.
+- **Fase 2** (rotas críticas): leituras extraídas para Server Actions `src/actions/*-reads.ts` (autorização por `assertHouseAccess`, escopo derivado da sessão), rotas `/tasks`, `/rewards`, `/achievements`, `/chest` migradas para o query cache; Realtime → `invalidateQueries`/`setQueryData` no cache; `sync effects` de prop→estado removidos.
+- **Fase 2.1** (navegação 0ms): `page.tsx` dessas 4 rotas virou shell estático sem `await`/`force-dynamic`; `(app)/layout.tsx` sem `cookies()`; `AppSessionProvider` (`src/components/session/app-session.tsx`) com `{userId, role, houseId, houseName}` lido no cliente; `<PageSkeleton />` só quando `isPending && !data`; `<QueryError />` com retry.
+- **Fase 3** (saneamento): `revalidatePath` restante apenas para rotas RSC (`/dashboard/**`, `/abrir-anexo`); `HOUSE_CONTEXT_ROUTES` reduzida a 3 dashboards; banner offline; `use-profile-points.ts` (canal cru sem `setAuth`, violava ADR-0010) removido em favor de `useMyPoints` + invalidação.
+- **Fase 4** (documentação): esta ADR. Nenhuma migração adicional será feita sem uma nova decisão explícita (ver "Decisão 6").
+
+## Decisão
+
+1. **TanStack Query `v5.107.1` + `persist-client` + `idb-keyval`** como camada de cache cliente, em todas as rotas de aplicação. `SWR` não tinha `persistQueryClient` oficial e exigiria reimplementar o adapter IndexedDB e o mecanismo de invalidação; sem rollback para otimista no mesmo nível de suporte.
+2. **Bundles** como unidade de invalidação (`listTasks`, `listRewards`, `listChest`, `listAchievements`, `getShellBundle`). Metadados de escrita (settings, limites de resgate, fronteiras de dia/mês, etc.) são transportados junto no bundle para evitar o round-trip adicional.
+3. **IndexedDB** como `buster` único com expiração 24h (`maxAge`) e `buster: 'casasync-v1'`; **comunicados e punishments NÃO persistem**; `qk.shell` (lista de notificações do sino) segue sem persistir (`shouldDehydrateQuery`). Dados sensíveis ou de sessão nunca são gravados em disco.
+4. Mantenha o `real-time` para patch composto (upsert/delete no bundle) **ou** invalidação simples (`invalidateQueries` em todo o bundle — bundles são pequenos, custo por evento mínimo). Não usar `broadcastQueryClient` (pacote não publicado no registry deste projeto). O fallback multi-aba é `refetchOnWindowFocus: true` (padrão do QueryClient).
+5. **Cache Components (`'use cache'`) NÃO foi ativado.** Motivos:
+   - As 4 rotas críticas já chegam a `○ Static` pela migração acima.
+   - As 8 rotas dinâmicas restantes (`/`, `/abrir-anexo`, `/dashboard/admin`, `/dashboard/admin/settings`, `/dashboard/admin/comunicados`, `/dashboard/admin/houses`, `/dashboard/dependent`) dependem de `cookies()` (via `getSessionProfile`); ativá-lo exigiria exaustivamente rodar `force-dynamic` em `error.tsx`/`not-found.tsx`/múltiplas validações de build, sem deadline de produto e sem ganho no caminho de navegação monitorado.
+   - O Next valida nativamente que telas de `instant = false` continuam dinâmicas — o ganho de usar `cacheComponents` no `(app)` seria zero. O custo é refactor de `force-dynamic` → `instant = false` por todos as rotas RSC, complexidades em `connection()` (mudanças de teardown no PPR) e arriscar regressões em rotas de segurança (`/abrir-anexo` já restrita via CSP sandbox e `no-store`; `use cache` teria que ser retirado dessa rota).
+6. **Corte de escopo de Fase 4:** exclusivamente esta ADR + sincronia de documentação (`docs/architecture.md`, `docs/adr-index.md`, `PROJECT_STATUS.md`, `.opencode/command/context.md`). Nenhum hunk de migração de render criado.
+
+## Consequências
+
+- Navegação entre `/tasks`, `/rewards`, `/achievements`, `/chest` ocorre em 0ms em visitas subsequentes (SWR: render do IndexedDB + revalidate em background), com o badge de pontos, catálogo e demais dados refletindo o tempo real.
+- Mutações são otimistas com rollback (componentes mantidos em `useOptimisticAction` por decisão explícita — `useMutation` por-item exigiria escopo de `Form`/`listId` por item como debt).
+- `revalidatePath` não foi extinto em rotas RSC (`/dashboard/**`, `/abrir-anexo`); `HOUSE_CONTEXT_ROUTES` reduzido a renderizadores RSC. Bundles client não dependem dele.
+- 1ª visita exige rede; capturas de IndexedDB persistem por 24h; clear por conta via `SessionCachePurge` evita vazamento entre usuários no mesmo navegador/WebView.
+- Comunicações pendentes e penalidades (punishments) nunca são gravadas em disco.
+- `/api/*`, `/auth/*` nunca são servidos do cache/SW; `abrir-anexo` mantém `no-store`.
+- Cache Components pode ser um passo opcional: se o produto precisar (SSR em todas as rotas, novas regiões), pode ser adotado incrementalmente com `connection()` + `instant = false` por segmento após todas as rotas restantes serem `○ Static`. Decisão de quando ativar pertence ao próximo ADR.

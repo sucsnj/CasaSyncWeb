@@ -27,3 +27,4 @@
 | ADR-0025 | Anexo HTML servido em origem opaca, com aviso e fricção antes de abrir | Aceito | docs/adr/0025-html-anexo-aviso-e-fricao.md |
 | ADR-0026 | Anexos da casa ligáveis/desligáveis, com PIN do sistema | Aceito | docs/adr/0026-anexos-da-casa-com-pin-do-sistema.md |
 | ADR-0028 | Capacitor e push híbrido (Web Push + FCM nativo) | Aceito | docs/adr/0028-capacitor-e-push-hibrido.md |
+| ADR-0029 | TanStack Query cache persistido por tenant (migração Local-First) | Aceito | docs/adr/0029-tanstack-query-cache-com-persistencia-indexeddb.md |

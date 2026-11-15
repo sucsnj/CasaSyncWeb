@@ -7,6 +7,7 @@
 - **Bundles = unidade de invalidação:** as actions `list*(houseId)` (`src/actions/*-reads.ts`) retornam o bundle completo (ex.: tasks + chestItems + settings de prazo/decaimento/anexos), validado por `assertHouseAccess` (`src/utils/tenant-scope.ts`) — escopo sempre derivado da sessão.
 - **Server Components (RSC):** Buscam dados via `src/utils/house.ts` + `createClient()`.
 - **Server Actions (`src/actions/*.ts`):** Todas as escritas (`'use server'`) retornam `ActionResult` (`{ ok, error?, data? }`). `revalidatePath` fica **só para rotas RSC** (`/dashboard/*` e `/abrir-anexo`); as rotas do grupo `(app)` são shells estáticos no cliente e seu dado é invalidado no client (`invalidateQueries`/`setQueryData`). `HOUSE_CONTEXT_ROUTES` (`src/actions/houses.ts`) contém apenas as rotas RSC de contexto.
+- **Decisões de cache e validação:** veja também ADR-0029 (TanStack Query cache cliente persistido por tenant — incluindo critérios de adoção/não adoção de Cache Components).
 - **Offline:** `src/components/ui/offline-banner.tsx` aviso fixo no rodapé; offline prolongado é servido pelo cache persistido (stale `~60s`, refetch no foco/reconexão via `refetchOnWindowFocus`/`refetchOnReconnect`).
 - **Modais (`src/components/ui/modal.tsx`):** Portal no `body` (`z-[100]`), trava scroll, prende foco e fecha no Esc.
 
