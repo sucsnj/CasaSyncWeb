@@ -12,10 +12,10 @@ export const CACHE_BUSTER = 'casasync-v1'
 export const MAX_AGE = 24 * 60 * 60_000
 
 // Domínios que jamais devem persistir em disco: pedidos de confirmação de
-// comunicados (segurança infantil) e castigos ativos (não estão na
-// publication Realtime; dado obsoleto alteraria a experiência do dependente).
-// `shell` (sino com comunicados pendentes) e `houses` (PIN de convite) também ficam de fora.
-const PERSIST_EXCLUDE_ROOT = new Set(['shell', 'houses', 'comunicados', 'settings'])
+// comunicados (segurança infantil), castigos ativos, o shell (sino com mensagens),
+// PINs de convite, settings da casa — e **qualquer chave raiz `user`**, que cobre
+// as notificações pessoais (['user', userId, 'notifications']) e seus textos/imagens.
+const PERSIST_EXCLUDE_ROOT = new Set(['shell', 'houses', 'comunicados', 'settings', 'user'])
 const PERSIST_EXCLUDE_LEAF = new Set(['comunicados', 'punishments'])
 
 export const shouldDehydrateQuery: NonNullable<

@@ -12,11 +12,18 @@ export function useSessionScope(): SessionScope {
     const supabase = createClient()
     let mounted = true
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) {
-        setScope({ userId: session?.user?.id ?? null, ready: true })
-      }
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (mounted) {
+          setScope({ userId: session?.user?.id ?? null, ready: true })
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setScope({ userId: null, ready: true })
+        }
+      })
 
     const {
       data: { subscription },
