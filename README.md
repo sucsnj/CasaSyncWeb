@@ -5,9 +5,13 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 ## Stack
 - Next.js 16 (App Router em `src/`, `proxy.ts` no lugar de middleware) + React 19 + Tailwind 4 + shadcn/ui + lucide-react
 - Supabase (Auth, Postgres, Realtime, Storage)
+- `@tanstack/react-query` + `@tanstack/react-query-persist-client` + `idb-keyval` — cache por tenant persistido em IndexedDB
+- `@capacitor/android` (+ `@capacitor/network`) — build Android com push FCM e detecção nativa de rede
 
 ## Funcionalidades
 - **Auth por username:** ADMIN cadastra-se com o PIN do sistema (`MASTER_PIN`); DEPENDENT é criado pelo ADMIN (nunca se cadastra sozinho). Sem e-mails reais — `${username}@admin.casasync` / `${username}@dependente.casasync`, criados já confirmados.
+- **Offline-first nas rotas de topo:** `/tasks`, `/rewards`, `/achievements`, `/chest`, `/dashboard/admin`, `/dashboard/dependent`, `/dashboard/admin/houses`, `/dashboard/admin/settings`, `/dashboard/admin/comunicados` e o sino são shells estáticos servidos instantaneamente; os dados vêm do cache em IndexedDB (`@tanstack/react-query` + persistência por tenant) com refetch em background — sem `force-dynamic` nem `router.refresh()` no caminho. `PageSkeleton` só na 1ª visita; `QueryError` com retry em falha.
+- **Sem vazamento entre contas:** o purger por conta (`SessionCachePurge`) descarta o cache persistido quando `casasync:last-user` muda; logout limpa memória + IndexedDB. Não persistem em disco: `comunicados`, `punishments`, `settings`, `houses` (PIN de convite), `shell`.
 - **Casas:** criação, código/PIN de convite copiável (outro ADMIN entra com o PIN e co-gerencia) e troca da casa ativa (cookie). Gestão de contas de dependentes, **reset de senha** pelos ADMINs (só o autor da casa redefine a senha de outros membros) sem e-mail (ver ADR-0011) e **alteração manual do saldo de pontos** de um dependente protegida pelo **PIN da casa** (`houses.code`; ver ADR-0012).
 - **Tarefas:** ciclo `PENDING → COMPLETED → APPROVED` (aprovação credita pontos), desaprovação, **"não entregue"** com penalidade (o saldo pode ficar negativo), **restauração** de tarefas aprovadas, SLA de prazo e **pedido de adiamento** (+1/+3 dias).
 - **Recompensas:** catálogo, resgate com validação de saldo, aprovação/rejeição de resgates, **sugestões** enviadas pelo dependente e **desativação** pelo ADMIN (a recompensa fica "indisponível" para o dependente — nunca excluída; só o ADMIN reativa).
@@ -15,6 +19,7 @@ Sistema de organização familiar com gamificação: **casas**, **tarefas com po
 - **Realtime:** sincronização ao vivo de tarefas, recompensas, resgates, sugestões, saldo e notificações (ver ADR-0010 — o cliente faz `setAuth` da sessão antes de assinar).
 - **Interface:** cabeçalho fixo azul + bottom nav no mobile; o **avatar** abre o `Modal` "Sua conta" com **Sair** (disponível em qualquer largura) e o saldo de pontos aparece **só para o DEPENDENT** (ADMIN não acumula pontos).
 - **Uploads:** bucket público `casasync-media` (avatars, casas, recompensas, tarefas, sugestões + `messages` da mensagem rápida).
+- **Offline explícito:** `OfflineBanner` no rodapé (via `@capacitor/network` no nativo, eventos `online`/`offline` na web). Sem rede, as telas abrem instantaneamente com o que está salvo no aparelho e sincronizam no retorno.
 
 ## Comandos
 ```bash
@@ -35,10 +40,11 @@ Sem testes configurados. Verificação antes de entregar: **lint → typecheck �
 ```
 src/
 ├─ app/            # rotas do App Router (+ grupo (auth): /login, /register)
-├─ actions/        # Server Actions por domínio (auth, houses, tasks, rewards, notifications)
-├─ components/     # ui/ · auth/ · dashboard/ · tasks/ · rewards/ · houses/ · notifications/
+├─ actions/        # Server Actions por domínio (auth, houses, tasks, rewards, notifications, *-reads.ts)
+├─ components/     # ui/ · auth/ · dashboard/ · tasks/ · rewards/ · houses/ · notifications/ · screens/ · session/
 ├─ hooks/          # use-postgres-changes · queries/*
-├─ utils/          # house · notifications · media · task-sla · supabase/{server,client,admin,middleware}
+├─ lib/            # query/{query-client,persist,keys,upsert,session-scope}
+├─ utils/          # house · notifications · media · task-sla · tenant-scope · supabase/{server,client,admin,middleware}
 ├─ types/          # database · notifications
 └─ proxy.ts        # proxy (substitui middleware no Next 16)
 ```
