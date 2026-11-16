@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   BellRing,
@@ -24,6 +23,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { updateAttachmentSettings, updateHouseSettings } from '@/actions/settings'
+import { useAppSession } from '@/components/session/app-session'
+import { useInvalidateSettings } from '@/hooks/queries/use-settings'
 import type { ActionResult } from '@/actions/types'
 import { Button } from '@/components/ui/button'
 import { useKeyAction } from '@/hooks/use-key-action'
@@ -419,7 +420,8 @@ export function SettingsAdmin({
   textLimits,
   attachmentSettings,
 }: SettingsAdminProps) {
-  const router = useRouter()
+  const { houseId } = useAppSession()
+  const invalidateSettings = useInvalidateSettings()
 
   const [pricing, setPricing] = useState<RewardPricingSettings>(rewardPricing)
   const [pricingError, setPricingError] = useState<string | null>(null)
@@ -541,7 +543,7 @@ export function SettingsAdmin({
       // O PIN do sistema é descartado assim que a gravação passa — ele não fica
       // preenchido no campo para o próximo clique (nem no estado do React).
       resetForm?.reset()
-      router.refresh()
+      void invalidateSettings(houseId)
     } catch {
       const message = 'Falha de rede ao salvar. Tente de novo.'
       setError(message)

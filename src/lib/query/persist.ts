@@ -15,7 +15,7 @@ export const MAX_AGE = 24 * 60 * 60_000
 // comunicados (segurança infantil) e castigos ativos (não estão na
 // publication Realtime; dado obsoleto alteraria a experiência do dependente).
 // `shell` (sino com comunicados pendentes) e `houses` (PIN de convite) também ficam de fora.
-const PERSIST_EXCLUDE_ROOT = new Set(['shell', 'houses', 'comunicados'])
+const PERSIST_EXCLUDE_ROOT = new Set(['shell', 'houses', 'comunicados', 'settings'])
 const PERSIST_EXCLUDE_LEAF = new Set(['comunicados', 'punishments'])
 
 export const shouldDehydrateQuery: NonNullable<

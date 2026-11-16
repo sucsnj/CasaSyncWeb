@@ -11,6 +11,7 @@ export const qk = {
   shell: (userId: string) => ['shell', userId] as const,
   housesBundle: (userId: string) => ['houses', userId] as const,
   comunicadosBundle: (houseId: string) => ['comunicados', houseId] as const,
+  settingsBundle: (houseId: string) => ['settings', houseId] as const,
   tenant: (houseId: string) => ['tenant', houseId] as const,
   tasks: (houseId: string) => ['tenant', houseId, 'tasks'] as const,
   rewards: (houseId: string) => ['tenant', houseId, 'rewards'] as const,
