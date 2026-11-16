@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Megaphone, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import {
@@ -10,10 +11,17 @@ import {
   setComunicadoPublished,
   updateComunicado,
 } from '@/actions/comunicados'
+import {
+  useComunicadosBundle,
+  patchComunicados,
+} from '@/hooks/queries/use-comunicados'
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useKeyAction } from '@/hooks/use-key-action'
+import { useAppSession } from '@/components/session/app-session'
+import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { QueryError } from '@/components/session/query-error'
+import { NoHouseCard } from '@/components/session/no-house-card'
 import { Button } from '@/components/ui/button'
-import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { parseRichText } from '@/components/ui/rich-text'
@@ -24,10 +32,8 @@ import {
   COMUNICADO_MAX_DESCRIPTION,
   COMUNICADO_MAX_INTERVAL_DAYS,
   COMUNICADO_MAX_REPEATS,
-  COMUNICADO_MIN_DESCRIPTION,
   COMUNICADO_SHORT_DAY_LABELS,
   formatComunicadoTime,
-  isComunicadoUnlimited,
   type Comunicado,
 } from '@/utils/comunicados'
 
@@ -53,28 +59,26 @@ function scheduleSummary(comunicado: Comunicado): {
   repeatsLabel: string
   intervalLabel: string
 } {
-  return {
-    repeatsLabel: isComunicadoUnlimited(comunicado.repeats_total)
-      ? 'sem limite por dependente'
-      : `${comunicado.repeats_total}× por dependente`,
-    intervalLabel:
-      comunicado.repeat_interval_days > 0
-        ? `a cada ${comunicado.repeat_interval_days} dia${comunicado.repeat_interval_days > 1 ? 's' : ''}`
-        : 'sem período fixo',
-  }
+  const repeatsLabel =
+    comunicado.repeats_total === 0 ? 'Sempre' : `${comunicado.repeats_total}x`
+  const intervalLabel = comunicado.repeat_interval_days === 0
+    ? 'diário'
+    : comunicado.repeat_interval_days === 1
+      ? 'semanal'
+      : `a cada ${comunicado.repeat_interval_days} dia(s)`
+  return { repeatsLabel, intervalLabel }
 }
 
-export function ComunicadosAdmin({
-  houseId,
-  initialComunicados,
-  initialConfirmations,
-}: {
-  houseId: string
-  initialComunicados: Comunicado[]
-  initialConfirmations: Record<string, number>
-}) {
-  const [comunicados, setComunicados] = useState(initialComunicados)
-  const [confirmations, setConfirmations] = useState(initialConfirmations)
+const EMPTY_COMUNICADOS: Comunicado[] = []
+const EMPTY_CONFIRMATIONS: Record<string, number> = {}
+
+export function ComunicadosAdmin() {
+  const { houseId } = useAppSession()
+  const { data, isPending, refetch } = useComunicadosBundle(houseId)
+  const comunicados = data?.comunicados ?? EMPTY_COMUNICADOS
+  const confirmations = data?.confirmations ?? EMPTY_CONFIRMATIONS
+  const queryClient = useQueryClient()
+
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -87,11 +91,6 @@ export function ComunicadosAdmin({
   const [resetTarget, setResetTarget] = useState<Comunicado | null>(null)
   const [resetBusy, setResetBusy] = useState(false)
 
-  // O form fica ACIMA da lista: ao tocar em "Editar" num card lá embaixo, abrir
-  // o form não ajudava em nada se ele continuasse fora da tela. A rolagem suave
-  // (com `scroll-mt-24` para o header fixo de 4rem não cobrir o card) mais o
-  // foco no título deixam o ADMIN pronto para digitar — mesmo padrão das
-  // conquistas. `editingId` na dependência cobre trocar de card sem fechar o form.
   const formRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
 
@@ -102,23 +101,35 @@ export function ComunicadosAdmin({
   }, [showForm, editingId])
 
   function upsertComunicado(comunicado: Comunicado) {
-    setComunicados((prev) => {
-      const exists = prev.some((item) => item.id === comunicado.id)
-      return exists
-        ? prev.map((item) => (item.id === comunicado.id ? comunicado : item))
-        : [comunicado, ...prev]
+    patchComunicados(queryClient, houseId, (bundle) => {
+      const exists = bundle.comunicados.some((item) => item.id === comunicado.id)
+      return {
+        comunicados: exists
+          ? bundle.comunicados.map((item) =>
+              item.id === comunicado.id ? comunicado : item
+            )
+          : [comunicado, ...bundle.comunicados],
+        confirmations: exists
+          ? bundle.confirmations
+          : { ...bundle.confirmations, [comunicado.id]: 0 },
+      }
     })
   }
 
   function removeComunicado(id: string) {
-    setComunicados((prev) => prev.filter((item) => item.id !== id))
+    patchComunicados(queryClient, houseId, (bundle) => ({
+      comunicados: bundle.comunicados.filter((item) => item.id !== id),
+      confirmations: Object.fromEntries(
+        Object.entries(bundle.confirmations).filter(([key]) => key !== id)
+      ),
+    }))
   }
 
   // Realtime: o ADMIN (em outra aba/desktop) publica/edita/exclui → a lista
   // desta tela acompanha sem refresh manual.
   usePostgresChanges<Comunicado>({
     table: 'comunicados',
-    filter: `house_id=eq.${houseId}`,
+    filter: `house_id=eq.${houseId ?? 'none'}`,
     onUpsert: upsertComunicado,
     onDelete: removeComunicado,
   })
@@ -181,13 +192,10 @@ export function ComunicadosAdmin({
           setFormError(res.error)
           return
         }
-        // Reconcilia o card com a linha gravada pelo servidor (com o `.trim()` e
-        // o `updated_at` reais). Sem isso o título/descrição editados só
-        // apareciam depois do F5: o `resetForm` fecha o form, o Realtime nem
-        // sempre entrega o próprio write, e o `revalidatePath` não ressincroniza
-        // o estado local de um client component já montado.
-        if (res.data?.comunicado) upsertComunicado(res.data.comunicado)
-        toast.success(res.message)
+        if (res.data?.comunicado) {
+          upsertComunicado(res.data.comunicado)
+          toast.success(res.message)
+        }
       } else {
         const res = await createComunicado(payload)
         if (!res.ok) {
@@ -196,9 +204,8 @@ export function ComunicadosAdmin({
         }
         if (res.data?.comunicado) {
           upsertComunicado(res.data.comunicado)
-          setConfirmations((prev) => ({ ...prev, [res.data!.comunicado.id]: 0 }))
+          toast.success(res.message)
         }
-        toast.success(res.message)
       }
       resetForm()
     } catch (err) {
@@ -234,15 +241,16 @@ export function ComunicadosAdmin({
         setResetTarget(null)
         return
       }
-      // A contagem total do card volta a zero na hora; as entregas ficam em 0
-      // para todos os dependentes (o comunicado em si não muda).
-      setConfirmations((prev) => ({ ...prev, [resetTarget.id]: 0 }))
-      toast.success(res.message)
-      setResetTarget(null)
+      patchComunicados(queryClient, houseId, (bundle) => ({
+        comunicados: bundle.comunicados,
+        confirmations: { ...bundle.confirmations, [resetTarget.id]: 0 },
+      }))
+      toast.success(res.message ?? 'Contagem zerada.')
     } catch (err) {
-      console.error('[COMUNICADOS] Falha ao zerar confirmações:', err)
+      console.error('[COMUNICADOS] Falha ao resetar:', err)
       toast.error('Falha ao zerar as confirmações.')
     } finally {
+      setResetTarget(null)
       setResetBusy(false)
     }
   }
@@ -254,397 +262,270 @@ export function ComunicadosAdmin({
       const res = await deleteComunicado(deleteTarget.id)
       if (!res.ok) {
         toast.error(res.error)
-        setDeleteTarget(null)
         return
       }
       removeComunicado(deleteTarget.id)
-      setConfirmations((prev) => {
-        const next = { ...prev }
-        delete next[deleteTarget.id]
-        return next
-      })
-      toast.success(res.message)
-      setDeleteTarget(null)
+      toast.success(res.message ?? 'Comunicado excluído.')
     } catch (err) {
       console.error('[COMUNICADOS] Falha ao excluir:', err)
       toast.error('Falha ao excluir o comunicado.')
     } finally {
+      setDeleteTarget(null)
       setDeleteBusy(false)
     }
   }
 
+  const publishedCount = comunicados.filter((comunicado) => comunicado.published).length
+  const draftCount = comunicados.length - publishedCount
+
+  if (!houseId) {
+    return (
+      <div className="flex flex-col gap-6">
+        <header className="flex flex-col gap-2 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
+          <p className="text-sm font-medium text-white/80">Comunicados</p>
+          <h1 className="text-2xl font-bold tracking-tight">Avisos da casa</h1>
+          <p className="text-sm text-white/85">
+            Selecione uma casa para gerenciar os avisos.
+          </p>
+        </header>
+        <NoHouseCard role="ADMIN" />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">
-            Avisos da casa
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-            Comunicados
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Publique avisos que todos os dependentes precisam confirmar — na
-            hora, ou na próxima vez que abrirem o app.
-          </p>
-        </div>
-        <Button
-          variant={showForm ? 'outline' : 'default'}
-          onClick={() => (showForm ? resetForm() : startCreate())}
-          className="sm:self-start"
-        >
-          <Plus className="size-4" />
-          {showForm ? 'Cancelar' : 'Novo comunicado'}
-        </Button>
-      </div>
+      <header className="flex flex-col gap-2 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
+        <p className="text-sm font-medium text-white/80">Comunicados</p>
+        <h1 className="text-2xl font-bold tracking-tight">Avisos da casa</h1>
+        <p className="text-sm text-white/85">
+          Os dependentes confirmam a leitura na tela de entrada deles — uma a
+          uma, até esgotar as repetições agendadas.
+        </p>
+      </header>
 
-      {showForm ? (
-        <Card ref={formRef} className="scroll-mt-24">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Megaphone className="size-5 text-violet-600" />
-              {editingId ? 'Editar comunicado' : 'Novo comunicado'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-title">
-                  Título
-                </label>
-                <ClearableInput
-                  id="comunicado-title"
-                  ref={titleRef}
-                  value={form.title}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, title: event.target.value }))
-                  }
-                  placeholder="Ex.: Reunião de família no sábado"
-                  maxLength={120}
-                  required
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-description">
-                  Descrição (mínimo {COMUNICADO_MIN_DESCRIPTION} caracteres)
-                </label>
-                <RichTextEditor
-                  id="comunicado-description"
-                  value={form.description}
-                  onChange={(value) =>
-                    setForm((prev) => ({ ...prev, description: value }))
-                  }
-                  placeholder="O que os dependentes precisam ler e confirmar?"
-                  limit={COMUNICADO_MAX_DESCRIPTION}
-                  rows={3}
-                  className="min-h-12 text-base md:text-sm"
-                />
-                <p
-                  className={
-                    form.description.trim().length < COMUNICADO_MIN_DESCRIPTION
-                      ? 'text-xs text-slate-400'
-                      : 'text-xs text-slate-500'
-                  }
-                >
-                  {form.description.trim().length} de {COMUNICADO_MIN_DESCRIPTION}{' '}
-                  caracteres mínimos — o dependente precisa de contexto para
-                  confirmar que leu.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-repeats">
-                    Vezes por dependente (0 = sem limite)
-                  </label>
-                  <Input
-                    id="comunicado-repeats"
-                    type="number"
-                    min={0}
-                    max={COMUNICADO_MAX_REPEATS}
-                    value={form.repeatsTotal}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        repeatsTotal: Number(event.target.value),
-                      }))
-                    }
-                    required
-                  />
-                  <p className="text-xs text-slate-400">
-                    Quantas confirmações o dependente precisa dar — 0 = sem
-                    limite (o aviso aparece para sempre).
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-interval">
-                    Período entre repetições (dias)
-                  </label>
-                  <Input
-                    id="comunicado-interval"
-                    type="number"
-                    min={0}
-                    max={COMUNICADO_MAX_INTERVAL_DAYS}
-                    value={form.repeatIntervalDays}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        repeatIntervalDays: Number(event.target.value),
-                      }))
-                    }
-                    required
-                  />
-                  <p className="text-xs text-slate-400">
-                    0 = sem período fixo (só vale a agenda de dias/horário).
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-700">
-                  Dias da semana
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {COMUNICADO_SHORT_DAY_LABELS.map((label, day) => {
-                    const selected = form.weekdays.includes(day)
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => toggleWeekday(day)}
-                        aria-pressed={selected}
-                        className={
-                          selected
-                            ? 'min-h-10 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white'
-                            : 'min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-500 hover:bg-slate-50'
-                        }
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="text-xs text-slate-400">
-                  Dias em que o comunicado volta a aparecer. Ao menos um obrigatório.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1.5 sm:max-w-52">
-                <label className="text-sm font-medium text-slate-700" htmlFor="comunicado-time">
-                  Horário
-                </label>
-                <Input
-                  id="comunicado-time"
-                  type="time"
-                  value={form.repeatTime}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, repeatTime: event.target.value }))
-                  }
-                  required
-                />
-              </div>
-
-              {formError ? (
-                <p role="alert" className="text-sm font-medium text-destructive">
-                  {formError}
-                </p>
-              ) : null}
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="submit" disabled={busy} className="sm:flex-1">
-                  {busy
-                    ? 'Salvando…'
-                    : editingId
-                      ? 'Salvar alterações'
-                      : 'Criar rascunho'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={resetForm}
-                  disabled={busy}
-                >
-                  Cancelar
-                </Button>
-              </div>
-
-              {!editingId ? (
-                <p className="text-xs text-slate-400">
-                  O rascunho fica invisível aos dependentes até você tocar em
-                  “Publicar”.
-                </p>
-              ) : null}
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        {comunicados.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-              <span className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                <Megaphone className="size-6" />
+      {isPending && !data ? (
+        <PageSkeleton hero={false} cards={3} />
+      ) : !data ? (
+        <QueryError onRetry={() => void refetch()} />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                {publishedCount} publicado{publishedCount === 1 ? '' : 's'}
               </span>
-              <p className="font-semibold text-slate-700">Nenhum comunicado ainda</p>
-              <p className="max-w-sm text-sm text-slate-500">
-                Crie um aviso e publique. Os dependentes confirmam na hora ou na
-                próxima abertura do app.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          comunicados.map((comunicado) => {
-            const summary = scheduleSummary(comunicado)
-            return (
-              <Card key={comunicado.id}>
-                <CardContent className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span
-                        className={
-                          comunicado.published
-                            ? 'rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700'
-                            : 'rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600'
-                        }
-                      >
-                        {comunicado.published ? 'Publicado' : 'Rascunho'}
-                      </span>
-                      <p className="min-w-0 truncate font-semibold text-slate-900">
-                        {comunicado.title}
+              {draftCount > 0 ? (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  {draftCount} rascunho{draftCount === 1 ? '' : 's'}
+                </span>
+              ) : null}
+            </div>
+            <Button onClick={startCreate}>
+              <Plus className="size-4" />
+              Novo comunicado
+            </Button>
+          </div>
+
+          <div ref={formRef} className="scroll-mt-24">
+            {showForm ? (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <CardTitle>{editingId ? 'Editar comunicado' : 'Novo comunicado'}</CardTitle>
+                  <Button variant="ghost" size="icon" onClick={resetForm} aria-label="Fechar">
+                    ×
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                    {formError ? (
+                      <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {formError}
                       </p>
+                    ) : null}
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-slate-700">Título</span>
+                      <Input
+                        ref={titleRef}
+                        value={form.title}
+                        onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                        maxLength={120}
+                        required
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-slate-700">Descrição</span>
+                      <RichTextEditor
+                        name="description"
+                        value={form.description}
+                        onChange={(value) => setForm((prev) => ({ ...prev, description: value }))}
+                        limit={COMUNICADO_MAX_DESCRIPTION}
+                        placeholder="Ex.: prova de matemática na sexta…"
+                        rows={3}
+                      />
+                    </label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-sm font-medium text-slate-700">Repetições</span>
+                        <Input type="number" min={0} max={COMUNICADO_MAX_REPEATS} value={form.repeatsTotal} onChange={(event) => setForm((prev) => ({ ...prev, repeatsTotal: Number(event.target.value) || 0 }))} />
+                        <span className="text-xs text-slate-500">0 = sempre visível</span>
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-sm font-medium text-slate-700">Intervalo (dias)</span>
+                        <Input type="number" min={0} max={COMUNICADO_MAX_INTERVAL_DAYS} value={form.repeatIntervalDays} onChange={(event) => setForm((prev) => ({ ...prev, repeatIntervalDays: Number(event.target.value) || 0 }))} />
+                        <span className="text-xs text-slate-500">
+                          0 = a cada dia agendado
+                        </span>
+                      </label>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleTogglePublished(comunicado)}
-                      >
-                        <Megaphone className="size-4" />
-                        {comunicado.published ? 'Despublicar' : 'Publicar'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => startEdit(comunicado)}
-                      >
-                        <Pencil className="size-4" />
-                        Editar
-                      </Button>
-                      {(confirmations[comunicado.id] ?? 0) > 0 ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setResetTarget(comunicado)}
-                        >
-                          <RotateCcw className="size-4" />
-                          Zerar confirmações
-                        </Button>
-                      ) : null}
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setDeleteTarget(comunicado)}
-                      >
-                        <Trash2 className="size-4" />
-                        Excluir
-                      </Button>
-                    </div>
-                  </div>
-
-                  <p className="whitespace-pre-wrap text-sm text-slate-600">
-                    {parseRichText(comunicado.description)}
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5 text-xs">
-                    <span className="rounded-lg bg-sky-100 px-2 py-1 font-medium text-sky-700">
-                      {summary.repeatsLabel}
-                    </span>
-                    <span className="rounded-lg bg-sky-100 px-2 py-1 font-medium text-sky-700">
-                      {summary.intervalLabel}
-                    </span>
-                    <span className="rounded-lg bg-sky-100 px-2 py-1 font-medium text-sky-700">
-                      {comunicado.repeat_weekdays
-                        .map((day) => COMUNICADO_SHORT_DAY_LABELS[day])
-                        .join(', ')}
-                    </span>
-                    <span className="rounded-lg bg-sky-100 px-2 py-1 font-medium text-sky-700">
-                      às {formatComunicadoTime(comunicado.repeat_time)}
-                    </span>
-                    <span className="rounded-lg bg-slate-100 px-2 py-1 font-medium text-slate-600">
-                      {confirmations[comunicado.id] ?? 0} confirmações
-                    </span>
-                  </div>
+                    <fieldset className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-slate-700">Dias da semana</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMUNICADO_SHORT_DAY_LABELS.map((label, day) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => toggleWeekday(day)}
+                            aria-pressed={form.weekdays.includes(day)}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                              form.weekdays.includes(day)
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                    <label className="flex flex-col gap-1.5 sm:max-w-48">
+                      <span className="text-sm font-medium text-slate-700">Horário</span>
+                      <input type="time" value={form.repeatTime} onChange={(event) => setForm((prev) => ({ ...prev, repeatTime: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
+                    </label>
+                    <Button type="submit" disabled={busy}>
+                      {busy ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Criar comunicado'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
-            )
-          })
-        )}
-      </div>
-
-      <Modal
-        open={resetTarget !== null}
-        onClose={() => setResetTarget(null)}
-        title="Zerar confirmações"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-slate-600">
-            Zerar as confirmações de “{resetTarget?.title}” faz todos os
-            dependentes receberem o aviso de novo (como se fosse a primeira
-            vez). O comunicado não é excluído.
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              variant="destructive"
-              disabled={resetBusy}
-              onClick={handleReset}
-              className="sm:flex-1"
-            >
-              {resetBusy ? 'Zerando…' : 'Zerar confirmações'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setResetTarget(null)}
-              disabled={resetBusy}
-            >
-              Cancelar
-            </Button>
+            ) : null}
           </div>
-        </div>
-      </Modal>
 
-      <Modal
-        open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        title="Excluir comunicado"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-slate-600">
-            Excluir “{deleteTarget?.title}” remove o comunicado e todas as
-            confirmações já feitas pelos dependentes. Esta ação não pode ser
-            desfeita.
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              variant="destructive"
-              disabled={deleteBusy}
-              onClick={handleDelete}
-              className="sm:flex-1"
-            >
-              {deleteBusy ? 'Excluindo…' : 'Excluir'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteTarget(null)}
-              disabled={deleteBusy}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      </Modal>
+          {comunicados.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
+              <Megaphone className="mx-auto mb-3 size-10 text-slate-300" />
+              <p className="font-medium text-slate-700">
+                Nenhum comunicado ainda.
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Crie o primeiro aviso — aparece na entrada dos dependentes até
+                que confirmem leitura.
+              </p>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {comunicados.map((comunicado) => {
+                const total = confirmations[comunicado.id] ?? 0
+                return (
+                  <li
+                    key={comunicado.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              comunicado.published
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {comunicado.published ? 'Publicado' : 'Rascunho'}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {scheduleSummary(comunicado).repeatsLabel} ·{' '}
+                            {scheduleSummary(comunicado).intervalLabel} ·{' '}
+                            {String(comunicado.repeat_time).slice(0, 5)}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-slate-800">{comunicado.title}</p>
+                        <div className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
+                          {parseRichText(comunicado.description)}
+                        </div>
+                        {total > 0 ? (
+                          <p className="mt-1.5 text-xs font-medium text-emerald-700">
+                            {total} confirmação{total === 1 ? '' : 'ões'}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => startEdit(comunicado)}>
+                          <Pencil className="size-4" />
+                          Editar
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void handleTogglePublished(comunicado)}>
+                          {comunicado.published ? 'Despublicar' : 'Publicar'}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setResetTarget(comunicado)}>
+                          <RotateCcw className="size-4" />
+                          Zerar
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setDeleteTarget(comunicado)}>
+                          <Trash2 className="size-4" />
+                          Excluir
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          <Modal
+            open={Boolean(deleteTarget)}
+            onClose={() => setDeleteTarget(null)}
+            title="Excluir comunicado"
+          >
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-slate-700">
+                Excluir <strong>{deleteTarget?.title}</strong>? As confirmações já
+                registradas também são apagadas.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="destructive" onClick={handleDelete} disabled={deleteBusy}>
+                  {deleteBusy ? 'Excluindo...' : 'Excluir'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+
+          <Modal
+            open={Boolean(resetTarget)}
+            onClose={() => setResetTarget(null)}
+            title="Zerar confirmações"
+          >
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-slate-700">
+                Zerar as contagens de <strong>{resetTarget?.title}</strong>? Os
+                dependentes verão o aviso de novo até esgotar as repetições.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setResetTarget(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="outline" onClick={handleReset} disabled={resetBusy}>
+                  {resetBusy ? 'Zerando...' : 'Zerar'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        </>
+      )}
     </div>
   )
 }

@@ -1,7 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useAppSession } from '@/components/session/app-session'
+import { useInvalidateHouses } from '@/hooks/queries/use-houses'
+import { useInvalidateShell } from '@/hooks/queries/use-shell'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { parseRichText } from '@/components/ui/rich-text'
@@ -111,7 +113,15 @@ export function HousesManager({
   members,
   activePunishments,
 }: HousesManagerProps) {
-  const router = useRouter()
+  const invalidateHouses = useInvalidateHouses()
+  const invalidateShell = useInvalidateShell()
+  const { userId } = useAppSession()
+  // Após qualquer mutação de casas/membros: o bundle de houses e o shell
+  // (nav, pontos, castigo) ficam dessincronizados — invalida os dois.
+  const refreshHouses = () => {
+    void invalidateHouses(userId)
+    void invalidateShell(userId)
+  }
   const [houseName, setHouseName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -242,7 +252,7 @@ export function HousesManager({
         toast.success('Casa criada!')
         setHouseName('')
         setShowHouseForm(false)
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -269,7 +279,7 @@ export function HousesManager({
         }
         toast.success(result.message ?? 'Casa vinculada!')
         setShowHouseForm(false)
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -314,7 +324,7 @@ export function HousesManager({
       toast.success('Dependente criado!')
       form.reset()
       setShowDependentForm(false)
-      router.refresh()
+      refreshHouses()
     } finally {
       setDepPending(false)
     }
@@ -334,7 +344,7 @@ export function HousesManager({
         } else {
           toast.success('Casa ativa alterada!')
         }
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -365,7 +375,7 @@ export function HousesManager({
         toast.success('Casa atualizada!')
         setEditingHouse(null)
         setHouseImageUrl(null)
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -397,7 +407,7 @@ export function HousesManager({
         toast.success('Dependente atualizado!')
         setEditingDependent(null)
         setDependentAvatarUrl(null)
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -470,7 +480,7 @@ export function HousesManager({
       // causa do valor que acabou de ser salvo.
       setPointsInput(String(pointsMember.points))
       setPointsSuccess(result.message ?? 'Pontos atualizados.')
-      router.refresh()
+      refreshHouses()
     } finally {
       setPointsPending(false)
     }
@@ -488,7 +498,7 @@ export function HousesManager({
           return
         }
         toast.success(result.message ?? 'PIN atualizado!')
-        router.refresh()
+        refreshHouses()
       } catch {
         toast.error('Falha de conexão. Tente novamente.')
       } finally {
@@ -533,9 +543,9 @@ export function HousesManager({
           : 'Castigo aplicado!'
       )
       setPunishSuccess(result.message ?? 'Castigo aplicado.')
-      // Os campos já são o que foi gravado — o `router.refresh()` traz o
+      // Os campos já são o que foi gravado — o `refreshHouses()` traz o
       // castigo atual (com vencimento novo) para o bloco de leitura.
-      router.refresh()
+      refreshHouses()
     } catch (err) {
       console.error('Falha ao aplicar castigo:', err)
       setPunishError('Falha de comunicação ao aplicar o castigo.')
@@ -566,7 +576,7 @@ export function HousesManager({
       // apagado ainda vale.
       setPunishDescription('')
       setPunishDuration('')
-      router.refresh()
+      refreshHouses()
     } catch (err) {
       console.error('Falha ao remover castigo:', err)
       setPunishError('Falha de comunicação ao remover o castigo.')
@@ -606,7 +616,7 @@ export function HousesManager({
         setEditingHouse(null)
         setHouseImageUrl(null)
       }
-      router.refresh()
+      refreshHouses()
     } finally {
       setActionPending(false)
     }

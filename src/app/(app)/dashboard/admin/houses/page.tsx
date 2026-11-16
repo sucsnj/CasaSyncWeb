@@ -1,105 +1,14 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/utils/supabase/admin'
-import {
-  getActiveAdminHouse,
-  getAdminHouses,
-  getSessionProfile,
-} from '@/utils/house'
-import { HousesManager } from '@/components/houses/houses-manager'
-import { getHouseActivePunishments } from '@/utils/active-punishment'
-import type { HouseActivePunishment } from '@/utils/punishments'
+import { HousesScreen } from '@/components/screens/houses-screen'
 
 export const metadata: Metadata = {
   title: 'Casas',
 }
 
-export const dynamic = 'force-dynamic'
-
-export default async function AdminHousesPage() {
-  const { user, profile } = await getSessionProfile()
-
-  if (!user || profile?.user_role !== 'ADMIN') {
-    redirect('/login')
-  }
-
-  // Service-role: ver membros de qualquer casa que o ADMIN controla
-  // (dono ou co-gerente) sem depender de políticas RLS específicas.
-  const admin = createAdminClient()
-
-  // Casa ativa e lista de casas em paralelo. `getAdminHouses` é memoizado por
-  // request (`React.cache`), então a consulta interna de `getActiveAdminHouse`
-  // não se repete aqui.
-  const [activeHouse, houses] = await Promise.all([
-    getActiveAdminHouse(),
-    getAdminHouses(user.id),
-  ])
-
-  let members: {
-    profileId: string
-    fullName: string
-    username: string | null
-    avatarUrl: string | null
-    points: number
-    role: 'ADMIN' | 'DEPENDENT'
-  }[] = []
-  let activePunishments: HouseActivePunishment[] = []
-
-  if (activeHouse) {
-    const { data: houseMembers } = await admin
-      .from('house_members')
-      .select('profile_id, role')
-      .eq('house_id', activeHouse.id)
-
-    const profileIds = houseMembers?.map((member) => member.profile_id) ?? []
-
-    let infoById = new Map<
-      string,
-      {
-        full_name: string | null
-        username: string | null
-        avatar_url: string | null
-        points: number | null
-      }
-    >()
-    if (profileIds.length > 0) {
-      const { data: profiles } = await admin
-        .from('profiles')
-        .select('id, full_name, username, avatar_url, points')
-        .in('id', profileIds)
-
-      infoById = new Map((profiles ?? []).map((p) => [p.id, p]))
-    }
-
-    members =
-      houseMembers?.map((member) => {
-        const info = infoById.get(member.profile_id)
-        return {
-          profileId: member.profile_id,
-          fullName: info?.full_name ?? 'Sem nome',
-          username: info?.username ?? null,
-          avatarUrl: info?.avatar_url ?? null,
-          points: info?.points ?? 0,
-          role: member.role,
-        }
-      }) ?? []
-
-    // Castigos ativos da casa (ADR-0020): marcam a linha do dependente, abrem o
-    // castigo atual no modal e liberam a remoção. Castigo sem prazo continua na
-    // lista até o ADMIN tirar.
-    activePunishments = await getHouseActivePunishments(activeHouse.id)
-  }
-
+export default function AdminHousesPage() {
   return (
-    <HousesManager
-      houses={houses}
-      activeHouseId={activeHouse?.id ?? null}
-      activeHouseName={activeHouse?.name ?? null}
-      activeHouseImageUrl={activeHouse?.image_url ?? null}
-      activeHouseOwnerId={activeHouse?.owner_id ?? null}
-      currentUserId={user.id}
-      members={members}
-      activePunishments={activePunishments}
-    />
+    <main className="flex flex-col gap-6">
+      <HousesScreen />
+    </main>
   )
 }

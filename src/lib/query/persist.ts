@@ -14,16 +14,20 @@ export const MAX_AGE = 24 * 60 * 60_000
 // Domínios que jamais devem persistir em disco: pedidos de confirmação de
 // comunicados (segurança infantil) e castigos ativos (não estão na
 // publication Realtime; dado obsoleto alteraria a experiência do dependente).
-const PERSIST_EXCLUDE = new Set(['comunicados', 'punishments'])
+// `shell` (sino com comunicados pendentes) e `houses` (PIN de convite) também ficam de fora.
+const PERSIST_EXCLUDE_ROOT = new Set(['shell', 'houses', 'comunicados'])
+const PERSIST_EXCLUDE_LEAF = new Set(['comunicados', 'punishments'])
 
 export const shouldDehydrateQuery: NonNullable<
   DehydrateOptions['shouldDehydrateQuery']
 > = (query) => {
   if (query.state.status !== 'success') return false
   // O shell carrega comunicados pendentes — jamais persiste.
-  if (query.queryKey[0] === 'shell') return false
+  if (typeof query.queryKey[0] === 'string' && PERSIST_EXCLUDE_ROOT.has(query.queryKey[0])) {
+    return false
+  }
   return !(
-    typeof query.queryKey[2] === 'string' && PERSIST_EXCLUDE.has(query.queryKey[2])
+    typeof query.queryKey[2] === 'string' && PERSIST_EXCLUDE_LEAF.has(query.queryKey[2])
   )
 }
 
