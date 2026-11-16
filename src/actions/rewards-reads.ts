@@ -76,8 +76,12 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
   const textLimits = await getHouseTextLimitsSettings(houseId)
 
   if (access.role === 'ADMIN') {
-    const [{ data: rewards }, { data: redemptions }, { data: members }, { data: suggestions }] =
-      await Promise.all([
+    const [
+      { data: rewards, error: rewardsError },
+      { data: redemptions, error: redemptionsError },
+      { data: members, error: membersError },
+      { data: suggestions, error: suggestionsError },
+    ] = await Promise.all([
         admin
           .from('rewards')
           .select('*')
@@ -100,13 +104,18 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
           .order('created_at', { ascending: false }),
       ])
 
+    if (rewardsError || redemptionsError || membersError || suggestionsError) {
+      throw new Error('READ_FAILED')
+    }
+
     const profileIds = members?.map((member) => member.profile_id) ?? []
     const nameById = new Map<string, string>()
     if (profileIds.length > 0) {
-      const { data: profiles } = await admin
+      const { data: profiles, error: profilesError } = await admin
         .from('profiles')
         .select('id, full_name')
         .in('id', profileIds)
+      if (profilesError) throw new Error('READ_FAILED')
       ;(profiles ?? []).forEach((p) => nameById.set(p.id, p.full_name ?? 'Sem nome'))
     }
 
@@ -149,14 +158,16 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
     }
   }
 
-  const { data: redemptions } = await admin
+  const { data: redemptions, error: redemptionsError } = await admin
     .from('reward_redemptions')
     .select('*')
     .eq('house_id', houseId)
     .eq('profile_id', access.userId)
     .order('created_at', { ascending: true })
 
-  const [{ data: rewards }, { data: suggestions }] = await Promise.all([
+  if (redemptionsError) throw new Error('READ_FAILED')
+
+  const [{ data: rewards, error: rewardsError }, { data: suggestions, error: suggestionsError }] = await Promise.all([
     admin
       .from('rewards')
       .select('*')
@@ -169,6 +180,8 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
       .eq('profile_id', access.userId)
       .order('created_at', { ascending: false }),
   ])
+
+  if (rewardsError || suggestionsError) throw new Error('READ_FAILED')
 
   const rewardTitleById = new Map(
     (rewards ?? []).map((reward) => [reward.id, reward.title])
@@ -203,12 +216,13 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
   const monthStartIso = zonedMonthStart(timezone, now).toISOString()
 
   // Saldo atual (mesmo cliente service role; o /rewards mostra o número no header).
-  const { data: profileRow } = await admin
+  const { data: profileRow, error: profileError } = await admin
     .from('profiles')
     .select('points')
     .eq('id', access.userId)
     .maybeSingle()
-  const points = profileRow?.points ?? 0
+  if (profileError || !profileRow) throw new Error('READ_FAILED')
+  const points = profileRow.points
 
   return {
     role: 'DEPENDENT',

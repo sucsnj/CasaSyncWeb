@@ -54,10 +54,11 @@ export async function getHousesBundle(): Promise<HousesBundle> {
   let activePunishments: HouseActivePunishment[] = []
 
   if (activeHouse) {
-    const { data: houseMembers } = await admin
+    const { data: houseMembers, error: houseMembersError } = await admin
       .from('house_members')
       .select('profile_id, role')
       .eq('house_id', activeHouse.id)
+    if (houseMembersError) throw new Error('READ_FAILED')
 
     const profileIds = houseMembers?.map((member) => member.profile_id) ?? []
     let infoById = new Map<
@@ -70,10 +71,11 @@ export async function getHousesBundle(): Promise<HousesBundle> {
       }
     >()
     if (profileIds.length > 0) {
-      const { data: profiles } = await admin
+      const { data: profiles, error: profilesError } = await admin
         .from('profiles')
         .select('id, full_name, username, avatar_url, points')
         .in('id', profileIds)
+      if (profilesError) throw new Error('READ_FAILED')
       infoById = new Map((profiles ?? []).map((p) => [p.id, p]))
     }
 

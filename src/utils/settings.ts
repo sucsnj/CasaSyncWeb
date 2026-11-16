@@ -309,5 +309,10 @@ export function mergeSettings<T extends Record<string, unknown>>(
   value: Record<string, unknown> | T | null | undefined,
   defaults: T
 ): T {
-  return { ...defaults, ...(value ?? {}) }
+  // `null` no jsonb significa "não configurado" — não deve apagar um default
+  // booleano do lado servidor (false !== null).
+  const overrides = Object.fromEntries(
+    Object.entries(value ?? {}).filter(([, entry]) => entry !== null)
+  )
+  return { ...defaults, ...overrides } as T
 }

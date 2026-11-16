@@ -34,7 +34,7 @@ export async function listChest(houseId: string): Promise<ChestBundle> {
   const admin = createAdminClient()
 
   if (access.role === 'ADMIN') {
-    const [{ data: items }, attachmentBudget, attachments, usageBytes] =
+    const [{ data: items, error: itemsError }, attachmentBudget, attachments, usageBytes] =
       await Promise.all([
         admin
           .from('chest_items')
@@ -46,6 +46,8 @@ export async function listChest(houseId: string): Promise<ChestBundle> {
         houseAttachmentBytes(admin, houseId).catch(() => 0),
       ])
 
+    if (itemsError) throw new Error('READ_FAILED')
+
     return {
       role: 'ADMIN',
       houseId,
@@ -56,11 +58,13 @@ export async function listChest(houseId: string): Promise<ChestBundle> {
     }
   }
 
-  const { data: items } = await admin
+  const { data: items, error: itemsError } = await admin
     .from('chest_items')
     .select('*')
     .eq('house_id', houseId)
     .order('created_at', { ascending: false })
+
+  if (itemsError) throw new Error('READ_FAILED')
 
   // A casa desligou os anexos do baú? (ADR-0026) — o item continua listado,
   // mas o arquivo não abre.

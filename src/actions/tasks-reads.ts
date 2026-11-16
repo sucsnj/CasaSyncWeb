@@ -63,7 +63,8 @@ async function loadChestItems(
     ),
   ]
   if (ids.length === 0) return {}
-  const { data } = await admin.from('chest_items').select('*').in('id', ids)
+  const { data, error } = await admin.from('chest_items').select('*').in('id', ids)
+  if (error) throw new Error('READ_FAILED')
   return Object.fromEntries((data ?? []).map((item) => [item.id, item]))
 }
 
@@ -104,7 +105,7 @@ export async function listTasks(houseId: string): Promise<TasksBundle> {
   }
 
   if (access.role === 'ADMIN') {
-    const [{ data: tasks }, assignees] = await Promise.all([
+    const [{ data: tasks, error: tasksError }, assignees] = await Promise.all([
       admin
         .from('tasks')
         .select('*')
@@ -113,7 +114,9 @@ export async function listTasks(houseId: string): Promise<TasksBundle> {
       getHouseAssignees(houseId),
     ])
 
-    const list = tasks ?? []
+    if (tasksError) throw new Error('READ_FAILED')
+    if (tasksError) throw new Error('READ_FAILED')
+  const list = tasks ?? []
     const chestItems = await loadChestItems(admin, list)
 
     return {
@@ -126,7 +129,7 @@ export async function listTasks(houseId: string): Promise<TasksBundle> {
     }
   }
 
-  const { data: tasks } = await admin
+  const { data: tasks, error: tasksError } = await admin
     .from('tasks')
     .select('*')
     .eq('house_id', houseId)
@@ -135,6 +138,7 @@ export async function listTasks(houseId: string): Promise<TasksBundle> {
     .neq('status', 'ON_HOLD')
     .order('created_at', { ascending: false })
 
+  if (tasksError) throw new Error('READ_FAILED')
   const list = tasks ?? []
   const chestItems = await loadChestItems(admin, list)
   const creatorNames = await getProfileNames(list.map((task) => task.created_by))

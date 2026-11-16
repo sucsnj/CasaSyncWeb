@@ -68,6 +68,8 @@ export async function listAchievements(
       getHouseTextLimitsSettings(houseId),
     ])
 
+    if (achievements.error || progress.error) throw new Error('READ_FAILED')
+
     return {
       role: 'ADMIN',
       houseId,
@@ -90,6 +92,8 @@ export async function listAchievements(
       .eq('house_id', houseId)
       .eq('profile_id', access.userId),
   ])
+
+  if (achievements.error || progress.error) throw new Error('READ_FAILED')
 
   const views: AchievementDependentView[] = (achievements.data ?? []).map(
     (achievement) => {

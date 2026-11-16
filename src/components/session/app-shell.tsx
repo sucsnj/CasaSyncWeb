@@ -16,6 +16,7 @@ import { registerLoginDay } from '@/actions/stats'
 import { useShellBundle } from '@/hooks/queries/use-shell'
 import { QueryError } from '@/components/session/query-error'
 import { PageSkeleton } from '@/components/ui/page-skeleton'
+import { Button } from '@/components/ui/button'
 
 function NavSkeleton() {
   return (
@@ -79,12 +80,29 @@ export function AppShell({ children }: { children: ReactNode }) {
     void registerLoginDay(shell.houseId, shell.userId).catch(() => undefined)
   }, [shell])
 
-  if (authUserId === undefined || (authUserId === null && !shell)) {
+  if (authUserId === undefined) {
     return (
       <>
         <NavSkeleton />
         <div className="p-4 pt-20 md:p-6 md:pt-24">
           <PageSkeleton cards={3} />
+        </div>
+      </>
+    )
+  }
+
+  if (authUserId === null) {
+    return (
+      <>
+        <NavSkeleton />
+        <div className="flex flex-col items-center gap-4 p-8 pt-28 text-center">
+          <h2 className="text-lg font-semibold text-slate-800">Sua sessão expirou</h2>
+          <p className="max-w-md text-sm text-slate-600">
+            Entre novamente para continuar.
+          </p>
+          <Button onClick={() => window.location.replace('/login')}>
+            Voltar para o login
+          </Button>
         </div>
       </>
     )
