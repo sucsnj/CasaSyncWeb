@@ -20,21 +20,20 @@ export function OfflineBanner() {
     let mounted = true
 
     if (Capacitor.isNativePlatform()) {
-      let removeListener: (() => Promise<void>) | undefined
-      void import('@capacitor/network').then(({ Network }) => {
-        if (!mounted) return
+      const handlePromise = import('@capacitor/network').then(({ Network }) => {
+        if (!mounted) return Promise.resolve({ remove: async () => undefined })
         Network.getStatus().then((status) => {
           if (mounted) setOnline(status.connected)
         })
-        Network.addListener('networkStatusChange', (status) => {
-          setOnline(status.connected)
-        }).then((handle) => {
-          removeListener = () => handle.remove()
+        return Network.addListener('networkStatusChange', (status) => {
+          if (mounted) setOnline(status.connected)
         })
       })
       return () => {
         mounted = false
-        void removeListener?.()
+        void handlePromise
+          .then((handle) => handle?.remove())
+          .catch(() => undefined)
       }
     }
 

@@ -1,9 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAppSession } from '@/components/session/app-session'
 import { useInvalidateHouses } from '@/hooks/queries/use-houses'
 import { useInvalidateShell } from '@/hooks/queries/use-shell'
+import { qk } from '@/lib/query/keys'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { parseRichText } from '@/components/ui/rich-text'
@@ -115,10 +117,15 @@ export function HousesManager({
 }: HousesManagerProps) {
   const invalidateHouses = useInvalidateHouses()
   const invalidateShell = useInvalidateShell()
+  const queryClient = useQueryClient()
   const { userId } = useAppSession()
-  // Após qualquer mutação de casas/membros: o bundle de houses e o shell
-  // (nav, pontos, castigo) ficam dessincronizados — invalida os dois.
+  // Após qualquer mutação de casas/membros: houses e shell (nav, pontos,
+  // castigo) ficam dessincronizados — e o tenant das bundles (tasks/rewards)
+  // também precisa cair para refletir remoção/entrada de membro.
   const refreshHouses = () => {
+    if (activeHouseId) {
+      void queryClient.invalidateQueries({ queryKey: qk.tenant(activeHouseId) })
+    }
     void invalidateHouses(userId)
     void invalidateShell(userId)
   }
