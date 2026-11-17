@@ -52,6 +52,7 @@ export function DashboardNav({
   punishment,
   activeHouseId,
   houseNames,
+  houseName,
 }: {
   items: NavItem[]
   userName?: string | null
@@ -77,6 +78,8 @@ export function DashboardNav({
   activeHouseId?: string | null
   /** `house_id → nome` das casas do ADMIN, para o chip e o aviso de troca. */
   houseNames?: Record<string, string>
+  /** Nome da casa ativa — exibido abaixo do nome do app no header. */
+  houseName?: string | null
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -164,7 +167,14 @@ export function DashboardNav({
               />
               {/* <House className="size-5" /> Não mais utilizado para dar lugar ao ícone do app*/}
             </span>
-            <span className="text-lg font-bold tracking-tight">CasaSync</span>
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="text-lg font-bold tracking-tight">CasaSync</span>
+              {houseName ? (
+                <span className="max-w-[11rem] truncate text-[0.85rem] font-medium text-blue-200/90">
+                  {houseName}
+                </span>
+              ) : null}
+            </span>
           </Link>
 
           {/* Navegação central — desktop (in-flow, centrada entre marca e ações) */}

@@ -140,6 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         punishment={shell.punishment}
         activeHouseId={shell.houseId}
         houseNames={shell.houseNames}
+        houseName={shell.houseName}
       />
       <RealtimeToastListener userId={appSession.userId} />
       <PushNotificationsSetup userId={appSession.userId} />
