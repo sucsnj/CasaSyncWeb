@@ -6,7 +6,6 @@ import { useAppSession } from '@/components/session/app-session'
 import { useInvalidateHouses } from '@/hooks/queries/use-houses'
 import { useInvalidateShell } from '@/hooks/queries/use-shell'
 import { qk } from '@/lib/query/keys'
-import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { parseRichText } from '@/components/ui/rich-text'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -50,11 +49,8 @@ import {
   Coins,
   Copy,
   Key,
-  Megaphone,
-  Package,
   Pencil,
   RefreshCw,
-  SlidersHorizontal,
   Trash2,
   TriangleAlert,
   UserMinus,

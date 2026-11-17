@@ -18,6 +18,7 @@ import { ChestAttachmentPicker } from '@/components/tasks/chest-attachment-picke
 import type { AttachmentSelection } from '@/components/chest/chest-types'
 import type { ChestItemView } from '@/components/chest/chest-types'
 import {
+  attachmentTypeFromName,
   attachmentKind,
   attachmentKindLabel,
   attachmentLinkHost,
@@ -84,7 +85,12 @@ export function TaskAttachmentInput({
    */
   chestSource?: boolean
 }) {
-  const kind = attachmentKind(type)
+  // Espelho do baú: a tarefa guarda `attachment_type` nulo e o tipo mora no
+  // item do baú — resolver pela extensão do arquivo/URL evita cair no falso
+  // 'image' de `attachmentKind(null)` (e no <img> quebrado de um .html).
+  const kind = attachmentKind(
+    type ?? attachmentTypeFromName(name ?? url ?? '')
+  )
   const isLink = kind === 'link'
 
   // O modo nasce do anexo atual (quem edita um item que já tem link abre no modo
