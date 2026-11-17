@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { CircleCheck, Gift, House, LayoutDashboard, ListTodo, Trophy } from 'lucide-react'
+import { ArrowLeft, CircleCheck, Gift, House, LayoutDashboard, ListTodo, Megaphone, Package, SlidersHorizontal, Trophy, UserPen } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SignOutButton } from '@/components/auth/sign-out-button'
@@ -13,6 +13,7 @@ import { useClaimableAchievement } from '@/hooks/use-claimable-achievement'
 import { PunishmentIndicator } from '@/components/punishments/punishment-indicator'
 import { selectHouse } from '@/actions/houses'
 import { useInvalidateShell } from '@/hooks/queries/use-shell'
+import { ProfileEditor } from '@/components/dashboard/profile-editor'
 import type { NotificationRow } from '@/types/notifications'
 import type { QuickMessageSettings } from '@/utils/settings'
 import type { ActivePunishment } from '@/utils/punishments'
@@ -34,6 +35,9 @@ function activeFor(href: string, pathname: string) {
   }
   return pathname.startsWith(href)
 }
+
+const menuItemClass =
+  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900'
 
 export function DashboardNav({
   items,
@@ -78,11 +82,17 @@ export function DashboardNav({
   const router = useRouter()
   const invalidateShell = useInvalidateShell()
   const [showAccount, setShowAccount] = useState(false)
+  const [accountView, setAccountView] = useState<'menu' | 'edit'>('menu')
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const claimable = useClaimableAchievement(hasClaimableAchievement)
   const initial = userName?.trim()?.[0]?.toUpperCase() ?? 'U'
   const avatarFailed = failedAvatarUrl === avatarUrl
   const brandHref = items[0]?.href ?? '/'
+  const isAdmin = role === 'ADMIN'
+  const openAccount = () => {
+    setAccountView('menu')
+    setShowAccount(true)
+  }
 
   /**
    * Clique numa notificação **push** (o app estava em background ou fechado).
@@ -202,7 +212,7 @@ export function DashboardNav({
             ) : null}
             <button
               type="button"
-              onClick={() => setShowAccount(true)}
+              onClick={openAccount}
               aria-label="Abrir sua conta e opção de sair"
               className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white transition-all duration-200 hover:bg-white/25 active:scale-95 overflow-hidden"
             >
@@ -217,14 +227,14 @@ export function DashboardNav({
                 initial
               )}
             </button>
-             <button
-               type="button"
-               onClick={() => setShowAccount(true)}
-               aria-label="Abrir sua conta"
-               className="hidden max-w-[9rem] truncate rounded-lg text-sm font-medium text-white transition-colors hover:text-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 md:block"
-             >
-               {userName}
-             </button>
+            <button
+              type="button"
+              onClick={openAccount}
+              aria-label="Abrir sua conta"
+              className="hidden max-w-[9rem] truncate rounded-lg text-sm font-medium text-white transition-colors hover:text-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 md:block"
+            >
+              {userName}
+            </button>
             <div className="hidden md:block">
               <SignOutButton className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" />
             </div>
@@ -282,37 +292,110 @@ export function DashboardNav({
         </div>
       </nav>
 
-      {/* Conta: aberta ao tocar no avatar — garante "Sair" em qualquer tela */}
+      {/* Conta: aberta ao tocar no avatar ou no nome — garante "Sair" em qualquer tela */}
       <Modal
         open={showAccount}
-        onClose={() => setShowAccount(false)}
-        title="Sua conta"
+        onClose={() => {
+          setShowAccount(false)
+          setAccountView('menu')
+        }}
+        title={accountView === 'edit' ? 'Editar perfil' : 'Sua conta'}
       >
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-lg font-bold text-sky-700">
-              {avatarUrl && !avatarFailed ? (
-                <img
-                  src={avatarUrl}
-                  alt={userName ?? 'Avatar'}
-                  className="size-full object-cover"
-                  onError={() => setFailedAvatarUrl(avatarUrl)}
-                />
-              ) : (
-                initial
-              )}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate font-medium text-slate-800">
-                {userName ?? 'Usuário'}
-              </p>
-              {typeof points === 'number' ? (
-                <p className="text-sm text-slate-500">{points} pontos</p>
-              ) : null}
+        {accountView === 'menu' ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-lg font-bold text-sky-700">
+                {avatarUrl && !avatarFailed ? (
+                  <img
+                    src={avatarUrl}
+                    alt={userName ?? 'Avatar'}
+                    className="size-full object-cover"
+                    onError={() => setFailedAvatarUrl(avatarUrl)}
+                  />
+                ) : (
+                  initial
+                )}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-800">
+                  {userName ?? 'Usuário'}
+                </p>
+                {typeof points === 'number' ? (
+                  <p className="text-sm text-slate-500">{points} pontos</p>
+                ) : null}
+              </div>
             </div>
+            <nav className="flex flex-col gap-1 border-t border-slate-100 pt-3">
+              {isAdmin ? (
+                <>
+                  <Link
+                    href="/dashboard/admin/settings"
+                    onClick={() => setShowAccount(false)}
+                    className={menuItemClass}
+                  >
+                    <SlidersHorizontal className="size-4 text-slate-500" />
+                    Configurações
+                  </Link>
+                  <Link
+                    href="/chest"
+                    onClick={() => setShowAccount(false)}
+                    className={menuItemClass}
+                  >
+                    <Package className="size-4 text-slate-500" />
+                    Baú
+                  </Link>
+                  <Link
+                    href="/dashboard/admin/comunicados"
+                    onClick={() => setShowAccount(false)}
+                    className={menuItemClass}
+                  >
+                    <Megaphone className="size-4 text-slate-500" />
+                    Comunicados
+                  </Link>
+                  {userId ? (
+                    <button
+                      type="button"
+                      onClick={() => setAccountView('edit')}
+                      className={menuItemClass}
+                    >
+                      <UserPen className="size-4 text-slate-500" />
+                      Editar perfil
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <Link
+                  href="/chest"
+                  onClick={() => setShowAccount(false)}
+                  className={menuItemClass}
+                >
+                  <Package className="size-4 text-slate-500" />
+                  Baú
+                </Link>
+              )}
+            </nav>
+            <SignOutButton className="w-full" />
           </div>
-          <SignOutButton className="w-full" />
-        </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => setAccountView('menu')}
+              className="inline-flex min-h-10 items-center gap-2 self-start rounded-lg px-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+            >
+              <ArrowLeft className="size-4" />
+              Voltar
+            </button>
+            {userId ? (
+              <ProfileEditor
+                userId={userId}
+                fullName={userName ?? null}
+                avatarUrl={avatarUrl ?? null}
+                onSaved={() => setAccountView('menu')}
+              />
+            ) : null}
+          </div>
+        )}
       </Modal>
     </>
   )

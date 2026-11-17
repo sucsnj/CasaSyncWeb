@@ -19,10 +19,13 @@ export function ProfileEditor({
   userId,
   fullName,
   avatarUrl,
+  onSaved,
 }: {
   userId: string
   fullName: string | null
   avatarUrl: string | null
+  /** Chamado após salvar com sucesso (usos fora do card de edição dedicado). */
+  onSaved?: () => void
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -44,6 +47,7 @@ export function ProfileEditor({
         setError(result.error)
         return
       }
+      onSaved?.()
       router.refresh()
     })
   }
