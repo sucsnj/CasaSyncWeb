@@ -1,8 +1,7 @@
 // CasaSync Service Worker - Offline support + Web Push notifications
-// v5: install resiliente (cada asset falha sozinho, sem derrubar o push),
-// poda de entradas antigas no activate e `match` restrito ao cache corrente.
-// Bump para forçar reinstalação nos browsers com a versão antiga em uso.
-const CACHE_NAME = 'casasync-v5';
+// v6: install diagnostics — cada asset que falhar é logado explicitamente
+// (console.warn com a URL), sem abortar o install nem matar o Web Push.
+const CACHE_NAME = 'casasync-v6';
 const MAX_CACHE_ENTRIES = 60;
 // Somente assets estáticos de verdade. A página raiz "/" NÃO entra aqui:
 // é 100% dinâmica (force-dynamic) e o proxy decide o redirect por sessão/role.
@@ -18,7 +17,18 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then((cache) =>
       // Cada asset falha de forma isolada: um 404 (ex.: /apple-icon.png)
       // não pode abortar o install nem matar o Web Push silenciosamente.
-      Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset)))
+      Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset))).then(
+        (results) => {
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.warn(
+                `[SW] falha ao cachear asset "${STATIC_ASSETS[index]}":`,
+                result.reason
+              );
+            }
+          });
+        }
+      )
     ).then(() => self.skipWaiting())
   );
 });

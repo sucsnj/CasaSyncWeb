@@ -17,8 +17,8 @@ type RunOptimisticOptions<T extends { id: string }> = {
   onNetworkError?: (message: string) => void
 }
 
-type SkippedContext = { skipped: true }
-type AppliedContext = { skipped: false }
+type SkippedContext = { skipped: true; previous?: never }
+type AppliedContext = { skipped: false; previous?: unknown }
 type MutationContext = SkippedContext | AppliedContext | undefined
 
 /**
@@ -27,14 +27,17 @@ type MutationContext = SkippedContext | AppliedContext | undefined
  * rollback em erro e limpeza no `finally` — agora sobre `useMutation` do
  * TanStack Query.
  *
- * `markServer` existe para o Realtime: quando a linha real chega, o id sai do
- * registro de otimistas para que um rollback atrasado não sobrescreva o dado
- * novo. `optimisticIdsRef` é lido pelo Realtime → invalidate-ish.
+ * `markServer(id)` é chamado quando a linha real chega pelo Realtime — a
+ * partir daí o cache tem a verdade do servidor e qualquer rollback tardio de
+ * uma mutação em voo é **ignorado** (precedência absoluta do Realtime).
+ * `optimisticIdsRef` é exportado para compatibilidade com os call-sites
+ * existentes; `serverAckedRef` é o flag canônico de "acked" usado internamente.
  */
 export function useOptimisticAction() {
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const pendingIdsRef = useRef<Set<string>>(new Set())
   const optimisticIdsRef = useRef<Set<string>>(new Set())
+  const serverAckedRef = useRef<Set<string>>(new Set())
 
   function addPendingId(id: string) {
     pendingIdsRef.current.add(id)
@@ -63,14 +66,16 @@ export function useOptimisticAction() {
         return { skipped: true } satisfies SkippedContext
       }
       addPendingId(id)
+      // Mutação original: limpa ack de invocações anteriores do mesmo item.
+      serverAckedRef.current.delete(id)
       optimisticIdsRef.current.add(id)
       vars.apply(vars.optimistic)
-      return { skipped: false } satisfies AppliedContext
+      return { skipped: false, previous: vars.current } satisfies AppliedContext
     },
     onSuccess: (result, vars, context) => {
       if (context?.skipped) return
       if (!result.ok) {
-        rollbackOptimistic(vars.current.id, vars.current, vars.apply)
+        rollbackSnapshot(vars.current.id, context, vars.apply)
         vars.onError?.(result.error)
         return
       }
@@ -78,13 +83,14 @@ export function useOptimisticAction() {
     },
     onError: (_error, vars, context) => {
       if (context?.skipped) return
-      rollbackOptimistic(vars.current.id, vars.current, vars.apply)
+      rollbackSnapshot(vars.current.id, context, vars.apply)
       vars.onNetworkError?.('Falha de conexão. Tente novamente.')
     },
     onSettled: (_data, _error, vars, context) => {
       if (context?.skipped) return
       removePendingId(vars.current.id)
       optimisticIdsRef.current.delete(vars.current.id)
+      serverAckedRef.current.delete(vars.current.id)
     },
   })
 
@@ -93,16 +99,24 @@ export function useOptimisticAction() {
   }
 
   function markServer(id: string) {
+    // Realtime confirmou a linha — não permitir que o rollback recoloque o
+    // snapshot antigo por cima dela.
+    serverAckedRef.current.add(id)
     optimisticIdsRef.current.delete(id)
   }
 
-  function rollbackOptimistic<T extends { id: string }>(
+  function rollbackSnapshot<T extends { id: string }>(
     id: string,
-    current: T,
+    context: MutationContext,
     apply: (item: T) => void
   ) {
-    if (!optimisticIdsRef.current.has(id)) return
-    apply(current)
+    // Precedência do Realtime: se o servidor já confirmou esta mutação
+    // (markServer foi chamado), não tocar no cache.
+    if (serverAckedRef.current.has(id)) return
+    if (!context || context.skipped) return
+    // O snapshot pré-otimista veio do onMutate — não dependemos de
+    // `optimisticIdsRef` ter sobrevivido até aqui.
+    apply(context.previous as T)
   }
 
   async function runOptimistic<T extends { id: string }>({
