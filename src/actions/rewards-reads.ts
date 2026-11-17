@@ -5,10 +5,7 @@ import {
   getHouseTextLimitsSettings,
   getHouseTimezoneSettings,
 } from '@/utils/house-settings'
-import {
-  zonedDayStart,
-  zonedMonthStart,
-} from '@/utils/timezone'
+
 import { assertHouseAccess } from '@/utils/tenant-scope'
 import {
   type TextLimitsSettings,
@@ -61,9 +58,8 @@ export type RewardsDependentBundle = RewardsBundleBase & {
   role: 'DEPENDENT'
   suggestions: SuggestionDependentView[]
   points: number
-  /** Fronteiras do dia/mês corrente no fuso da casa (calculadas no servidor). */
-  dayStartIso: string
-  monthStartIso: string
+  /** Fuso da casa (IANA) — o cliente calcula fronteiras de dia/mês ao vivo. */
+  timezone: string
 }
 
 export type RewardsBundle = RewardsAdminBundle | RewardsDependentBundle
@@ -82,27 +78,27 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
       { data: members, error: membersError },
       { data: suggestions, error: suggestionsError },
     ] = await Promise.all([
-        admin
-          .from('rewards')
-          .select('*')
-          .eq('house_id', houseId)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('reward_redemptions')
-          .select('*')
-          .eq('house_id', houseId)
-          .order('created_at', { ascending: true }),
-        admin
-          .from('house_members')
-          .select('profile_id')
-          .eq('house_id', houseId)
-          .eq('role', 'DEPENDENT'),
-        admin
-          .from('reward_suggestions')
-          .select('*')
-          .eq('house_id', houseId)
-          .order('created_at', { ascending: false }),
-      ])
+      admin
+        .from('rewards')
+        .select('*')
+        .eq('house_id', houseId)
+        .order('created_at', { ascending: true }),
+      admin
+        .from('reward_redemptions')
+        .select('*')
+        .eq('house_id', houseId)
+        .order('created_at', { ascending: true }),
+      admin
+        .from('house_members')
+        .select('profile_id')
+        .eq('house_id', houseId)
+        .eq('role', 'DEPENDENT'),
+      admin
+        .from('reward_suggestions')
+        .select('*')
+        .eq('house_id', houseId)
+        .order('created_at', { ascending: false }),
+    ])
 
     if (rewardsError || redemptionsError || membersError || suggestionsError) {
       throw new Error('READ_FAILED')
@@ -116,7 +112,7 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
         .select('id, full_name')
         .in('id', profileIds)
       if (profilesError) throw new Error('READ_FAILED')
-      ;(profiles ?? []).forEach((p) => nameById.set(p.id, p.full_name ?? 'Sem nome'))
+        ; (profiles ?? []).forEach((p) => nameById.set(p.id, p.full_name ?? 'Sem nome'))
     }
 
     const rewardTitleById = new Map(
@@ -208,12 +204,9 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
     })
   )
 
-  // Fronteiras das janelas do limitador de resgate (dia/mês corrente no fuso
-  // da CASA) — calculadas aqui para o cliente só comparar instantes.
+  // O timezone da casa vai junto para que o cliente calcule as fronteiras
+  // do dia/mês — o botão de "Resgatar" reflete fielmente o fuso da casa.
   const { timezone } = await getHouseTimezoneSettings(houseId)
-  const now = new Date()
-  const dayStartIso = zonedDayStart(timezone, now).toISOString()
-  const monthStartIso = zonedMonthStart(timezone, now).toISOString()
 
   // Saldo atual (mesmo cliente service role; o /rewards mostra o número no header).
   const { data: profileRow, error: profileError } = await admin
@@ -232,7 +225,6 @@ export async function listRewards(houseId: string): Promise<RewardsBundle> {
     suggestions: suggestionViews,
     textLimits,
     points,
-    dayStartIso,
-    monthStartIso,
+    timezone,
   }
 }

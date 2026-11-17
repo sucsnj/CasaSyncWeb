@@ -32,6 +32,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { zonedDayStart, zonedMonthStart } from '@/utils/timezone'
 import { SortSelect } from '@/components/ui/sort-select'
 import { sortBy } from '@/utils/sort'
 import { usePersistedSort } from '@/hooks/use-persisted-sort'
@@ -78,8 +79,14 @@ export function RewardsDependent({
   const redemptions = data?.redemptions ?? EMPTY_REDEMPTIONS
   const suggestions = data?.suggestions ?? EMPTY_SUGGESTIONS
   const points = data?.points ?? 0
-  const dayStartIso = data?.dayStartIso
-  const monthStartIso = data?.monthStartIso
+  // Fuso da casa vindo do bundle; dia/mês calculados no cliente (ao vivo).
+  const timezone = data?.timezone
+  const dayStartIso = timezone
+    ? zonedDayStart(timezone, new Date()).toISOString()
+    : undefined
+  const monthStartIso = timezone
+    ? zonedMonthStart(timezone, new Date()).toISOString()
+    : undefined
   const limits = data?.textLimits ?? DEFAULT_TEXT_LIMITS
   const queryClient = useQueryClient()
   const invalidateRewards = useInvalidateRewards()

@@ -1,5 +1,6 @@
 'use server'
 
+import { after } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { getActiveAdminHouse, getSessionProfile } from '@/utils/house'
@@ -463,45 +464,40 @@ export async function listChestAttachmentsForTask(): Promise<
  
   const rawItems = items ?? []
 
-  // Backfill idempotente para linhas antigas com `file_size = null`: uma única
-  // listagem do Storage popula a coluna; depois disso o seletor fica rápido.
+  // Backfill idempotente para linhas antigas com `file_size = null`.
+  // Rodamos em `after()` — depois da resposta: a leitura não paga o custo
+  // (listagem do Storage + UPDATEs) a cada clique no seletor.
   const missing = rawItems.filter(
     (item) => item.file_size === null && item.file_type !== LINK_ATTACHMENT_TYPE
   )
-  let sizes: Map<string, number> | null = null
   if (missing.length > 0) {
-    try {
-      sizes = await folderObjectSizes(admin, `${CHEST_ITEM_FOLDER}/${activeHouse.id}`)
-    } catch (err) {
-      console.error('[CHEST] Falha ao ler o tamanho dos arquivos do baú:', err)
-      sizes = new Map()
-    }
-    await Promise.all(
-      missing.map(async (item) => {
-        const path = storagePathFromUrl(item.file_url)
-        if (!path) return
-        const name = path.split('/').pop()
-        if (!name) return
-        const bytes = sizes?.get(name)
-        if (bytes === undefined) return
-        await admin
-          .from('chest_items')
-          .update({ file_size: bytes })
-          .eq('id', item.id)
-          .is('file_size', null)
-      })
-    )
+    const houseIdForBackfill = activeHouse.id
+    after(async () => {
+      try {
+        const sizes = await folderObjectSizes(admin, `${CHEST_ITEM_FOLDER}/${houseIdForBackfill}`)
+        await Promise.all(
+          missing.map(async (item) => {
+            const path = storagePathFromUrl(item.file_url)
+            if (!path) return
+            const name = path.split('/').pop()
+            if (!name) return
+            const bytes = sizes.get(name)
+            if (bytes === undefined) return
+            await admin
+              .from('chest_items')
+              .update({ file_size: bytes })
+              .eq('id', item.id)
+              .is('file_size', null)
+          })
+        )
+      } catch (err) {
+        console.error('[CHEST] Backfill de file_size falhou:', err)
+      }
+    })
   }
 
   const options: ChestAttachmentOption[] = rawItems.map((item) => {
-    const path = storagePathFromUrl(item.file_url)
-    const name = path?.split('/').pop()
-    const bytes =
-      item.file_size !== null
-        ? item.file_size
-        : name && sizes
-          ? (sizes.get(name) ?? null)
-          : null
+    const bytes = item.file_size ?? null
     return {
       id: item.id,
       title: item.title,

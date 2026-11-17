@@ -6,8 +6,8 @@ import { sendPushToHouseAdmins } from '@/actions/push'
 import { MEDIA_BUCKET } from '@/utils/media'
 import { getHouseQuickMessageSettings } from '@/utils/house-settings'
 import {
+  cleanupNotificationsOf,
   cleanupQuickMessages,
-  cleanupReadNotifications,
 } from '@/utils/notifications'
 import type { ActionResult } from './types'
 
@@ -126,15 +126,16 @@ export async function deleteAllNotifications(): Promise<ActionResult> {
 }
 
 /**
- * Limpeza manual das lidas com mais de 5 dias (além da limpeza lazy feita no
- * carregamento). Útil para o sino disparar em cenários de página muito longa.
+ * Limpeza completa das notificações do usuário: lidas fora da retenção da
+ * casa e mensagens rápidas expiradas. Idempotente, best-effort em cada etapa.
+ * Disparada 1x por sessão pelo sino (não no caminho de render/refetch).
  */
 export async function purgeReadNotifications(): Promise<ActionResult> {
   const { user } = await getSessionProfile()
   if (!user) return { ok: false, error: 'Autenticação necessária.' }
 
   const admin = createAdminClient()
-  await cleanupReadNotifications(admin, user.id)
+  await cleanupNotificationsOf(admin, user.id)
 
   return { ok: true }
 }

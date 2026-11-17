@@ -7,7 +7,6 @@ import {
   getHouseQuickMessageSettings,
 } from '@/utils/house-settings'
 import { isNotificationMuted } from '@/utils/notification-mute'
-import { after } from 'next/server'
 import {
   sendPushToUser,
   sendPushToHouseAdmins,
@@ -252,14 +251,10 @@ export async function cleanupReadNotifications(
 
 /**
  * Faxina das notificações do usuário: lidas fora da retenção da casa e
- * mensagens rápidas vencidas.
- *
- * É **escrita**, e o render do sino não usa nada disso — por isso roda em
- * `after()`, DEPOIS da resposta (ver `getMyNotifications`). Isolada numa função
- * própria para que o `after` receba um callback só, e para que a lógica de limpeza
- * não fique misturada com a leitura.
+ * mensagens rápidas expiradas. Idempotente, best-effort em cada etapa.
+ * Chamada 1x por sessão pelo sino, nunca no caminho do render.
  */
-async function cleanupNotificationsOf(
+export async function cleanupNotificationsOf(
   admin: AdminClient,
   userId: string
 ): Promise<void> {
@@ -308,27 +303,15 @@ async function cleanupNotificationsOf(
  * o sino é renderizado no servidor e o escopo é sempre o próprio usuário da
  * sessão.
  *
- * **A faxina sai do caminho da leitura:** antes ela rodava (e era esperada) antes
- * do `SELECT`, e a instrumentação mediu **195-365ms em produção só nela** — 5
- * round-trips em série (1 `SELECT` de casas + settings + `DELETE` por casa, mais
- * o `SELECT` das mensagens rápidas) para algo que o render não usa. Agora o sino
- * espera **1 query** e a limpeza roda em `after()`, que a Vercel garante via
- * `waitUntil` depois de enviar a resposta: a limpeza continua acontecendo, só sai
- * da latência.
- *
- * Efeito colateral aceito: o sino pode listar, por um instante, notificações **já
- * lidas** e fora da retenção. As não lidas — que é o que o badge conta — não são
- * afetadas.
+ * **Leitura pura:** nenhuma escrita acontece aqui. A faxina de notificações
+ * lidas e de mensagens rápidas expiradas roda na action `purgeReadNotifications`,
+ * disparada 1x por sessão pelo sino (não no refetch, não no render).
  */
 export async function getMyNotifications(
   userId: string,
   limit = 50
 ): Promise<NotificationRow[]> {
   const admin = createAdminClient()
-
-  after(async () => {
-    await cleanupNotificationsOf(admin, userId)
-  })
 
   const { data } = await admin
     .from('notifications')

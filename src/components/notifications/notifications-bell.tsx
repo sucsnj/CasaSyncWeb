@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Bell,
@@ -37,6 +37,7 @@ import {
   deleteNotification,
   markAllNotificationsRead,
   markNotificationRead,
+  purgeReadNotifications,
 } from '@/actions/notifications'
 import { selectHouse } from '@/actions/houses'
 import { useInvalidateShell } from '@/hooks/queries/use-shell'
@@ -127,6 +128,19 @@ export function NotificationsBell({
   const [open, setOpen] = useState(false)
   // Cards de mensagem rápida colapsáveis — todos recolhidos por padrão.
   const { isExpanded, toggle } = useExpandedIds()
+
+  // Faxina 1x por sessão do navegador — nunca no render, nunca no refetch.
+  useEffect(() => {
+    try {
+      const key = 'casasync:notifications-purged'
+      if (typeof window === 'undefined') return
+      if (window.sessionStorage.getItem(key)) return
+      window.sessionStorage.setItem(key, '1')
+      void purgeReadNotifications().catch(() => undefined)
+    } catch {
+      // sessionStorage indisponível — a faxina fica no próximo mount/sessão
+    }
+  }, [])
 
   const unread = items.filter((item) => !item.read_at).length
 
