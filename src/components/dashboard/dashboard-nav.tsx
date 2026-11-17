@@ -217,9 +217,14 @@ export function DashboardNav({
                 initial
               )}
             </button>
-            <span className="hidden max-w-[9rem] truncate text-sm font-medium text-white md:block">
-              {userName}
-            </span>
+             <button
+               type="button"
+               onClick={() => setShowAccount(true)}
+               aria-label="Abrir sua conta"
+               className="hidden max-w-[9rem] truncate rounded-lg text-sm font-medium text-white transition-colors hover:text-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 md:block"
+             >
+               {userName}
+             </button>
             <div className="hidden md:block">
               <SignOutButton className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" />
             </div>
