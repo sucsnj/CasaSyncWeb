@@ -22,7 +22,9 @@ import {
   type DueComunicado,
 } from '@/utils/comunicados'
 import {
-  ALERT_TYPED_WORDS_REQUIRED,
+  alertTargetWords,
+  COMUNICADO_MIN_WORDS,
+  COMUNICADO_TARGET_MIN_WORD_LENGTH,
   hasTypedAlertConfirmation,
 } from '@/utils/alert-queue'
 import { getHouseTimezoneSettings } from '@/utils/house-settings'
@@ -75,6 +77,10 @@ function validateComunicadoFields(input: {
   }
   if (descriptionLength > COMUNICADO_MAX_DESCRIPTION) {
     return `Descrição muito longa (máximo ${COMUNICADO_MAX_DESCRIPTION} caracteres).`
+  }
+  const tokenCount = alertTargetWords(`${input.title} ${input.description}`).length
+  if (tokenCount < COMUNICADO_MIN_WORDS) {
+    return `A descrição precisa de pelo menos ${COMUNICADO_MIN_WORDS} palavras com ${COMUNICADO_TARGET_MIN_WORD_LENGTH}+ letras (tem ${tokenCount}).`
   }
   if (
     !Number.isInteger(input.repeatsTotal) ||
@@ -410,7 +416,7 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
   const ids = comunicados.map((comunicado) => comunicado.id)
   const { data: deliveries } = await admin
     .from('comunicado_deliveries')
-    .select('comunicado_id, delivered_count, last_confirmed_at')
+    .select('comunicado_id, delivered_count, failed_attempts, last_confirmed_at')
     .eq('profile_id', user.id)
     .in('comunicado_id', ids)
 
@@ -451,14 +457,14 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
       // Repetição: próxima ocorrência a partir da última confirmação.
       const next = nextComunicadoOccurrence(lastConfirmed, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0))
       }
     } else {
       // 1ª exibição (ou entrega zerada): "slot de hoje ou próximo" (regra do
       // usuário).
       const first = firstComunicadoOccurrence(now, schedule, timezone)
       if (now.getTime() >= first.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0))
       }
     }
   }
@@ -507,27 +513,52 @@ export async function confirmComunicadoDelivery(
     return { ok: false, error: 'Comunicado não está mais disponível.' }
   }
 
+  const { data: row } = await admin
+    .from('comunicado_deliveries')
+    .select('id, delivered_count, failed_attempts')
+    .eq('comunicado_id', comunicadoId)
+    .eq('profile_id', user.id)
+    .maybeSingle()
+
+  const failedAttempts = row?.failed_attempts ?? 0
+  const filteredCount = alertTargetWords(`${comunicado.title} ${comunicado.description}`).length
+  const targetCount = Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
+
   if (
     !hasTypedAlertConfirmation(
       typedPhrase,
       comunicado.title,
-      comunicado.description
+      comunicado.description,
+      undefined,
+      targetCount
     )
   ) {
+    // Registra a tentativa falha (cria a linha se ainda não existir).
+    const now = new Date().toISOString()
+    if (!row) {
+      await admin.from('comunicado_deliveries').insert({
+        comunicado_id: comunicadoId,
+        profile_id: user.id,
+        house_id: house.id,
+        delivered_count: 0,
+        failed_attempts: 1,
+        last_confirmed_at: null,
+        created_at: now,
+        updated_at: now,
+      })
+    } else {
+      await admin
+        .from('comunicado_deliveries')
+        .update({ failed_attempts: failedAttempts + 1, updated_at: now })
+        .eq('id', row.id)
+    }
     return {
       ok: false,
-      error: `Digite ao menos ${ALERT_TYPED_WORDS_REQUIRED} palavras do comunicado para confirmar a leitura.`,
+      error: `Digite as ${targetCount} palavras indicadas para confirmar a leitura.`,
     }
   }
 
   const now = new Date().toISOString()
-
-  const { data: row } = await admin
-    .from('comunicado_deliveries')
-    .select('id, delivered_count')
-    .eq('comunicado_id', comunicadoId)
-    .eq('profile_id', user.id)
-    .maybeSingle()
 
   if (!row) {
     const { error } = await admin.from('comunicado_deliveries').insert({
@@ -535,6 +566,7 @@ export async function confirmComunicadoDelivery(
       profile_id: user.id,
       house_id: house.id,
       delivered_count: 1,
+      failed_attempts: 0,
       last_confirmed_at: now,
       created_at: now,
       updated_at: now,
@@ -564,7 +596,7 @@ export async function confirmComunicadoDelivery(
       : Math.min(fresh.delivered_count + 1, comunicado.repeats_total)
     const { data: updated } = await admin
       .from('comunicado_deliveries')
-      .update({ delivered_count: count, last_confirmed_at: now, updated_at: now })
+      .update({ delivered_count: count, failed_attempts: 0, last_confirmed_at: now, updated_at: now })
       .eq('id', fresh.id)
       .eq('delivered_count', fresh.delivered_count)
       .select('id')

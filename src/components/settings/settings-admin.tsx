@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import {
@@ -38,6 +39,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Modal } from '@/components/ui/modal'
 import { CardColumns } from '@/components/ui/card-columns'
 import { cn } from '@/lib/utils'
 import type {
@@ -421,6 +423,7 @@ export function SettingsAdmin({
   attachmentSettings,
 }: SettingsAdminProps) {
   const { houseId } = useAppSession()
+  const router = useRouter()
   const invalidateSettings = useInvalidateSettings()
 
   const [pricing, setPricing] = useState<RewardPricingSettings>(rewardPricing)
@@ -669,6 +672,137 @@ export function SettingsAdmin({
       setLimitsSuccess
     )
   }
+  const dirty = useMemo(
+    () => ({
+      pricing: JSON.stringify(pricing) !== JSON.stringify(rewardPricing),
+      quick: JSON.stringify(quick) !== JSON.stringify(quickMessage),
+      sla: JSON.stringify(sla) !== JSON.stringify(taskSla),
+      extensions: JSON.stringify(extensions) !== JSON.stringify(extensionRules),
+      retention:
+        JSON.stringify(retention) !== JSON.stringify(notificationRetention) ||
+        JSON.stringify(mute) !== JSON.stringify(notificationMute),
+      decay: JSON.stringify(decay) !== JSON.stringify(taskDecay),
+      rules: JSON.stringify(rules) !== JSON.stringify(taskRules),
+      attachmentBudget:
+        JSON.stringify(attachmentBudget) !==
+        JSON.stringify(attachmentBudgetProp),
+      attachments: JSON.stringify(attachments) !== JSON.stringify(attachmentSettings),
+      timezone: timezone !== houseTimezone.timezone,
+      limits: JSON.stringify(limits) !== JSON.stringify(textLimits),
+    }),
+    [
+      pricing,
+      rewardPricing,
+      quick,
+      quickMessage,
+      sla,
+      taskSla,
+      extensions,
+      extensionRules,
+      retention,
+      notificationRetention,
+      mute,
+      notificationMute,
+      decay,
+      taskDecay,
+      rules,
+      taskRules,
+      attachmentBudget,
+      attachmentBudgetProp,
+      attachments,
+      attachmentSettings,
+      timezone,
+      houseTimezone.timezone,
+      limits,
+      textLimits,
+    ]
+  )
+
+  const pendingCards = useMemo(
+    () =>
+      (Object.keys(dirty) as Array<keyof typeof dirty>).filter(
+        (key) => dirty[key]
+      ),
+    [dirty]
+  )
+
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const pendingCardsRef = useRef<string[]>([])
+  useEffect(() => {
+    pendingCardsRef.current = pendingCards
+  }, [pendingCards])
+
+  const [showLeaveWarning, setShowLeaveWarning] = useState(false)
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
+
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (pendingCardsRef.current.length === 0) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
+
+  useEffect(() => {
+    const navigation = (window as Window & {
+      navigation?: {
+        addEventListener: (
+          type: string,
+          listener: (event: { canIntercept?: boolean; preventDefault: () => void }) => void
+        ) => void
+        removeEventListener: (
+          type: string,
+          listener: (event: { canIntercept?: boolean; preventDefault: () => void }) => void
+        ) => void
+      }
+    }).navigation
+    if (!navigation?.addEventListener) return
+    function handleNavigate(event: { canIntercept?: boolean; preventDefault: () => void; destination?: { url?: string } }) {
+      if (pendingCardsRef.current.length === 0) return
+      if (event.canIntercept) {
+        event.preventDefault()
+        if (event.destination?.url) setPendingNavigation(event.destination.url)
+        setShowLeaveWarning(true)
+      }
+    }
+    navigation.addEventListener('navigate', handleNavigate)
+    return () => navigation.removeEventListener('navigate', handleNavigate)
+  }, [])
+
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (pendingCardsRef.current.length === 0) return
+      const target = (event.target as HTMLElement | null)?.closest('a')
+      if (!target) return
+      const href = target.getAttribute('href')
+      if (!href || href.startsWith('#') || href.startsWith('mailto:')) return
+      let url: URL
+      try {
+        url = new URL(href, window.location.href)
+      } catch {
+        return
+      }
+      if (url.origin !== window.location.origin) return
+      if (url.pathname === window.location.pathname) return
+      event.preventDefault()
+      event.stopPropagation()
+      setPendingNavigation(url.href)
+      setShowLeaveWarning(true)
+    }
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
+  }, [])
+
+  function focusFirstPendingCard() {
+    const first = pendingCardsRef.current[0]
+    if (!first) return
+    const node = cardRefs.current[first]
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    node?.focus()
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/25">
@@ -680,7 +814,12 @@ export function SettingsAdmin({
       </header>
 
       <CardColumns className="gap-x-6 lg:columns-2 [&>*]:mb-6">
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.pricing = node
+          }}
+          className={cn(dirty.pricing && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
@@ -791,10 +930,20 @@ export function SettingsAdmin({
                 {isSaving('pricing') ? 'Salvando…' : 'Salvar economia de pontos'}
               </Button>
             </div>
+            {dirty.pricing ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.quick = node
+          }}
+          className={cn(dirty.quick && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
@@ -873,10 +1022,20 @@ export function SettingsAdmin({
                 {isSaving('quick') ? 'Salvando…' : 'Salvar mensagem rápida'}
               </Button>
             </div>
+            {dirty.quick ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.sla = node
+          }}
+          className={cn(dirty.sla && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
@@ -941,10 +1100,20 @@ export function SettingsAdmin({
                 {isSaving('sla') ? 'Salvando…' : 'Salvar prazos'}
               </Button>
             </div>
+            {dirty.sla ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.extensions = node
+          }}
+          className={cn(dirty.extensions && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
@@ -1068,10 +1237,20 @@ export function SettingsAdmin({
                 {isSaving('extensions') ? 'Salvando…' : 'Salvar adiamento'}
               </Button>
             </div>
+            {dirty.extensions ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.retention = node
+          }}
+          className={cn(dirty.retention && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
@@ -1159,10 +1338,20 @@ export function SettingsAdmin({
                 {isSaving('retention') ? 'Salvando…' : 'Salvar notificações'}
               </Button>
             </div>
+            {dirty.retention ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.decay = node
+          }}
+          className={cn(dirty.decay && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
@@ -1247,10 +1436,20 @@ export function SettingsAdmin({
                 {isSaving('decay') ? 'Salvando…' : 'Salvar decaimento'}
               </Button>
             </div>
+            {dirty.decay ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.rules = node
+          }}
+          className={cn(dirty.rules && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
@@ -1313,13 +1512,23 @@ export function SettingsAdmin({
                 {isSaving('rules') ? 'Salvando…' : 'Salvar limites'}
               </Button>
             </div>
+            {dirty.rules ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
         {/* Orçamento de anexos (ADR-0027) — **por peso**, e da casa inteira. O
             card anterior ("Limite do baú", 50 itens) virou este: o que acaba com
             o bucket é volume, e anexo existe em tarefa e no baú. */}
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.attachmentBudget = node
+          }}
+          className={cn(dirty.attachmentBudget && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
@@ -1404,6 +1613,11 @@ export function SettingsAdmin({
                 {isSaving('attachmentBudget') ? 'Salvando…' : 'Salvar limite'}
               </Button>
             </div>
+            {dirty.attachmentBudget ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -1416,7 +1630,12 @@ export function SettingsAdmin({
           exigiria 3 PINs e 3 idas ao banco para uma decisão que o tutor pensa como
           uma coisa só.
         */}
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.attachments = node
+          }}
+          className={cn(dirty.attachments && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
@@ -1509,13 +1728,23 @@ export function SettingsAdmin({
                 </Button>
               </div>
             </form>
+            {dirty.attachments ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.timezone = node
+          }}
+          className={cn(dirty.timezone && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
-              <span className="flex size-11 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+              <span className="flex size-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
                 <Globe className="size-5" />
               </span>
             </CardAction>
@@ -1570,10 +1799,20 @@ export function SettingsAdmin({
                 {isSaving('timezone') ? 'Salvando…' : 'Salvar fuso'}
               </Button>
             </div>
+            {dirty.timezone ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          ref={(node) => {
+            cardRefs.current.limits = node
+          }}
+          className={cn(dirty.limits && 'border-amber-400 bg-amber-50')}
+        >
           <CardHeader>
             <CardAction>
               <span className="flex size-11 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
@@ -1649,9 +1888,67 @@ export function SettingsAdmin({
                 {isSaving('limits') ? 'Salvando…' : 'Salvar limites de texto'}
               </Button>
             </div>
+            {dirty.limits ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </CardColumns>
+
+      <Modal
+        open={showLeaveWarning}
+        onClose={() => setShowLeaveWarning(false)}
+        title="Alterações não salvas"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-600">
+            Existem configurações pendentes de salvamento. Salve os cards
+            alterados antes de sair desta página.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPricing(rewardPricing)
+                setQuick(quickMessage)
+                setSla(taskSla)
+                setExtensions(extensionRules)
+                setRetention(notificationRetention)
+                setMute(notificationMute)
+                setDecay(taskDecay)
+                setRules(taskRules)
+                setAttachmentBudget(attachmentBudgetProp)
+                setAttachments(attachmentSettings)
+                setTimezone(houseTimezone.timezone)
+                setLimits(textLimits)
+                pendingCardsRef.current = []
+                const target = pendingNavigation
+                setPendingNavigation(null)
+                setShowLeaveWarning(false)
+                if (target) {
+                  router.push(target)
+                }
+              }}
+            >
+              Cancelar alterações
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setShowLeaveWarning(false)
+                focusFirstPendingCard()
+              }}
+            >
+              Voltar e salvar
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

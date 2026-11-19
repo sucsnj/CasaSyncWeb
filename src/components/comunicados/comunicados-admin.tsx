@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Megaphone, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Megaphone, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import {
   createComunicado,
   deleteComunicado,
@@ -106,8 +106,8 @@ export function ComunicadosAdmin() {
       return {
         comunicados: exists
           ? bundle.comunicados.map((item) =>
-              item.id === comunicado.id ? comunicado : item
-            )
+            item.id === comunicado.id ? comunicado : item
+          )
           : [comunicado, ...bundle.comunicados],
         confirmations: exists
           ? bundle.confirmations
@@ -329,13 +329,19 @@ export function ComunicadosAdmin() {
 
           <div ref={formRef} className="scroll-mt-24">
             {showForm ? (
-              <Card>
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle>{editingId ? 'Editar comunicado' : 'Novo comunicado'}</CardTitle>
-                  <Button variant="ghost" size="icon" onClick={resetForm} aria-label="Fechar">
-                    ×
-                  </Button>
-                </CardHeader>
+            <Card className="relative">
+              <CardHeader>
+                <CardTitle>{editingId ? 'Editar comunicado' : 'Novo comunicado'}</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-3 top-3"
+                  onClick={resetForm}
+                  aria-label="Fechar"
+                >
+                  <X className="size-4" />
+                </Button>
+              </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {formError ? (
@@ -387,11 +393,10 @@ export function ComunicadosAdmin() {
                             type="button"
                             onClick={() => toggleWeekday(day)}
                             aria-pressed={form.weekdays.includes(day)}
-                            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                              form.weekdays.includes(day)
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${form.weekdays.includes(day)
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
                           >
                             {label}
                           </button>
@@ -435,11 +440,10 @@ export function ComunicadosAdmin() {
                       <div className="min-w-0 flex-1">
                         <div className="mb-1.5 flex flex-wrap items-center gap-2">
                           <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              comunicado.published
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${comunicado.published
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                              }`}
                           >
                             {comunicado.published ? 'Publicado' : 'Rascunho'}
                           </span>

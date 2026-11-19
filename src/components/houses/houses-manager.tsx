@@ -78,6 +78,7 @@ type Member = {
   avatarUrl: string | null
   points: number
   role: 'ADMIN' | 'DEPENDENT'
+  lastAccess: string | null
 }
 
 type HousesManagerProps = {
@@ -94,12 +95,40 @@ type HousesManagerProps = {
    * Vem do servidor — castigos vencidos não entram na lista.
    */
   activePunishments: HouseActivePunishment[]
+  /** Fuso horário da casa ativa (para formatar o último acesso). */
+  timezone?: string
 }
 
 type ConfirmAction =
   | { kind: 'expel'; member: Member }
   | { kind: 'deleteDependent'; member: Member }
   | { kind: 'deleteHouse'; house: House }
+
+function formatLastAccess(value: string | null, timeZone: string): string {
+  if (!value) return 'Sem acesso'
+  const date = new Date(value)
+  const now = new Date()
+  const dayKey = (d: Date) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+  if (dayKey(date) === dayKey(now)) {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)
+  }
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date)
+}
 
 export function HousesManager({
   houses,
@@ -110,6 +139,7 @@ export function HousesManager({
   currentUserId,
   members,
   activePunishments,
+  timezone = 'America/Recife',
 }: HousesManagerProps) {
   const invalidateHouses = useInvalidateHouses()
   const invalidateShell = useInvalidateShell()
@@ -992,6 +1022,11 @@ export function HousesManager({
                             className="flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-700"
                           >
                             A
+                          </span>
+                        ) : null}
+                        {member.role === 'DEPENDENT' ? (
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                            {formatLastAccess(member.lastAccess, timezone)}
                           </span>
                         ) : null}
                       </span>

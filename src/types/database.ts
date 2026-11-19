@@ -832,8 +832,9 @@ chest_items: {
           comunicado_id: string
           profile_id: string
           house_id: string
-          delivered_count: number
-          last_confirmed_at: string | null
+           delivered_count: number
+           failed_attempts: number
+           last_confirmed_at: string | null
           created_at: string
           updated_at: string
         }
@@ -842,8 +843,9 @@ chest_items: {
           comunicado_id: string
           profile_id: string
           house_id: string
-          delivered_count?: number
-          last_confirmed_at?: string | null
+           delivered_count?: number
+           failed_attempts?: number
+           last_confirmed_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -852,8 +854,9 @@ chest_items: {
           comunicado_id?: string
           profile_id?: string
           house_id?: string
-          delivered_count?: number
-          last_confirmed_at?: string | null
+           delivered_count?: number
+           failed_attempts?: number
+           last_confirmed_at?: string | null
           created_at?: string
           updated_at?: string
         }

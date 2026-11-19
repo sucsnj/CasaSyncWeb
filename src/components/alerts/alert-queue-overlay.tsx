@@ -13,10 +13,11 @@ import { parseRichText } from '@/components/ui/rich-text'
 import { Input } from '@/components/ui/input'
 import type { DueComunicado } from '@/utils/comunicados'
 import {
-  ALERT_TYPED_WORDS_REQUIRED,
-  countNonConsecutiveTypedWords,
-  hasTypedAlertConfirmation,
+  alertTargetWords,
+  communicadoTargetHint,
+  communicadoTargetWords,
   isPendingPenalty,
+  normalizeAlertText,
   sortAlertQueue,
   toComunicadoAlertItem,
   toPenaltyAlertItem,
@@ -67,6 +68,7 @@ export function AlertQueueOverlay({
   // Digitação guardada com o id do item: trocar de item (FIFO) zera sozinho.
   const [phrase, setPhrase] = useState({ id: '', text: '' })
   const [pending, setPending] = useState(false)
+  const [localFailures, setLocalFailures] = useState<Record<string, number>>({})
   // O overlay é exclusivamente client-side (portal em `document.body`): montar a
   // árvore durante o SSR divergia do cliente (branch `typeof document`), o que
   // quebrava a hidratação quando a fila tinha itens. `useSyncExternalStore`
@@ -116,22 +118,36 @@ export function AlertQueueOverlay({
   })
 
   const typedText = current && phrase.id === current.id ? phrase.text : ''
-  const matchedCount =
+  const failedAttempts =
     isComunicado && current
-      ? countNonConsecutiveTypedWords(
-          typedText,
-          current.title,
-          current.description
-        )
+      ? (current.failedAttempts ?? 0) + (localFailures[current.id] ?? 0)
       : 0
+  const filteredCount =
+    isComunicado && current
+      ? alertTargetWords(`${current.title} ${current.description}`).length
+      : 0
+  const targetCount =
+    isComunicado && current
+      ? Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
+      : 0
+  const targetWords =
+    isComunicado && current
+      ? communicadoTargetWords(
+          current.title,
+          current.description,
+          undefined,
+          targetCount
+        )
+      : []
+  const typedWordSet = new Set(
+    normalizeAlertText(typedText).split(' ').filter(Boolean)
+  )
+  const matchedCount = targetWords.filter((word) => typedWordSet.has(word)).length
   const canConfirm =
     !isComunicado ||
     (current
-      ? hasTypedAlertConfirmation(
-          typedText,
-          current.title,
-          current.description
-        )
+      ? typedText.trim().split(/\s+/).filter(Boolean).length >= targetCount &&
+        targetCount > 0
       : false)
 
   // Enquanto um alerta está na tela: trava o scroll, prende o foco na janela e
@@ -174,13 +190,19 @@ export function AlertQueueOverlay({
     setPending(true)
     const item = current
     try {
-      if (item.kind === 'comunicado') {
-        const res = await confirmComunicadoDelivery(item.id, typedText)
-        // Sai da fila mesmo se o servidor recusar (item obsoleto/praga antiga):
-        // insistir no mesmo item bloquearia a fila inteira.
-        setConfirmed((prev) => new Set(prev).add(item.id))
-        if (!res.ok) toast.error(res.error)
-      } else {
+        if (item.kind === 'comunicado') {
+          const res = await confirmComunicadoDelivery(item.id, typedText)
+          if (res.ok) {
+            setConfirmed((prev) => new Set(prev).add(item.id))
+            setLocalFailures((prev) => ({ ...prev, [item.id]: 0 }))
+          } else {
+            setLocalFailures((prev) => ({
+              ...prev,
+              [item.id]: (prev[item.id] ?? 0) + 1,
+            }))
+            toast.error(res.error)
+          }
+        } else {
         await markNotificationRead(item.id)
         setPenalties((prev) => prev.filter((entry) => entry.id !== item.id))
       }
@@ -245,8 +267,7 @@ export function AlertQueueOverlay({
                 htmlFor="alert-queue-phrase"
                 className="text-sm font-medium text-slate-700"
               >
-                Digite {ALERT_TYPED_WORDS_REQUIRED} palavras do aviso para
-                confirmar a leitura
+                Digite as palavras indicadas para confirmar a leitura
               </label>
               <Input
                 id="alert-queue-phrase"
@@ -271,10 +292,12 @@ export function AlertQueueOverlay({
               >
                 {canConfirm
                   ? 'Leitura confirmada. Pode confirmar o aviso.'
-                  : `${matchedCount} de ${ALERT_TYPED_WORDS_REQUIRED} palavras — pode usar o título ou a descrição, sem diferenciar maiúsculas nem acentos.`}
-              </p>
-              <p className="text-xs text-red-600">
-                Palavras em sequência (2 ou mais consecutivas) não contabilizam.
+                  : `${matchedCount} de ${targetWords.length} palavras — ${communicadoTargetHint(
+                      current.title,
+                      current.description,
+                      undefined,
+                      targetCount
+                    )} (na ordem indicada)`}
               </p>
             </div>
 

@@ -23,6 +23,7 @@ export function HousesScreen() {
       currentUserId={userId}
       members={data.members}
       activePunishments={data.activePunishments}
+      timezone={data.timezone}
     />
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { Lock, Package, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Lock, Package, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { createChestItem, deleteChestItem, updateChestItem } from '@/actions/chest'
 import { TaskAttachmentInput } from '@/components/tasks/task-attachment-input'
@@ -252,7 +252,7 @@ export function ChestAdmin({
   return (
     <div className="flex flex-col gap-4">
       <div ref={formRef} className="scroll-mt-24">
-        <Card>
+        <Card className="relative">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Package className="size-5 text-amber-600" />
@@ -277,12 +277,11 @@ export function ChestAdmin({
                   }
                 }}
               >
-                <Plus className="size-3.5" />
-                {showForm ? 'Fechar' : 'Novo item'}
+                {showForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+                {!showForm ? 'Novo item' : null}
               </Button>
             </CardAction>
           </CardHeader>
-
           {showForm ? (
             <CardContent>
               <form onSubmit={handleSubmit} className="flex flex-col gap-3">

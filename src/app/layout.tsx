@@ -43,12 +43,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={cn("font-sans", geist.variable)}>
       <body className="min-h-svh bg-slate-100 text-slate-800 antialiased">
-        <AndroidBackButton /> {/* <-- Monte o componente aqui */}
-        <Providers>{children}</Providers>
-        <ServiceWorkerRegistration />
-        <NativeServiceWorkerGuard />
-        <PullToRefresh />
-        <Toaster
+<AndroidBackButton /> {/* <-- Monte o componente aqui */}
+<Providers>
+  {children}
+  <PullToRefresh />
+</Providers>
+<ServiceWorkerRegistration />
+<NativeServiceWorkerGuard />
+<Toaster
           position="bottom-right"
           theme="system"
           closeButton

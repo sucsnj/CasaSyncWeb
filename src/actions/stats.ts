@@ -87,10 +87,9 @@ export async function incrementDependentStat(
         const { data: updated, error } = await admin
           .from('dependent_stats')
           .update({
-            ...statPatch(column, nextValue),
-            house_id: houseId,
-            updated_at: new Date().toISOString(),
-          })
+          ...statPatch(column, nextValue),
+          house_id: houseId,
+        })
           .eq('profile_id', profileId)
           .eq(column, current[column])
           .select('profile_id')
@@ -223,7 +222,15 @@ export async function registerLoginDay(
       .eq('profile_id', profileId)
       .maybeSingle()
 
-    if (row && row.last_login_day === today) return
+    if (row && row.last_login_day === today) {
+      // Já contou o dia — não duplica métrica, mas atualiza o "último
+      // acesso" (hora) para o painel do ADMIN.
+      await admin
+        .from('dependent_stats')
+        .update({ updated_at: new Date().toISOString(), house_id: houseId })
+        .eq('profile_id', profileId)
+      return
+    }
 
     const now = new Date().toISOString()
 

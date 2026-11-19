@@ -89,12 +89,14 @@ export type DueComunicado = {
   description: string
   repeatsTotal: number
   deliveredCount: number
+  failedAttempts: number
   remaining: number
 }
 
 export function toDueComunicado(
   comunicado: Comunicado,
-  deliveredCount: number
+  deliveredCount: number,
+  failedAttempts = 0
 ): DueComunicado {
   return {
     id: comunicado.id,
@@ -103,6 +105,7 @@ export function toDueComunicado(
     description: comunicado.description,
     repeatsTotal: comunicado.repeats_total,
     deliveredCount,
+    failedAttempts,
     // Sem limite (`repeats_total = 0`): `Infinity` para o consumidor não exibir
     // "0 vezes" (o trecho de exibição está comentado no overlay).
     remaining: isComunicadoUnlimited(comunicado.repeats_total)
