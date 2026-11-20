@@ -157,7 +157,8 @@ export function communicadoTargetPositions(
   const words = alertTargetWords(`${title} ${description}`)
   const count = words.length
   if (count === 0) return []
-  const requested = Math.max(1, Math.min(targetCount, count))
+  const distinctCount = new Set(words).size
+  const requested = Math.max(1, Math.min(targetCount, count, distinctCount || targetCount))
   if (count <= requested) return words.map((_, index) => index)
 
   const rng = seededRandom(dailySeed(`${date}|${words.join(' ')}`))
@@ -173,16 +174,23 @@ export function communicadoTargetPositions(
   for (const index of indices) {
     if (chosen.length >= requested) break
     if (chosen.some((picked) => Math.abs(picked - index) === 1)) continue
-    // Prefere palavras distintas quando possível.
-    if (chosenWords.has(words[index]) && chosen.length < requested) {
-      const remaining = count - chosen.length
-      const needed = requested - chosen.length
-      if (remaining > needed) continue
-    }
+    // Palavras repetidas não contam: nunca seleciona a mesma palavra duas vezes.
+    if (chosenWords.has(words[index])) continue
     chosen.push(index)
     chosenWords.add(words[index])
   }
 
+  if (chosen.length < requested) {
+    for (let i = 0; i < count && chosen.length < requested; i++) {
+      if (!chosen.includes(i) && !chosenWords.has(words[i])) {
+        chosen.push(i)
+        chosenWords.add(words[i])
+      }
+    }
+  }
+
+  // Último recurso: se ainda faltam posições (texto com poucas palavras
+  // distintas), completa com as posições restantes.
   if (chosen.length < requested) {
     for (let i = 0; i < count && chosen.length < requested; i++) {
       if (!chosen.includes(i)) chosen.push(i)

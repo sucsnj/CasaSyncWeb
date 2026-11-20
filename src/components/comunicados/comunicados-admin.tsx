@@ -459,7 +459,7 @@ export function ComunicadosAdmin() {
                         </div>
                         {total > 0 ? (
                           <p className="mt-1.5 text-xs font-medium text-emerald-700">
-                            {total} confirmação{total === 1 ? '' : 'ões'}
+                            {total} {total === 1 ? 'confirmação' : 'confirmações'}
                           </p>
                         ) : null}
                       </div>

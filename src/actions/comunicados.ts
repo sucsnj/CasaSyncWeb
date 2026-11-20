@@ -534,7 +534,9 @@ export async function confirmComunicadoDelivery(
     .maybeSingle()
 
   const failedAttempts = row?.failed_attempts ?? 0
-  const filteredCount = alertTargetWords(`${comunicado.title} ${comunicado.description}`).length
+  const filteredCount = new Set(
+    alertTargetWords(`${comunicado.title} ${comunicado.description}`)
+  ).size
   const targetCount = Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
 
   if (
@@ -549,7 +551,7 @@ export async function confirmComunicadoDelivery(
     // Registra a tentativa falha (cria a linha se ainda não existir).
     const now = new Date().toISOString()
     if (!row) {
-      await admin.from('comunicado_deliveries').insert({
+      const { error: insertError } = await admin.from('comunicado_deliveries').insert({
         comunicado_id: comunicadoId,
         profile_id: user.id,
         house_id: house.id,
@@ -560,6 +562,9 @@ export async function confirmComunicadoDelivery(
         created_at: now,
         updated_at: now,
       })
+      if (insertError) {
+        return { ok: false, error: `Falha ao registrar a tentativa: ${insertError.message}` }
+      }
     } else {
       await admin
         .from('comunicado_deliveries')
@@ -628,7 +633,7 @@ export async function confirmComunicadoDelivery(
       created_at: now,
       updated_at: now,
     })
-    if (error) return { ok: false, error: 'Falha ao confirmar o comunicado.' }
+    if (error) return { ok: false, error: `Falha ao confirmar o comunicado: ${error.message}` }
     return { ok: true, message: 'Comunicado confirmado.' }
   }
 

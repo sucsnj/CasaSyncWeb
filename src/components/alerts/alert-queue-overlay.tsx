@@ -124,7 +124,8 @@ export function AlertQueueOverlay({
       : 0
   const filteredCount =
     isComunicado && current
-      ? alertTargetWords(`${current.title} ${current.description}`).length
+      ? new Set(alertTargetWords(`${current.title} ${current.description}`))
+          .size
       : 0
   const targetCount =
     isComunicado && current
@@ -139,10 +140,15 @@ export function AlertQueueOverlay({
           targetCount
         )
       : []
-  const typedWordSet = new Set(
-    normalizeAlertText(typedText).split(' ').filter(Boolean)
-  )
-  const matchedCount = targetWords.filter((word) => typedWordSet.has(word)).length
+  const typedWords = normalizeAlertText(typedText).split(' ').filter(Boolean)
+  // Progresso na ordem exigida pelo servidor: uma palavra digitada uma vez
+  // conta uma ocorrência (não todas as repetições do alvo).
+  let matchedCount = 0
+  for (const word of typedWords) {
+    if (matchedCount < targetWords.length && word === targetWords[matchedCount]) {
+      matchedCount++
+    }
+  }
   const canConfirm =
     !isComunicado ||
     (current
