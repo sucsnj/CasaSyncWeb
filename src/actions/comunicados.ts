@@ -14,9 +14,11 @@ import {
   COMUNICADO_MIN_DESCRIPTION,
   COMUNICADO_TIME_PATTERN,
   comunicadoSchedule,
+  currentComunicadoOccurrence,
   firstComunicadoOccurrence,
   isComunicadoUnlimited,
   nextComunicadoOccurrence,
+  skipMissedComunicadoOccurrences,
   toDueComunicado,
   type Comunicado,
   type DueComunicado,
@@ -331,8 +333,9 @@ export async function deleteComunicado(
 /**
  * ADMIN zera o contador de confirmações de um comunicado da casa ativa. Todas as
  * entregas (`comunicado_deliveries`) voltam a `delivered_count = 0` com
- * `last_confirmed_at = null`, então os dependentes voltam a receber o aviso (se
- * publicado) como se fosse a primeira vez. O comunicado em si não é alterado.
+ * `last_confirmed_at` e `last_occurrence_at` nulos, então os dependentes voltam
+ * a receber o aviso (se publicado) como se fosse a primeira vez. O comunicado
+ * em si não é alterado.
  */
 export async function resetComunicadoConfirmations(
   comunicadoId: string
@@ -359,6 +362,7 @@ export async function resetComunicadoConfirmations(
     .update({
       delivered_count: 0,
       last_confirmed_at: null,
+      last_occurrence_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('comunicado_id', comunicadoId)
@@ -383,12 +387,14 @@ export async function resetComunicadoConfirmations(
  * horário de hoje ainda não chegou → deve esperar; hoje não é dia agendado →
  * próximo dia agendado.
  *
- * - sem linha de entrega → devido quando `now >= firstComunicadoOccurrence`
- *   (slot de hoje ou próximo; intervalo ignorado na 1ª exibição);
+ * - sem linha de entrega (ou `last_occurrence_at` nulo) → devido quando
+ *   `now >= firstComunicadoOccurrence` (slot de hoje ou próximo; intervalo
+ *   ignorado na 1ª exibição);
  * - `repeats_total = 0` → sem limite: nunca encerra para o dependente;
  * - senão, `delivered_count >= repeats_total` → encerrado para este dependente;
- * - senão, devido quando `now >= próxima ocorrência` a partir da última
- *   confirmação (`last_confirmed_at`, somando o intervalo).
+ * - senão, devido quando `now >= próxima ocorrência` a partir da **ocorrência
+ *   agendada** já tratada (`last_occurrence_at`, somando o intervalo). O
+ *   `last_confirmed_at` é só auditoria: late confirmation não desloca a agenda.
  */
 export async function getDueComunicados(): Promise<DueComunicado[]> {
   const { user, profile } = await getSessionProfile()
@@ -416,7 +422,9 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
   const ids = comunicados.map((comunicado) => comunicado.id)
   const { data: deliveries } = await admin
     .from('comunicado_deliveries')
-    .select('comunicado_id, delivered_count, failed_attempts, last_confirmed_at')
+    .select(
+      'comunicado_id, delivered_count, failed_attempts, last_confirmed_at, last_occurrence_at'
+    )
     .eq('profile_id', user.id)
     .in('comunicado_id', ids)
 
@@ -438,24 +446,24 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
 
     const schedule = comunicadoSchedule(comunicado)
 
-    // A **repetição** só vale para quem JÁ CONFIRMOU — o `last_confirmed_at` é
-    // gravado junto com a confirmação e é o que agenda a próxima ocorrência.
-    // Uma entrega SEM confirmação (por exemplo depois do "Zerar confirmações",
-    // que zera `delivered_count` e `last_confirmed_at`) é a 1ª exibição do
-    // dependente: vale a regra "slot de hoje ou próximo" e o aviso aparece
-    // assim que o horário do dia passa (ou no próximo dia agendado).
+    // A **repetição** é ancorada na ocorrência agendada (`last_occurrence_at`),
+    // não no instante em que o dependente confirmou: confirmar atrasado NÃO
+    // desloca a agenda. O fallback para `last_confirmed_at` cobre linhas
+    // anteriores à migração que criou a coluna.
     //
-    // O bug: decidir pelo critério da EXISTÊNCIA da entrega caía no ramo de
-    // repetição, e o fallback "agora" fingia uma confirmação recém-feita —
-    // empurrando a próxima ocorrência para o dia seguinte e fazendo o aviso
-    // sumir.
-    const lastConfirmed = delivery?.last_confirmed_at
-      ? new Date(delivery.last_confirmed_at)
-      : null
+    // Sem âncora (por exemplo depois do "Zerar confirmações", que zera
+    // `delivered_count`, `last_confirmed_at` e `last_occurrence_at`) é a 1ª
+    // exibição do dependente: vale a regra "slot de hoje ou próximo" e o aviso
+    // aparece assim que o horário do dia passa (ou no próximo dia agendado).
+    const lastOccurrence = delivery?.last_occurrence_at
+      ? new Date(delivery.last_occurrence_at)
+      : delivery?.last_confirmed_at
+        ? new Date(delivery.last_confirmed_at)
+        : null
 
-    if (lastConfirmed) {
-      // Repetição: próxima ocorrência a partir da última confirmação.
-      const next = nextComunicadoOccurrence(lastConfirmed, schedule, timezone)
+    if (lastOccurrence) {
+      // Repetição: próxima ocorrência a partir da ocorrência agendada tratada.
+      const next = nextComunicadoOccurrence(lastOccurrence, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
         due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0))
       }
@@ -476,8 +484,9 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
  * DEPENDENTE confirma a exibição de um comunicado da própria casa. A frequência
  * é POR dependente: com limite, a contagem sobe até `repeats_total` (o servidor
  * nunca deixa ultrapassar, mesmo com a fila desatualizada); com `repeats_total
- * = 0` a contagem é livre e nunca encerra. Cada confirmação vira o
- * `last_confirmed_at` que agenda a próxima repetição.
+ * = 0` a contagem é livre e nunca encerra. A próxima repetição é ancorada na
+ * **ocorrência agendada** (`last_occurrence_at`), não no `last_confirmed_at`:
+ * confirmar atrasado não desloca a agenda e ocorrências perdidas são puladas.
  *
  * `typedPhrase` é a **confirmação de leitura** (regra do usuário): o dependente
  * precisa digitar ao menos `ALERT_TYPED_WORDS_REQUIRED` palavras do próprio
@@ -505,7 +514,9 @@ export async function confirmComunicadoDelivery(
 
   const { data: comunicado } = await admin
     .from('comunicados')
-    .select('id, house_id, published, repeats_total, title, description')
+    .select(
+      'id, house_id, published, repeats_total, repeat_interval_days, repeat_weekdays, repeat_time, title, description'
+    )
     .eq('id', comunicadoId)
     .maybeSingle()
 
@@ -515,7 +526,9 @@ export async function confirmComunicadoDelivery(
 
   const { data: row } = await admin
     .from('comunicado_deliveries')
-    .select('id, delivered_count, failed_attempts')
+    .select(
+      'id, delivered_count, failed_attempts, last_confirmed_at, last_occurrence_at'
+    )
     .eq('comunicado_id', comunicadoId)
     .eq('profile_id', user.id)
     .maybeSingle()
@@ -543,6 +556,7 @@ export async function confirmComunicadoDelivery(
         delivered_count: 0,
         failed_attempts: 1,
         last_confirmed_at: null,
+        last_occurrence_at: null,
         created_at: now,
         updated_at: now,
       })
@@ -558,7 +572,49 @@ export async function confirmComunicadoDelivery(
     }
   }
 
-  const now = new Date().toISOString()
+  const nowDate = new Date()
+  const now = nowDate.toISOString()
+
+  // Sem limite (`repeats_total = 0`): nunca é "concluído".
+  if (
+    row &&
+    !isComunicadoUnlimited(comunicado.repeats_total) &&
+    row.delivered_count >= comunicado.repeats_total
+  ) {
+    return { ok: false, error: 'Este comunicado já foi concluído.' }
+  }
+
+  const schedule = comunicadoSchedule(comunicado)
+  const { timezone } = await getHouseTimezoneSettings(comunicado.house_id)
+  // A repetição conta a partir da ocorrência agendada já tratada — o
+  // `last_confirmed_at` é só auditoria do horário real da digitação. Linhas
+  // anteriores à migração caem no fallback `last_confirmed_at`.
+  const previousOccurrence = row?.last_occurrence_at
+    ? new Date(row.last_occurrence_at)
+    : row?.last_confirmed_at
+      ? new Date(row.last_confirmed_at)
+      : null
+  let dueOccurrence: Date
+  if (previousOccurrence) {
+    dueOccurrence = nextComunicadoOccurrence(previousOccurrence, schedule, timezone)
+    // Cliente pode estar com uma fila desatualizada (ex.: ADMIN mudou a
+    // agenda): confirmar algo que ainda não venceu não consome repetição nem
+    // mexe na âncora. A 1ª exibição não tem âncora para comparar (o overlay pode
+    // estar aberto desde um slot antigo), então ela usa o slot mais recente.
+    if (dueOccurrence.getTime() > nowDate.getTime()) {
+      return { ok: false, error: 'Este comunicado ainda não está disponível.' }
+    }
+  } else {
+    dueOccurrence = currentComunicadoOccurrence(nowDate, schedule, timezone)
+  }
+  // Confirmação atrasada: avança até a ocorrência mais recente que já passou,
+  // para a próxima cair no futuro (sem fila de avisos perdidos).
+  const lastOccurrenceAt = skipMissedComunicadoOccurrences(
+    dueOccurrence,
+    schedule,
+    timezone,
+    nowDate
+  ).toISOString()
 
   if (!row) {
     const { error } = await admin.from('comunicado_deliveries').insert({
@@ -568,16 +624,12 @@ export async function confirmComunicadoDelivery(
       delivered_count: 1,
       failed_attempts: 0,
       last_confirmed_at: now,
+      last_occurrence_at: lastOccurrenceAt,
       created_at: now,
       updated_at: now,
     })
     if (error) return { ok: false, error: 'Falha ao confirmar o comunicado.' }
     return { ok: true, message: 'Comunicado confirmado.' }
-  }
-
-  // Sem limite (`repeats_total = 0`): nunca é "concluído".
-  if (!isComunicadoUnlimited(comunicado.repeats_total) && row.delivered_count >= comunicado.repeats_total) {
-    return { ok: false, error: 'Este comunicado já foi concluído.' }
   }
 
   // Update com guard no valor lido (+ 1 retry relendo): duas janelas não
@@ -596,7 +648,13 @@ export async function confirmComunicadoDelivery(
       : Math.min(fresh.delivered_count + 1, comunicado.repeats_total)
     const { data: updated } = await admin
       .from('comunicado_deliveries')
-      .update({ delivered_count: count, failed_attempts: 0, last_confirmed_at: now, updated_at: now })
+      .update({
+        delivered_count: count,
+        failed_attempts: 0,
+        last_confirmed_at: now,
+        last_occurrence_at: lastOccurrenceAt,
+        updated_at: now,
+      })
       .eq('id', fresh.id)
       .eq('delivered_count', fresh.delivered_count)
       .select('id')

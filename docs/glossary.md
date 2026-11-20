@@ -82,11 +82,14 @@ em primeiro; siglas técnicas resolvidas no fim.
   já; antes do horário, espera o horário de hoje; dia não agendado → próximo dia
   agendado.
 - **Repetição por dependente** — cada confirmação (`comunicado_deliveries`)
-  agenda a próxima exibição (período em dias, dias da semana e horário em
-  America/Recife) até completar `repeats_total` confirmações.
-- **Confirmação / entrega** (`comunicado_deliveries`) — `delivered_count` +
-  `last_confirmed_at` por (comunicado, dependente); `last_confirmed_at` é a
-  referência do cálculo da próxima ocorrência.
+  agenda a próxima exibição (período em dias, dias da semana e horário no fuso
+  da casa) até completar `repeats_total` confirmações. A âncora é a **ocorrência
+  agendada** (`last_occurrence_at`): confirmar atrasado não desloca a agenda e
+  ocorrências perdidas são puladas.
+- **Confirmação / entrega** (`comunicado_deliveries`) — `delivered_count`,
+  `last_confirmed_at` (auditoria do instante real) e `last_occurrence_at` (slot
+  agendado tratado, referência do cálculo da próxima ocorrência) por
+  (comunicado, dependente).
 - **Devido** — primeiro aviso sem entrega registrada quando `now >=` a 1ª
   ocorrência (slot de hoje ou próximo, **sem intervalo** no 1º ciclo) **ou**
   próxima ocorrência vencida (derivado no servidor via `getDueComunicados`); sem

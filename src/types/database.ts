@@ -835,6 +835,7 @@ chest_items: {
            delivered_count: number
            failed_attempts: number
            last_confirmed_at: string | null
+           last_occurrence_at: string | null
           created_at: string
           updated_at: string
         }
@@ -846,6 +847,7 @@ chest_items: {
            delivered_count?: number
            failed_attempts?: number
            last_confirmed_at?: string | null
+           last_occurrence_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -857,6 +859,7 @@ chest_items: {
            delivered_count?: number
            failed_attempts?: number
            last_confirmed_at?: string | null
+           last_occurrence_at?: string | null
           created_at?: string
           updated_at?: string
         }

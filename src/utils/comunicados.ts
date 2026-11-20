@@ -114,7 +114,14 @@ export function toDueComunicado(
   }
 }
 
-export function comunicadoSchedule(comunicado: Comunicado): ComunicadoSchedule {
+export type ComunicadoScheduleSource = Pick<
+  Comunicado,
+  'repeats_total' | 'repeat_interval_days' | 'repeat_weekdays' | 'repeat_time'
+>
+
+export function comunicadoSchedule(
+  comunicado: ComunicadoScheduleSource
+): ComunicadoSchedule {
   return {
     repeatsTotal: comunicado.repeats_total,
     repeatIntervalDays: comunicado.repeat_interval_days,
@@ -164,16 +171,20 @@ function slotOf(instant: Date, time: string, timeZone: string): number {
 }
 
 /**
- * Próxima ocorrência agendada de um comunicado, DADO o instante da última
- * confirmação (`after`) e o fuso da casa:
+ * Próxima ocorrência agendada de um comunicado, DADA a ocorrência já tratada
+ * (`after`, normalmente `last_occurrence_at`) e o fuso da casa:
  *
  *   referência = after + repeatIntervalDays (ou `after` se 0)
  *   candidato   = primeiro instante >= referência cujo dia da semana está em
  *                 `repeatWeekdays` e cujo relógio local é `HH:MM`
  *
- * Usado para as REPETIÇÕES (`after` = última confirmação e intervalo real).
- * Para a 1ª exibição use `firstComunicadoOccurrence` (regra "slot de hoje ou
- * próximo").
+ * Com intervalo > 0, a ocorrência exatamente na referência conta (ex.: slot de
+ * segunda + 3 dias = quinta 08:00). Com intervalo 0 a referência é a própria
+ * ocorrência tratada, então o candidato precisa ser estritamente posterior —
+ * senão ela reapareceria no mesmo instante.
+ *
+ * Usado para as REPETIÇÕES. Para a 1ª exibição use
+ * `firstComunicadoOccurrence` (regra "slot de hoje ou próximo").
  */
 export function nextComunicadoOccurrence(
   after: Date,
@@ -190,7 +201,11 @@ export function nextComunicadoOccurrence(
   }
 
   let candidateMs = slotOf(reference, schedule.repeatTime, timeZone)
-  if (candidateMs <= reference.getTime()) {
+  const referenceMs = reference.getTime()
+  if (
+    candidateMs < referenceMs ||
+    (candidateMs === referenceMs && schedule.repeatIntervalDays === 0)
+  ) {
     candidateMs += 86_400_000
   }
 
@@ -239,4 +254,60 @@ export function firstComunicadoOccurrence(
     { ...schedule, repeatIntervalDays: 0 },
     timeZone
   )
+}
+
+/**
+ * Ocorrência agendada mais recente que já passou (`<= now`), ignorando o
+ * intervalo. É a âncora da 1ª confirmação (ou da primeira após "Zerar
+ * confirmações"): a regra "slot de hoje ou próximo" pode disparar um slot que
+ * já passou, e a repetição precisa contar a partir **dele**, não de `now`.
+ */
+export function currentComunicadoOccurrence(
+  now: Date,
+  schedule: ComunicadoSchedule,
+  timeZone: string
+): Date {
+  const weekdays = schedule.repeatWeekdays.length > 0
+    ? schedule.repeatWeekdays
+    : COMUNICADO_DEFAULT_WEEKDAYS
+
+  let candidateMs = slotOf(now, schedule.repeatTime, timeZone)
+  // Slot de hoje ainda no futuro → a ocorrência mais recente é a de ontem.
+  if (candidateMs > now.getTime()) candidateMs -= 86_400_000
+
+  // Volta de dia em dia (no máx. 8) até cair num dia da semana permitido.
+  for (let i = 0; i < 8; i++) {
+    const candidate = new Date(candidateMs)
+    if (weekdays.includes(zonedWeekday(candidate, timeZone))) {
+      return candidate
+    }
+    candidateMs -= 86_400_000
+  }
+
+  return new Date(candidateMs)
+}
+
+/**
+ * Avança uma ocorrência até a **mais recente que já passou** (`<= now`),
+ * pulando as ocorrências perdidas. O retorno é a nova âncora de agendamento:
+ * a próxima ocorrência derivada dela cai sempre no futuro, então um dependente
+ * que ficou dias sem confirmar não recebe uma fila de avisos atrasados.
+ *
+ * Usado ao confirmar (e só ao confirmar): a checagem de "devido" continua
+ * comparando a próxima ocorrência com `now`, sem pular nada.
+ */
+export function skipMissedComunicadoOccurrences(
+  occurrence: Date,
+  schedule: ComunicadoSchedule,
+  timeZone: string,
+  now: Date
+): Date {
+  let handled = occurrence
+  // Limite de segurança: ~10 anos de ocorrências diárias.
+  for (let i = 0; i < 3660; i++) {
+    const next = nextComunicadoOccurrence(handled, schedule, timeZone)
+    if (next.getTime() > now.getTime()) break
+    handled = next
+  }
+  return handled
 }

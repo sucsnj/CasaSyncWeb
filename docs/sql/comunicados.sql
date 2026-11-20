@@ -25,16 +25,19 @@ create table if not exists public.comunicados (
 create index if not exists comunicados_house_idx on public.comunicados (house_id);
 create index if not exists comunicados_published_house_idx on public.comunicados (published, house_id);
 
--- 2) Entregas por dependente: cada confirmação soma `delivered_count` e vira o
---    `last_confirmed_at` que agenda a próxima repetição (a roda do agendamento
---    é server-side, na próxima abertura — sem cron no projeto).
+-- 2) Entregas por dependente: cada confirmação soma `delivered_count` e grava
+--    `last_occurrence_at` (a ocorrência agendada tratada), que agenda a próxima
+--    repetição. `last_confirmed_at` é só auditoria do instante real da digitação.
+--    A roda do agendamento é server-side, na próxima abertura — sem cron.
 create table if not exists public.comunicado_deliveries (
   id uuid primary key default gen_random_uuid(),
   comunicado_id uuid not null references public.comunicados(id) on delete cascade,
   profile_id uuid not null references public.profiles(id) on delete cascade,
   house_id uuid not null references public.houses(id) on delete cascade,
   delivered_count int not null default 0 check (delivered_count >= 0),
+  failed_attempts int not null default 0 check (failed_attempts >= 0),
   last_confirmed_at timestamptz,
+  last_occurrence_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (comunicado_id, profile_id)

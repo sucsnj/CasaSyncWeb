@@ -46,16 +46,27 @@ endpoint ou após confirmar.
   agendado, vai para o próximo dia agendado. O intervalo de repetição não conta
   nesse primeiro ciclo.
 - **Repetição é por dependente.** Cada "Confirmar" soma `delivered_count`, grava
-  `last_confirmed_at` e agenda a próxima exibição via
-  `nextComunicadoOccurrence(after, agenda)` (referência = `last_confirmed_at` +
-  período em dias; candidato = primeiro instante ≥ referência cujo dia está em
-  `repeat_weekdays` e cujo relógio local é `repeat_time`). Ao completar
-  `repeats_total`, o dependente para de receber.
+  `last_occurrence_at` (a ocorrência agendada tratada) e agenda a próxima
+  exibição via `nextComunicadoOccurrence(occurrence, agenda)` (referência =
+  ocorrência + período em dias; candidato = primeiro instante ≥ referência cujo
+  dia está em `repeat_weekdays` e cujo relógio local é `repeat_time`). O
+  `last_confirmed_at` continua gravado, mas só como auditoria do instante real
+  da digitação. Ao completar `repeats_total`, o dependente para de receber.
+- **Emenda (2026) — atraso não desloca a agenda:** a âncora da repetição é a
+  **ocorrência agendada** (`last_occurrence_at`), não o instante da confirmação.
+  Se o dependente confirma 1 dia atrasado, a próxima ocorrência continua contada
+  do slot (ex.: intervalo 3 dias → 3 dias depois do slot, não 4; com intervalo
+  > 0, o slot exatamente na referência conta). Ao confirmar,
+  ocorrências já perdidas são **puladas** (a âncora avança até a mais recente
+  que já passou), então não há fila de avisos atrasados. "Zerar confirmações"
+  anula `last_occurrence_at` e volta à 1ª exibição. Requer a migração
+  `docs/sql/comunicados_last_occurrence.sql` (com backfill das entregas
+  antigas).
 - **Sem cron/background no projeto:** o "disparo agendado" é mero cálculo
   server-side no `getDueComunicados()` (usado no render de cada tela e no
-  refresh do overlay). "Devido" = **sem** linha de entrega e `now >=` a 1ª
+  refresh do overlay). "Devido" = **sem** `last_occurrence_at` e `now >=` a 1ª
   ocorrência (slot de hoje ou próximo, intervalo 0 no primeiro ciclo) **ou**
-  `now >= próxima ocorrência` de `last_confirmed_at` (repetições). **Sem
+  `now >= próxima ocorrência` de `last_occurrence_at` (repetições). **Sem
   Realtime:** um aviso só aparece num novo render server-side (atualizar página,
   trocar de endpoint ou após confirmar) — o horário passado do dia não é pulado,
   aparece no render seguinte (o helper devolve o próximo instante **futuro**).

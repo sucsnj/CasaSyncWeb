@@ -28,4 +28,4 @@
 
 ## 5. Comunicados da Casa (`/dashboard/admin/comunicados`)
 - **Exibição:** Apenas no render server-side (sem Realtime). Exibe em overlay bloqueante (`comunicado-overlay.tsx`) até o dependente confirmar.
-- **Repetição:** Agendamento recalculado por dependente a cada confirmação via fuso `America/Recife`.
+- **Repetição:** Agendamento recalculado por dependente a cada confirmação via fuso da casa. A âncora é a **ocorrência agendada** (`last_occurrence_at`), não o instante da digitação: confirmação atrasada não desloca a agenda e ocorrências perdidas são puladas. "Zerar confirmações" volta à 1ª exibição.
