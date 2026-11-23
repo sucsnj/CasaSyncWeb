@@ -68,6 +68,9 @@ function validateComunicadoFields(input: {
   repeatIntervalDays: number
   repeatWeekdays: number[]
   repeatTime: string
+  confirmationAnswers?: string[]
+  confirmationCorrectIndex?: number | null
+  confirmationWrongPoints?: number
 }): string | null {
   if (!input.title.trim()) return 'Informe o título do comunicado.'
   if (input.title.trim().length > 120) {
@@ -114,6 +117,24 @@ function validateComunicadoFields(input: {
   if (!COMUNICADO_TIME_PATTERN.test(input.repeatTime)) {
     return 'Horário inválido: use o formato HH:MM.'
   }
+
+  const answers = input.confirmationAnswers
+  if (answers !== undefined) {
+    const cleaned = answers.map((a) => a.trim()).filter(Boolean)
+    if (cleaned.length < 2) {
+      return 'Informe ao menos 2 respostas para a confirmação.'
+    }
+    const correct = input.confirmationCorrectIndex
+    if (correct === null || correct === undefined || correct < 0 || correct >= cleaned.length) {
+      return 'Marque exatamente uma resposta como correta.'
+    }
+  }
+  const wrongPoints = input.confirmationWrongPoints
+  if (wrongPoints !== undefined) {
+    if (!Number.isInteger(wrongPoints) || wrongPoints < 0) {
+      return 'Os pontos subtraídos por erro devem ser um inteiro >= 0.'
+    }
+  }
   return null
 }
 
@@ -124,6 +145,9 @@ export type ComunicadoInput = {
   repeatIntervalDays: number
   repeatWeekdays: number[]
   repeatTime: string
+  confirmationAnswers?: string[]
+  confirmationCorrectIndex?: number | null
+  confirmationWrongPoints?: number
 }
 
 /**
@@ -158,6 +182,11 @@ export async function createComunicado(
       repeat_interval_days: input.repeatIntervalDays,
       repeat_weekdays: input.repeatWeekdays,
       repeat_time: input.repeatTime,
+      confirmation_answers: input.confirmationAnswers
+        ? input.confirmationAnswers.map((a) => a.trim()).filter(Boolean)
+        : null,
+      confirmation_correct_index: input.confirmationCorrectIndex ?? null,
+      confirmation_wrong_points: input.confirmationWrongPoints ?? 0,
       created_at: now,
       updated_at: now,
     })
@@ -183,6 +212,9 @@ export type ComunicadoPatch = {
   repeatIntervalDays?: number
   repeatWeekdays?: number[]
   repeatTime?: string
+  confirmationAnswers?: string[]
+  confirmationCorrectIndex?: number | null
+  confirmationWrongPoints?: number
 }
 
 /**
@@ -217,6 +249,12 @@ export async function updateComunicado(
     repeatIntervalDays: patch.repeatIntervalDays ?? comunicado.repeat_interval_days,
     repeatWeekdays: patch.repeatWeekdays ?? comunicado.repeat_weekdays,
     repeatTime: patch.repeatTime ?? comunicado.repeat_time,
+    confirmationAnswers:
+      patch.confirmationAnswers ?? comunicado.confirmation_answers ?? undefined,
+    confirmationCorrectIndex:
+      patch.confirmationCorrectIndex ?? comunicado.confirmation_correct_index,
+    confirmationWrongPoints:
+      patch.confirmationWrongPoints ?? comunicado.confirmation_wrong_points,
   })
   if (validation) return { ok: false, error: validation }
 
@@ -237,6 +275,19 @@ export async function updateComunicado(
         ? { repeat_weekdays: patch.repeatWeekdays }
         : {}),
       ...(patch.repeatTime !== undefined ? { repeat_time: patch.repeatTime } : {}),
+      ...(patch.confirmationAnswers !== undefined
+        ? {
+            confirmation_answers: patch.confirmationAnswers
+              .map((a) => a.trim())
+              .filter(Boolean),
+          }
+        : {}),
+      ...(patch.confirmationCorrectIndex !== undefined
+        ? { confirmation_correct_index: patch.confirmationCorrectIndex }
+        : {}),
+      ...(patch.confirmationWrongPoints !== undefined
+        ? { confirmation_wrong_points: patch.confirmationWrongPoints }
+        : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', comunicadoId)
@@ -466,14 +517,14 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
       // Repetição: próxima ocorrência a partir da ocorrência agendada tratada.
       const next = nextComunicadoOccurrence(lastOccurrence, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode, comunicado.confirmation_answers, comunicado.confirmation_wrong_points))
       }
     } else {
       // 1ª exibição (ou entrega zerada): "slot de hoje ou próximo" (regra do
       // usuário).
       const first = firstComunicadoOccurrence(now, schedule, timezone)
       if (now.getTime() >= first.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode, comunicado.confirmation_answers, comunicado.confirmation_wrong_points))
       }
     }
   }
@@ -496,7 +547,8 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
  */
 export async function confirmComunicadoDelivery(
   comunicadoId: string,
-  typedPhrase: string
+  typedPhrase: string,
+  selectedAnswerIndex?: number | null
 ): Promise<ActionResult> {
   const { user, profile } = await getSessionProfile()
   if (!user || profile?.user_role !== 'DEPENDENT') {
@@ -516,7 +568,7 @@ export async function confirmComunicadoDelivery(
   const { data: comunicado } = await admin
     .from('comunicados')
     .select(
-      'id, house_id, published, repeats_total, repeat_interval_days, repeat_weekdays, repeat_time, title, description'
+      'id, house_id, published, repeats_total, repeat_interval_days, repeat_weekdays, repeat_time, title, description, confirmation_answers, confirmation_correct_index, confirmation_wrong_points'
     )
     .eq('id', comunicadoId)
     .maybeSingle()
@@ -535,6 +587,7 @@ export async function confirmComunicadoDelivery(
     .maybeSingle()
 
   const confirmationSettings = await getHouseComunicadoConfirmationSettings(house.id)
+  const mode = confirmationSettings.mode
 
   const failedAttempts = row?.failed_attempts ?? 0
   const filteredCount = new Set(
@@ -542,17 +595,58 @@ export async function confirmComunicadoDelivery(
   ).size
   const targetCount = Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
 
-  if (
-    !hasComunicadoConfirmation(
-      confirmationSettings.mode,
-      typedPhrase,
-      comunicado.title,
-      comunicado.description,
-      undefined,
-      targetCount
-    )
+  // Confirmação por respostas: valida a opção marcada pelo dependente.
+  if (mode === 'answers') {
+    const answers = comunicado.confirmation_answers ?? []
+    const correctIndex = comunicado.confirmation_correct_index
+    const wrongPoints = comunicado.confirmation_wrong_points ?? 0
+    if (answers.length < 2 || correctIndex === null || correctIndex === undefined) {
+      return { ok: false, error: 'Este comunicado não tem respostas configuradas.' }
+    }
+    if (selectedAnswerIndex === null || selectedAnswerIndex === undefined) {
+      return { ok: false, error: 'Selecione uma resposta para confirmar.' }
+    }
+    if (selectedAnswerIndex !== correctIndex) {
+      // Subtrai pontos (pode ficar negativo) e registra tentativa falha.
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('points')
+        .eq('id', user.id)
+        .maybeSingle()
+      const currentPoints = profile?.points ?? 0
+      await admin
+        .from('profiles')
+        .update({ points: currentPoints - wrongPoints })
+        .eq('id', user.id)
+      const now = new Date().toISOString()
+      if (!row) {
+        await admin.from('comunicado_deliveries').insert({
+          comunicado_id: comunicadoId,
+          profile_id: user.id,
+          house_id: house.id,
+          delivered_count: 0,
+          failed_attempts: 1,
+          last_confirmed_at: null,
+          last_occurrence_at: null,
+          created_at: now,
+          updated_at: now,
+        })
+      } else {
+        await admin
+          .from('comunicado_deliveries')
+          .update({ failed_attempts: failedAttempts + 1, updated_at: now })
+          .eq('id', row.id)
+      }
+      return {
+        ok: false,
+        error: `Resposta incorreta. Foram subtraídos ${wrongPoints} ponto(s).`,
+      }
+    }
+    // resposta correta: segue o fluxo normal de confirmação abaixo.
+  } else if (
+    mode === 'words' &&
+    !hasComunicadoConfirmation(mode, typedPhrase, comunicado.title, comunicado.description, undefined, targetCount)
   ) {
-    // Registra a tentativa falha (cria a linha se ainda não existir).
     const now = new Date().toISOString()
     if (!row) {
       const { error: insertError } = await admin.from('comunicado_deliveries').insert({

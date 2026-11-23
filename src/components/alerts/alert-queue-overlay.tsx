@@ -67,6 +67,7 @@ export function AlertQueueOverlay({
   )
   // Digitação guardada com o id do item: trocar de item (FIFO) zera sozinho.
   const [phrase, setPhrase] = useState({ id: '', text: '' })
+  const [selectedAnswer, setSelectedAnswer] = useState({ id: '', index: -1 })
   const [pending, setPending] = useState(false)
   const [localFailures, setLocalFailures] = useState<Record<string, number>>({})
   // O overlay é exclusivamente client-side (portal em `document.body`): montar a
@@ -92,10 +93,18 @@ export function AlertQueueOverlay({
 
   const current = queue[0]
   const isComunicado = current?.kind === 'comunicado'
-  const requiresWords =
+  const confirmationMode =
     isComunicado && current
-      ? ((current as { confirmationMode?: string }).confirmationMode ?? 'words') === 'words'
-      : false
+      ? ((current as { confirmationMode?: string }).confirmationMode ?? 'words')
+      : 'words'
+  const requiresWords = confirmationMode === 'words'
+  const requiresAnswers = confirmationMode === 'answers'
+  const answers = (isComunicado && current
+    ? ((current as { confirmationAnswers?: string[] | null }).confirmationAnswers ?? [])
+    : []) as string[]
+  const wrongPoints = isComunicado && current
+    ? ((current as { confirmationWrongPoints?: number }).confirmationWrongPoints ?? 0)
+    : 0
 
   useKeyAction('Escape', () => {}, {
     enabled: Boolean(current) && isMounted,
@@ -159,7 +168,9 @@ export function AlertQueueOverlay({
       ? requiresWords
         ? typedText.trim().split(/\s+/).filter(Boolean).length >= targetCount &&
           targetCount > 0
-        : true
+        : requiresAnswers
+          ? (selectedAnswer.id === current.id && selectedAnswer.index >= 0)
+          : true
       : false)
 
   // Enquanto um alerta está na tela: trava o scroll, prende o foco na janela e
@@ -203,7 +214,9 @@ export function AlertQueueOverlay({
     const item = current
     try {
         if (item.kind === 'comunicado') {
-          const res = await confirmComunicadoDelivery(item.id, typedText)
+          const selected =
+            requiresAnswers && selectedAnswer.id === item.id ? selectedAnswer.index : null
+          const res = await confirmComunicadoDelivery(item.id, typedText, selected)
           if (res.ok) {
             setConfirmed((prev) => new Set(prev).add(item.id))
             setLocalFailures((prev) => ({ ...prev, [item.id]: 0 }))
@@ -313,9 +326,34 @@ export function AlertQueueOverlay({
                       )} (na ordem indicada)`}
                 </p>
               </div>
+            ) : requiresAnswers ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-sm font-medium text-slate-700">
+                  Sobre o que é esse comunicado?
+                </p>
+                <select
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={selectedAnswer.id === itemId ? selectedAnswer.index : -1}
+                  onChange={(event) =>
+                    setSelectedAnswer({ id: itemId, index: Number(event.target.value) })
+                  }
+                >
+                  <option value={-1} disabled>
+                    Selecione uma resposta
+                  </option>
+                  {answers.map((answer, index) => (
+                    <option key={index} value={index}>
+                      {index + 1}. {answer}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500">
+                  Resposta errada subtrai {wrongPoints} ponto(s) (pode ficar negativo).
+                </p>
+              </div>
             ) : (
               <p className="text-sm text-slate-600">
-                Confirmação de leitura sem desafio de palavras.
+                Confirmação de leitura sem desafio.
               </p>
             )}
 

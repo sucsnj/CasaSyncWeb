@@ -777,11 +777,14 @@ chest_items: {
           repeats_total: number
           repeat_interval_days: number
           repeat_weekdays: number[]
-          repeat_time: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
+           repeat_time: string
+           confirmation_answers: string[] | null
+           confirmation_correct_index: number | null
+           confirmation_wrong_points: number
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
           id?: string
           house_id: string
           created_by?: string | null
@@ -791,11 +794,14 @@ chest_items: {
           repeats_total?: number
           repeat_interval_days?: number
           repeat_weekdays?: number[]
-          repeat_time?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
+           repeat_time?: string
+           confirmation_answers?: string[] | null
+           confirmation_correct_index?: number | null
+           confirmation_wrong_points?: number
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
           id?: string
           house_id?: string
           created_by?: string | null
@@ -805,13 +811,16 @@ chest_items: {
           repeats_total?: number
           repeat_interval_days?: number
           repeat_weekdays?: number[]
-          repeat_time?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'comunicados_house_id_fkey'
+           repeat_time?: string
+           confirmation_answers?: string[] | null
+           confirmation_correct_index?: number | null
+           confirmation_wrong_points?: number
+           created_at?: string
+           updated_at?: string
+         }
+         Relationships: [
+           {
+             foreignKeyName: 'comunicados_house_id_fkey'
             columns: ['house_id']
             isOneToOne: false
             referencedRelation: 'houses'

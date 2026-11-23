@@ -18,6 +18,7 @@ import {
 import { usePostgresChanges } from '@/hooks/use-postgres-changes'
 import { useKeyAction } from '@/hooks/use-key-action'
 import { useAppSession } from '@/components/session/app-session'
+import { useSettingsBundle } from '@/hooks/queries/use-settings'
 import { PageSkeleton } from '@/components/ui/page-skeleton'
 import { QueryError } from '@/components/session/query-error'
 import { NoHouseCard } from '@/components/session/no-house-card'
@@ -75,15 +76,20 @@ const EMPTY_CONFIRMATIONS: Record<string, number> = {}
 export function ComunicadosAdmin() {
   const { houseId } = useAppSession()
   const { data, isPending, refetch } = useComunicadosBundle(houseId)
+  const { data: settingsData } = useSettingsBundle(houseId)
   const comunicados = data?.comunicados ?? EMPTY_COMUNICADOS
   const confirmations = data?.confirmations ?? EMPTY_CONFIRMATIONS
   const queryClient = useQueryClient()
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const answersMode = settingsData?.comunicadoConfirmation?.mode === 'answers'
 
   useKeyAction('Escape', () => resetForm(), { enabled: showForm })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [answers, setAnswers] = useState<string[]>(['', ''])
+  const [correctIndex, setCorrectIndex] = useState<number | null>(null)
+  const [wrongPoints, setWrongPoints] = useState<number>(0)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Comunicado | null>(null)
@@ -151,6 +157,13 @@ export function ComunicadosAdmin() {
       weekdays: comunicado.repeat_weekdays,
       repeatTime: formatComunicadoTime(comunicado.repeat_time),
     })
+    setAnswers(
+      comunicado.confirmation_answers && comunicado.confirmation_answers.length > 0
+        ? [...comunicado.confirmation_answers]
+        : ['', '']
+    )
+    setCorrectIndex(comunicado.confirmation_correct_index ?? null)
+    setWrongPoints(comunicado.confirmation_wrong_points ?? 0)
     setFormError(null)
     setShowForm(true)
   }
@@ -158,6 +171,9 @@ export function ComunicadosAdmin() {
   function resetForm() {
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setAnswers(['', ''])
+    setCorrectIndex(null)
+    setWrongPoints(0)
     setFormError(null)
     setShowForm(false)
   }
@@ -184,6 +200,13 @@ export function ComunicadosAdmin() {
         repeatIntervalDays: form.repeatIntervalDays,
         repeatWeekdays: form.weekdays,
         repeatTime: form.repeatTime,
+        ...(answersMode
+          ? {
+              confirmationAnswers: answers,
+              confirmationCorrectIndex: correctIndex,
+              confirmationWrongPoints: wrongPoints,
+            }
+          : {}),
       }
 
       if (editingId) {
@@ -407,6 +430,67 @@ export function ComunicadosAdmin() {
                       <span className="text-sm font-medium text-slate-700">Horário</span>
                       <input type="time" value={form.repeatTime} onChange={(event) => setForm((prev) => ({ ...prev, repeatTime: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
                     </label>
+                    {answersMode ? (
+                      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <span className="text-sm font-medium text-slate-700">
+                          Respostas (mínimo 2, marque uma como correta)
+                        </span>
+                        {answers.map((answer, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Input
+                              value={answer}
+                              onChange={(event) => {
+                                const next = [...answers]
+                                next[index] = event.target.value
+                                setAnswers(next)
+                              }}
+                              placeholder={`Resposta ${index + 1}`}
+                            />
+                            <label className="flex items-center gap-1 text-xs text-slate-600">
+                              <input
+                                type="radio"
+                                name="correct-answer"
+                                checked={correctIndex === index}
+                                onChange={() => setCorrectIndex(index)}
+                              />
+                              Correta
+                            </label>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const next = answers.filter((_, i) => i !== index)
+                                setAnswers(next.length >= 2 ? next : [...next, ''])
+                                if (correctIndex === index) setCorrectIndex(null)
+                                else if (correctIndex !== null && correctIndex > index) setCorrectIndex(correctIndex - 1)
+                              }}
+                            >
+                              Remover
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setAnswers([...answers, ''])}
+                        >
+                          Adicionar resposta
+                        </Button>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-sm font-medium text-slate-700">
+                            Pontos subtraídos por erro
+                          </span>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={wrongPoints}
+                            onChange={(event) => setWrongPoints(Number(event.target.value) || 0)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
                     <Button type="submit" disabled={busy}>
                       {busy ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Criar comunicado'}
                     </Button>

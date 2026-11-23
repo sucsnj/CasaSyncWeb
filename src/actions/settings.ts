@@ -509,10 +509,6 @@ function validateComunicadoConfirmation(patch: Record<string, unknown>): Setting
   if (mode !== 'none' && mode !== 'words' && mode !== 'answers') {
     return { ok: false, error: 'Modo de confirmação inválido.' }
   }
-  // "answers" ainda em desenvolvimento: não pode ser gravado como ativo.
-  if (mode === 'answers') {
-    return { ok: false, error: 'Confirmação por respostas ainda está em desenvolvimento.' }
-  }
   base.mode = mode as ComunicadoConfirmationSettings['mode']
   return { ok: true, value: base }
 }

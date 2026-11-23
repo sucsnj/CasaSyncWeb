@@ -1964,8 +1964,7 @@ export function SettingsAdmin({
                   onChange={(checked) => {
                     if (checked) {
                       setComunicadoConfirmation({ mode: 'words' })
-                    } else {
-                      // Se a outra também estiver desligada, desliga o principal.
+                    } else if (comunicadoConfirmation.mode !== 'answers') {
                       setComunicadoConfirmation({ mode: 'none' })
                     }
                   }}
@@ -1974,14 +1973,20 @@ export function SettingsAdmin({
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-slate-400">
-                  Confirmação por respostas (em desenvolvimento)
+                <span className="text-sm font-medium text-slate-700">
+                  Confirmação por respostas
                 </span>
                 <Toggle
                   checked={comunicadoConfirmation.mode === 'answers'}
-                  onChange={() => {}}
+                  onChange={(checked) => {
+                    if (checked) {
+                      setComunicadoConfirmation({ mode: 'answers' })
+                    } else if (comunicadoConfirmation.mode !== 'words') {
+                      setComunicadoConfirmation({ mode: 'none' })
+                    }
+                  }}
                   label="Confirmação por respostas"
-                  disabled
+                  disabled={comunicadoConfirmation.mode === 'none'}
                 />
               </div>
             </div>
