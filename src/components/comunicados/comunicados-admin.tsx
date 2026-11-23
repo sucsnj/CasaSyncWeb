@@ -96,6 +96,7 @@ export function ComunicadosAdmin() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [resetTarget, setResetTarget] = useState<Comunicado | null>(null)
   const [resetBusy, setResetBusy] = useState(false)
+  const [publishErrors, setPublishErrors] = useState<Record<string, string>>({})
 
   const formRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
@@ -243,9 +244,15 @@ export function ComunicadosAdmin() {
     try {
       const res = await setComunicadoPublished(comunicado.id, !comunicado.published)
       if (!res.ok) {
+        setPublishErrors((prev) => ({ ...prev, [comunicado.id]: res.error }))
         toast.error(res.error)
         return
       }
+      setPublishErrors((prev) => {
+        const next = { ...prev }
+        delete next[comunicado.id]
+        return next
+      })
       upsertComunicado({ ...comunicado, published: !comunicado.published })
       toast.success(res.message)
     } catch (err) {
@@ -544,6 +551,11 @@ export function ComunicadosAdmin() {
                         {total > 0 ? (
                           <p className="mt-1.5 text-xs font-medium text-emerald-700">
                             {total} {total === 1 ? 'confirmação' : 'confirmações'}
+                          </p>
+                        ) : null}
+                        {publishErrors[comunicado.id] ? (
+                          <p className="mt-1.5 text-xs font-medium text-red-600">
+                            {publishErrors[comunicado.id]}
                           </p>
                         ) : null}
                       </div>

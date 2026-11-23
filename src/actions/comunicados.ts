@@ -324,12 +324,33 @@ export async function setComunicadoPublished(
 
   const { data: comunicado } = await admin
     .from('comunicados')
-    .select('house_id, title, published')
+    .select('house_id, title, published, confirmation_answers, confirmation_correct_index')
     .eq('id', comunicadoId)
     .maybeSingle()
 
   if (!comunicado || comunicado.house_id !== activeHouse.id) {
     return { ok: false, error: 'Comunicado não encontrado nesta casa.' }
+  }
+
+  if (published) {
+    const { getHouseComunicadoConfirmationSettings } = await import('@/utils/house-settings')
+    const confirmationSettings = await getHouseComunicadoConfirmationSettings(activeHouse.id)
+    if (confirmationSettings.mode === 'answers') {
+      const answers = comunicado.confirmation_answers ?? []
+      const correctIndex = comunicado.confirmation_correct_index
+      const valid =
+        answers.length >= 2 &&
+        correctIndex !== null &&
+        correctIndex !== undefined &&
+        correctIndex >= 0 &&
+        correctIndex < answers.length
+      if (!valid) {
+        return {
+          ok: false,
+          error: 'Configure ao menos 2 respostas e marque uma como correta antes de publicar.',
+        }
+      }
+    }
   }
 
   const { error } = await admin
@@ -489,7 +510,28 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
    const { timezone } = await getHouseTimezoneSettings(house.id)
    const confirmationSettings = await getHouseComunicadoConfirmationSettings(house.id)
 
-  for (const comunicado of comunicados) {
+   for (const comunicado of comunicados) {
+    // Se a casa exige confirmação por respostas e o comunicado não tem respostas
+    // válidas, despublica automaticamente e não exibe.
+    if (confirmationSettings.mode === 'answers') {
+      const answers = comunicado.confirmation_answers ?? []
+      const correctIndex = comunicado.confirmation_correct_index
+      const valid =
+        answers.length >= 2 &&
+        correctIndex !== null &&
+        correctIndex !== undefined &&
+        correctIndex >= 0 &&
+        correctIndex < answers.length
+      if (!valid) {
+        await admin
+          .from('comunicados')
+          .update({ published: false, updated_at: new Date().toISOString() })
+          .eq('id', comunicado.id)
+        revalidatePath('/dashboard/admin/comunicados')
+        continue
+      }
+    }
+
     const delivery = deliveriesByComunicado.get(comunicado.id)
     const deliveredCount = delivery?.delivered_count ?? 0
 
