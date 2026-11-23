@@ -333,7 +333,6 @@ export async function setComunicadoPublished(
   }
 
   if (published) {
-    const { getHouseComunicadoConfirmationSettings } = await import('@/utils/house-settings')
     const confirmationSettings = await getHouseComunicadoConfirmationSettings(activeHouse.id)
     if (confirmationSettings.mode === 'answers') {
       const answers = comunicado.confirmation_answers ?? []

@@ -84,6 +84,12 @@ export function ComunicadosAdmin() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const answersMode = settingsData?.comunicadoConfirmation?.mode === 'answers'
+  const editingComunicado = editingId
+    ? comunicados.find((item) => item.id === editingId)
+    : null
+  const showAnswersBuilder =
+    answersMode ||
+    (editingComunicado?.confirmation_answers?.length ?? 0) > 0
 
   useKeyAction('Escape', () => resetForm(), { enabled: showForm })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -149,6 +155,11 @@ export function ComunicadosAdmin() {
   }
 
   function startEdit(comunicado: Comunicado) {
+    setPublishErrors((prev) => {
+      const next = { ...prev }
+      delete next[comunicado.id]
+      return next
+    })
     setEditingId(comunicado.id)
     setForm({
       title: comunicado.title,
@@ -201,7 +212,7 @@ export function ComunicadosAdmin() {
         repeatIntervalDays: form.repeatIntervalDays,
         repeatWeekdays: form.weekdays,
         repeatTime: form.repeatTime,
-        ...(answersMode
+        ...(showAnswersBuilder
           ? {
               confirmationAnswers: answers,
               confirmationCorrectIndex: correctIndex,
@@ -216,20 +227,30 @@ export function ComunicadosAdmin() {
           setFormError(res.error)
           return
         }
-        if (res.data?.comunicado) {
-          upsertComunicado(res.data.comunicado)
-          toast.success(res.message)
-        }
+      if (res.data?.comunicado) {
+        upsertComunicado(res.data.comunicado)
+        setPublishErrors((prev) => {
+          const next = { ...prev }
+          delete next[res.data!.comunicado.id]
+          return next
+        })
+        toast.success(res.message)
+      }
       } else {
         const res = await createComunicado(payload)
         if (!res.ok) {
           setFormError(res.error)
           return
         }
-        if (res.data?.comunicado) {
-          upsertComunicado(res.data.comunicado)
-          toast.success(res.message)
-        }
+      if (res.data?.comunicado) {
+        upsertComunicado(res.data.comunicado)
+        setPublishErrors((prev) => {
+          const next = { ...prev }
+          delete next[res.data!.comunicado.id]
+          return next
+        })
+        toast.success(res.message)
+      }
       }
       resetForm()
     } catch (err) {
@@ -437,7 +458,7 @@ export function ComunicadosAdmin() {
                       <span className="text-sm font-medium text-slate-700">Horário</span>
                       <input type="time" value={form.repeatTime} onChange={(event) => setForm((prev) => ({ ...prev, repeatTime: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
                     </label>
-                    {answersMode ? (
+                    {showAnswersBuilder ? (
                       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <span className="text-sm font-medium text-slate-700">
                           Respostas (mínimo 2, marque uma como correta)
