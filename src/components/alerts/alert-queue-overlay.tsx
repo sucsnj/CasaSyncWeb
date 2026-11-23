@@ -68,6 +68,7 @@ export function AlertQueueOverlay({
   // Digitação guardada com o id do item: trocar de item (FIFO) zera sozinho.
   const [phrase, setPhrase] = useState({ id: '', text: '' })
   const [selectedAnswer, setSelectedAnswer] = useState({ id: '', index: -1 })
+  // (no state) shuffled computed below
   const [pending, setPending] = useState(false)
   const [localFailures, setLocalFailures] = useState<Record<string, number>>({})
   // O overlay é exclusivamente client-side (portal em `document.body`): montar a
@@ -99,12 +100,34 @@ export function AlertQueueOverlay({
       : 'words'
   const requiresWords = confirmationMode === 'words'
   const requiresAnswers = confirmationMode === 'answers'
-  const answers = (isComunicado && current
-    ? ((current as { confirmationAnswers?: string[] | null }).confirmationAnswers ?? [])
-    : []) as string[]
+  const answers = useMemo(
+    () =>
+      (isComunicado && current
+        ? ((current as { confirmationAnswers?: string[] | null }).confirmationAnswers ?? [])
+        : []) as string[],
+    [isComunicado, current]
+  )
   const wrongPoints = isComunicado && current
     ? ((current as { confirmationWrongPoints?: number }).confirmationWrongPoints ?? 0)
     : 0
+  const shuffled = useMemo(() => {
+    if (!requiresAnswers || !answers.length) return answers.map((_, i) => i)
+    const seedStr = current?.id ?? ''
+    let seed = 0
+    for (let i = 0; i < seedStr.length; i++) {
+      seed = (Math.imul(seed, 31) + seedStr.charCodeAt(i)) >>> 0
+    }
+    const rng = () => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
+      return seed / 0x100000000
+    }
+    const order = answers.map((_, i) => i)
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[order[i], order[j]] = [order[j], order[i]]
+    }
+    return order
+  }, [current?.id, requiresAnswers, answers])
 
   useKeyAction('Escape', () => {}, {
     enabled: Boolean(current) && isMounted,
@@ -341,9 +364,9 @@ export function AlertQueueOverlay({
                   <option value={-1} disabled>
                     Selecione uma resposta
                   </option>
-                  {answers.map((answer, index) => (
-                    <option key={index} value={index}>
-                      {index + 1}. {answer}
+                  {shuffled.map((origIdx, pos) => (
+                    <option key={origIdx} value={origIdx}>
+                      {pos + 1}. {answers[origIdx]}
                     </option>
                   ))}
                 </select>
