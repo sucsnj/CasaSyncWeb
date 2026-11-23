@@ -13,6 +13,7 @@ import {
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
+  DEFAULT_COMUNICADO_CONFIRMATION,
   mergeSettings,
   type AttachmentSettings,
   type AttachmentBudgetSettings,
@@ -27,6 +28,7 @@ import {
   type TaskRulesSettings,
   type TaskSlaSettings,
   type TextLimitsSettings,
+  type ComunicadoConfirmationSettings,
 } from '@/utils/settings'
 import { DEFAULT_HOUSE_TIMEZONE, isValidTimeZone } from '@/utils/timezone'
 
@@ -218,5 +220,13 @@ export const getHouseTextLimitsSettings = cache(
   async (houseId: string): Promise<TextLimitsSettings> => {
     const value = await getHouseSettingsValue(houseId, 'text_limits')
     return mergeSettings(value, DEFAULT_TEXT_LIMITS)
+  }
+)
+
+/** Método de confirmação de leitura dos comunicados da casa. */
+export const getHouseComunicadoConfirmationSettings = cache(
+  async (houseId: string): Promise<ComunicadoConfirmationSettings> => {
+    const value = await getHouseSettingsValue(houseId, 'comunicado_confirmation')
+    return mergeSettings(value, DEFAULT_COMUNICADO_CONFIRMATION)
   }
 )

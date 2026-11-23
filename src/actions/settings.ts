@@ -17,6 +17,7 @@ import {
   DEFAULT_TASK_RULES,
   DEFAULT_TASK_SLA,
   DEFAULT_TEXT_LIMITS,
+  DEFAULT_COMUNICADO_CONFIRMATION,
   type AttachmentBudgetSettings,
   type ExtensionRulesSettings,
   type HouseSettingsKey,
@@ -30,6 +31,7 @@ import {
   type TaskSlaSettings,
   type TextLimitsSettings,
   type AttachmentSettings,
+  type ComunicadoConfirmationSettings,
 } from '@/utils/settings'
 import {
   ATTACHMENT_BUDGET_MAX_MB,
@@ -170,6 +172,7 @@ function validateSettings(
   if (key === 'attachment_budget') return validateAttachmentBudget(patch)
   if (key === 'house_timezone') return validateHouseTimezone(patch)
   if (key === 'text_limits') return validateTextLimits(patch)
+  if (key === 'comunicado_confirmation') return validateComunicadoConfirmation(patch)
   return validateNotificationRetention(patch)
 }
 
@@ -187,8 +190,9 @@ type SettingsResult =
     | TaskRulesSettings
     | AttachmentBudgetSettings
     | HouseTimezoneSettings
-    | TextLimitsSettings
-    | AttachmentSettings
+  | TextLimitsSettings
+  | AttachmentSettings
+  | ComunicadoConfirmationSettings
   }
   | { ok: false; error: string }
 
@@ -499,6 +503,20 @@ function validateTextLimits(patch: Record<string, unknown>): SettingsResult {
  * errado cairia no default **ligado** na leitura, ou seja, a casa acreditaria ter
  * desligado o anexo e o app continuaria liberando.
  */
+function validateComunicadoConfirmation(patch: Record<string, unknown>): SettingsResult {
+  const base = { ...DEFAULT_COMUNICADO_CONFIRMATION }
+  const mode = patch.mode ?? base.mode
+  if (mode !== 'none' && mode !== 'words' && mode !== 'answers') {
+    return { ok: false, error: 'Modo de confirmação inválido.' }
+  }
+  // "answers" ainda em desenvolvimento: não pode ser gravado como ativo.
+  if (mode === 'answers') {
+    return { ok: false, error: 'Confirmação por respostas ainda está em desenvolvimento.' }
+  }
+  base.mode = mode as ComunicadoConfirmationSettings['mode']
+  return { ok: true, value: base }
+}
+
 function validateAttachments(patch: Record<string, unknown>): SettingsResult {
   const base = { ...DEFAULT_ATTACHMENTS }
 

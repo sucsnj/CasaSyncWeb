@@ -27,6 +27,7 @@ export type HouseSettingsKey =
   | 'house_timezone'
   | 'text_limits'
   | 'attachments'
+  | 'comunicado_confirmation'
 
 /** Encarecimento automático de recompensas a cada resgate aprovado. */
 export type RewardPricingSettings = {
@@ -304,6 +305,23 @@ export const ATTACHMENT_SETTING_FIELDS = [
 ] as const
 
 export type AttachmentSettingField = (typeof ATTACHMENT_SETTING_FIELDS)[number]
+
+/**
+ * Método de confirmação de leitura dos comunicados da casa.
+ *
+ * - `words`: dependente digita palavras do aviso (comportamento atual).
+ * - `none`: sem mecanismo de confirmação — o botão sempre valida.
+ * - `answers`: confirmação por respostas (em desenvolvimento).
+ */
+export type ComunicadoConfirmationMode = 'none' | 'words' | 'answers'
+
+export type ComunicadoConfirmationSettings = {
+  mode: ComunicadoConfirmationMode
+}
+
+export const DEFAULT_COMUNICADO_CONFIRMATION: ComunicadoConfirmationSettings = {
+  mode: 'words',
+}
 
 export function mergeSettings<T extends Record<string, unknown>>(
   value: Record<string, unknown> | T | null | undefined,

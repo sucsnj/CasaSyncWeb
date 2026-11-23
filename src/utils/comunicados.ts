@@ -91,12 +91,14 @@ export type DueComunicado = {
   deliveredCount: number
   failedAttempts: number
   remaining: number
+  confirmationMode: 'none' | 'words' | 'answers'
 }
 
 export function toDueComunicado(
   comunicado: Comunicado,
   deliveredCount: number,
-  failedAttempts = 0
+  failedAttempts = 0,
+  confirmationMode: 'none' | 'words' | 'answers' = 'words'
 ): DueComunicado {
   return {
     id: comunicado.id,
@@ -111,6 +113,7 @@ export function toDueComunicado(
     remaining: isComunicadoUnlimited(comunicado.repeats_total)
       ? Infinity
       : Math.max(0, comunicado.repeats_total - deliveredCount),
+    confirmationMode,
   }
 }
 

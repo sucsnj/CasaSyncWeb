@@ -20,6 +20,7 @@
  */
 
 import type { DueComunicado } from '@/utils/comunicados'
+import type { ComunicadoConfirmationMode } from '@/utils/settings'
 import type { NotificationRow } from '@/types/notifications'
 
 /** Quantas palavras do comunicado o dependente precisa digitar. */
@@ -296,4 +297,22 @@ export function toComunicadoAlertItem(due: DueComunicado): AlertQueueItem {
 /** FIFO: mais antigo primeiro; empate de `createdAt` mantém a ordem de entrada. */
 export function sortAlertQueue(items: AlertQueueItem[]): AlertQueueItem[] {
   return [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/**
+ * Helper central da confirmação de leitura dos comunicados. Modos:
+ * - `words`: dependente digita palavras do aviso (validação completa).
+ * - `none`: sem desafio — sempre válido.
+ * - `answers`: em desenvolvimento — por enquanto comporta-se como `none`.
+ */
+export function hasComunicadoConfirmation(
+  mode: ComunicadoConfirmationMode | string,
+  typed: string,
+  title: string,
+  description: string,
+  date?: string,
+  targetCount?: number
+): boolean {
+  if (mode !== 'words') return true
+  return hasTypedAlertConfirmation(typed, title, description, date, targetCount)
 }

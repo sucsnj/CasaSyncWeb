@@ -18,6 +18,7 @@ import {
   getHouseTaskSlaSettings,
   getHouseTimezoneSettings,
   getHouseTextLimitsSettings,
+  getHouseComunicadoConfirmationSettings,
 } from '@/utils/house-settings'
 import { houseAttachmentBytes } from '@/utils/attachment-usage'
 import { formatZonedOffset, houseTimezoneOptions } from '@/utils/timezone'
@@ -34,6 +35,7 @@ import type {
   TaskRulesSettings,
   TaskSlaSettings,
   TextLimitsSettings,
+  ComunicadoConfirmationSettings,
 } from '@/utils/settings'
 
 export type SettingsBundle = {
@@ -53,6 +55,7 @@ export type SettingsBundle = {
   timezoneOptions: ReturnType<typeof houseTimezoneOptions>
   textLimits: TextLimitsSettings
   attachmentSettings: AttachmentSettings
+  comunicadoConfirmation: ComunicadoConfirmationSettings
 }
 
 /**
@@ -86,6 +89,7 @@ export async function getSettingsBundle(): Promise<SettingsBundle> {
     textLimits,
     attachmentSettings,
     attachmentUsageBytes,
+    comunicadoConfirmation,
   ] = await Promise.all([
     getHouseRewardPricingSettings(houseId),
     getHouseQuickMessageSettings(houseId),
@@ -100,6 +104,7 @@ export async function getSettingsBundle(): Promise<SettingsBundle> {
     getHouseTextLimitsSettings(houseId),
     getHouseAttachmentSettings(houseId),
     houseAttachmentBytes(admin, houseId).catch(() => 0),
+    getHouseComunicadoConfirmationSettings(houseId),
   ])
 
   const now = new Date()
@@ -123,5 +128,6 @@ export async function getSettingsBundle(): Promise<SettingsBundle> {
     timezoneOptions,
     textLimits,
     attachmentSettings,
+    comunicadoConfirmation,
   }
 }

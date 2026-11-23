@@ -45,6 +45,7 @@ import { cn } from '@/lib/utils'
 import type {
   AttachmentSettingField,
   AttachmentSettings,
+  ComunicadoConfirmationSettings,
   AttachmentBudgetSettings,
   ExtensionRulesSettings,
   HouseTimezoneSettings,
@@ -90,6 +91,7 @@ type SettingsAdminProps = {
   timezoneOptions: HouseTimezoneOption[]
   /** Opções de anexo da casa (ADR-0026) — só este card grava, e exige o PIN. */
   attachmentSettings: AttachmentSettings
+  comunicadoConfirmation: ComunicadoConfirmationSettings
 }
 
 /**
@@ -126,10 +128,12 @@ function Toggle({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean
   onChange: (checked: boolean) => void
   label: string
+  disabled?: boolean
 }) {
   return (
     <button
@@ -137,7 +141,11 @@ function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => {
+        if (disabled) return
+        onChange(!checked)
+      }}
       className={cn(
         'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 active:scale-95',
         checked ? 'bg-blue-600' : 'bg-slate-300'
@@ -421,6 +429,7 @@ export function SettingsAdmin({
   timezoneOptions,
   textLimits,
   attachmentSettings,
+  comunicadoConfirmation: comunicadoConfirmationProp,
 }: SettingsAdminProps) {
   const { houseId } = useAppSession()
   const router = useRouter()
@@ -489,6 +498,11 @@ export function SettingsAdmin({
   const [attachmentsSuccess, setAttachmentsSuccess] = useState<string | null>(null)
   const attachmentsFormRef = useRef<HTMLFormElement>(null)
 
+  const [comunicadoConfirmation, setComunicadoConfirmation] =
+    useState<ComunicadoConfirmationSettings>(comunicadoConfirmationProp)
+  const [comunicadoConfirmationError, setComunicadoConfirmationError] = useState<string | null>(null)
+  const [comunicadoConfirmationSuccess, setComunicadoConfirmationSuccess] = useState<string | null>(null)
+
   /**
    * Salvar é **por card**, com flag própria (AGENTS.md §3):
    *
@@ -512,6 +526,7 @@ export function SettingsAdmin({
     | 'timezone'
     | 'limits'
     | 'attachments'
+    | 'comunicadoConfirmation'
 
   const [saving, setSaving] = useState<SaveKey[]>([])
   const isSaving = (key: SaveKey) => saving.includes(key)
@@ -672,6 +687,15 @@ export function SettingsAdmin({
       setLimitsSuccess
     )
   }
+
+  function saveComunicadoConfirmation() {
+    void runSave(
+      'comunicadoConfirmation',
+      () => updateHouseSettings('comunicado_confirmation', { ...comunicadoConfirmation }),
+      setComunicadoConfirmationError,
+      setComunicadoConfirmationSuccess
+    )
+  }
   const dirty = useMemo(
     () => ({
       pricing: JSON.stringify(pricing) !== JSON.stringify(rewardPricing),
@@ -689,6 +713,8 @@ export function SettingsAdmin({
       attachments: JSON.stringify(attachments) !== JSON.stringify(attachmentSettings),
       timezone: timezone !== houseTimezone.timezone,
       limits: JSON.stringify(limits) !== JSON.stringify(textLimits),
+      comunicadoConfirmation:
+        JSON.stringify(comunicadoConfirmation) !== JSON.stringify(comunicadoConfirmationProp),
     }),
     [
       pricing,
@@ -715,6 +741,8 @@ export function SettingsAdmin({
       houseTimezone.timezone,
       limits,
       textLimits,
+      comunicadoConfirmation,
+      comunicadoConfirmationProp,
     ]
   )
 
@@ -1895,6 +1923,98 @@ export function SettingsAdmin({
             ) : null}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Confirmação de leitura de comunicados</CardTitle>
+            <CardDescription>
+              Método usado pelo dependente para confirmar a leitura de um aviso.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-slate-700">
+                  Exigir confirmação de leitura
+                </span>
+                <span className="text-xs text-slate-500">
+                  Desligado: o comunicado não exige confirmação (botão sempre valida).
+                </span>
+              </div>
+              <Toggle
+                checked={comunicadoConfirmation.mode !== 'none'}
+                onChange={(checked) =>
+                  setComunicadoConfirmation(
+                    checked
+                      ? { mode: comunicadoConfirmation.mode === 'none' ? 'words' : comunicadoConfirmation.mode }
+                      : { mode: 'none' }
+                  )
+                }
+                label="Exigir confirmação de leitura"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-slate-700">
+                  Confirmação por palavras
+                </span>
+                <Toggle
+                  checked={comunicadoConfirmation.mode === 'words'}
+                  onChange={(checked) => {
+                    if (checked) {
+                      setComunicadoConfirmation({ mode: 'words' })
+                    } else {
+                      // Se a outra também estiver desligada, desliga o principal.
+                      setComunicadoConfirmation({ mode: 'none' })
+                    }
+                  }}
+                  label="Confirmação por palavras"
+                  disabled={comunicadoConfirmation.mode === 'none'}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-slate-400">
+                  Confirmação por respostas (em desenvolvimento)
+                </span>
+                <Toggle
+                  checked={comunicadoConfirmation.mode === 'answers'}
+                  onChange={() => {}}
+                  label="Confirmação por respostas"
+                  disabled
+                />
+              </div>
+            </div>
+
+            {comunicadoConfirmationError ? (
+              <p role="alert" className="text-sm text-red-600">
+                {comunicadoConfirmationError}
+              </p>
+            ) : null}
+            {comunicadoConfirmationSuccess ? (
+              <p role="status" className="text-sm text-emerald-700">
+                {comunicadoConfirmationSuccess}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveComunicadoConfirmation()}
+                disabled={isSaving('comunicadoConfirmation')}
+              >
+                <Save className="size-4" />
+                {isSaving('comunicadoConfirmation') ? 'Salvando…' : 'Salvar confirmação'}
+              </Button>
+            </div>
+            {dirty.comunicadoConfirmation ? (
+              <p className="text-sm font-medium text-amber-700">
+                Alterações não salvas
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
       </CardColumns>
 
       <Modal
@@ -1925,6 +2045,7 @@ export function SettingsAdmin({
                 setAttachments(attachmentSettings)
                 setTimezone(houseTimezone.timezone)
                 setLimits(textLimits)
+                setComunicadoConfirmation(comunicadoConfirmationProp)
                 pendingCardsRef.current = []
                 const target = pendingNavigation
                 setPendingNavigation(null)

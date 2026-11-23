@@ -92,6 +92,10 @@ export function AlertQueueOverlay({
 
   const current = queue[0]
   const isComunicado = current?.kind === 'comunicado'
+  const requiresWords =
+    isComunicado && current
+      ? ((current as { confirmationMode?: string }).confirmationMode ?? 'words') === 'words'
+      : false
 
   useKeyAction('Escape', () => {}, {
     enabled: Boolean(current) && isMounted,
@@ -123,16 +127,16 @@ export function AlertQueueOverlay({
       ? (current.failedAttempts ?? 0) + (localFailures[current.id] ?? 0)
       : 0
   const filteredCount =
-    isComunicado && current
+    isComunicado && current && requiresWords
       ? new Set(alertTargetWords(`${current.title} ${current.description}`))
           .size
       : 0
   const targetCount =
-    isComunicado && current
+    isComunicado && current && requiresWords
       ? Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
       : 0
   const targetWords =
-    isComunicado && current
+    isComunicado && current && requiresWords
       ? communicadoTargetWords(
           current.title,
           current.description,
@@ -152,8 +156,10 @@ export function AlertQueueOverlay({
   const canConfirm =
     !isComunicado ||
     (current
-      ? typedText.trim().split(/\s+/).filter(Boolean).length >= targetCount &&
-        targetCount > 0
+      ? requiresWords
+        ? typedText.trim().split(/\s+/).filter(Boolean).length >= targetCount &&
+          targetCount > 0
+        : true
       : false)
 
   // Enquanto um alerta está na tela: trava o scroll, prende o foco na janela e
@@ -268,44 +274,50 @@ export function AlertQueueOverlay({
               </p>
             ) : null} */}
 
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="alert-queue-phrase"
-                className="text-sm font-medium text-slate-700"
-              >
-                Digite as palavras indicadas para confirmar a leitura
-              </label>
-              <Input
-                id="alert-queue-phrase"
-                ref={phraseRef}
-                value={typedText}
-                onChange={(event) =>
-                  setPhrase({ id: itemId, text: event.target.value })
-                }
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder="Ex.: recolher o lixo antes do jantar"
-                aria-describedby="alert-queue-phrase-hint"
-              />
-              <p
-                id="alert-queue-phrase-hint"
-                className={
-                  canConfirm
-                    ? 'text-xs font-medium text-emerald-600'
-                    : 'text-xs text-slate-500'
-                }
-              >
-                {canConfirm
-                  ? 'Leitura confirmada. Pode confirmar o aviso.'
-                  : `${matchedCount} de ${targetWords.length} palavras — ${communicadoTargetHint(
-                      current.title,
-                      current.description,
-                      undefined,
-                      targetCount
-                    )} (na ordem indicada)`}
+            {requiresWords ? (
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="alert-queue-phrase"
+                  className="text-sm font-medium text-slate-700"
+                >
+                  Digite as palavras indicadas para confirmar a leitura
+                </label>
+                <Input
+                  id="alert-queue-phrase"
+                  ref={phraseRef}
+                  value={typedText}
+                  onChange={(event) =>
+                    setPhrase({ id: itemId, text: event.target.value })
+                  }
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  placeholder="Ex.: recolher o lixo antes do jantar"
+                  aria-describedby="alert-queue-phrase-hint"
+                />
+                <p
+                  id="alert-queue-phrase-hint"
+                  className={
+                    canConfirm
+                      ? 'text-xs font-medium text-emerald-600'
+                      : 'text-xs text-slate-500'
+                  }
+                >
+                  {canConfirm
+                    ? 'Leitura confirmada. Pode confirmar o aviso.'
+                    : `${matchedCount} de ${targetWords.length} palavras — ${communicadoTargetHint(
+                        current.title,
+                        current.description,
+                        undefined,
+                        targetCount
+                      )} (na ordem indicada)`}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Confirmação de leitura sem desafio de palavras.
               </p>
-            </div>
+            )}
 
             <Button
               ref={confirmRef}

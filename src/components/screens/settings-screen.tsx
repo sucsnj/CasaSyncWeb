@@ -32,6 +32,7 @@ export function SettingsScreen() {
       timezoneOptions={data.timezoneOptions}
       textLimits={data.textLimits}
       attachmentSettings={data.attachmentSettings}
+      comunicadoConfirmation={data.comunicadoConfirmation}
     />
   )
 }

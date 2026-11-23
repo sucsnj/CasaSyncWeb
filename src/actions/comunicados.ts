@@ -27,9 +27,9 @@ import {
   alertTargetWords,
   COMUNICADO_MIN_WORDS,
   COMUNICADO_TARGET_MIN_WORD_LENGTH,
-  hasTypedAlertConfirmation,
+  hasComunicadoConfirmation,
 } from '@/utils/alert-queue'
-import { getHouseTimezoneSettings } from '@/utils/house-settings'
+import { getHouseTimezoneSettings, getHouseComunicadoConfirmationSettings } from '@/utils/house-settings'
 import type { ActionResult } from './types'
 
 /**
@@ -435,7 +435,8 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
   const now = new Date()
   const due: DueComunicado[] = []
   // Fuso da casa (chave `house_timezone`): `repeat_time` é hora de parede dela.
-  const { timezone } = await getHouseTimezoneSettings(house.id)
+   const { timezone } = await getHouseTimezoneSettings(house.id)
+   const confirmationSettings = await getHouseComunicadoConfirmationSettings(house.id)
 
   for (const comunicado of comunicados) {
     const delivery = deliveriesByComunicado.get(comunicado.id)
@@ -465,14 +466,14 @@ export async function getDueComunicados(): Promise<DueComunicado[]> {
       // Repetição: próxima ocorrência a partir da ocorrência agendada tratada.
       const next = nextComunicadoOccurrence(lastOccurrence, schedule, timezone)
       if (now.getTime() >= next.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode))
       }
     } else {
       // 1ª exibição (ou entrega zerada): "slot de hoje ou próximo" (regra do
       // usuário).
       const first = firstComunicadoOccurrence(now, schedule, timezone)
       if (now.getTime() >= first.getTime()) {
-        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0))
+        due.push(toDueComunicado(comunicado, deliveredCount, delivery?.failed_attempts ?? 0, confirmationSettings.mode))
       }
     }
   }
@@ -533,6 +534,8 @@ export async function confirmComunicadoDelivery(
     .eq('profile_id', user.id)
     .maybeSingle()
 
+  const confirmationSettings = await getHouseComunicadoConfirmationSettings(house.id)
+
   const failedAttempts = row?.failed_attempts ?? 0
   const filteredCount = new Set(
     alertTargetWords(`${comunicado.title} ${comunicado.description}`)
@@ -540,7 +543,8 @@ export async function confirmComunicadoDelivery(
   const targetCount = Math.min(3 + Math.floor(failedAttempts / 2), filteredCount)
 
   if (
-    !hasTypedAlertConfirmation(
+    !hasComunicadoConfirmation(
+      confirmationSettings.mode,
       typedPhrase,
       comunicado.title,
       comunicado.description,
