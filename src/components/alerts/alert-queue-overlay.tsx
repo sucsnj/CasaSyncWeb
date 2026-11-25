@@ -328,7 +328,7 @@ export function AlertQueueOverlay({
                   autoComplete="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  placeholder="Ex.: recolher o lixo antes do jantar"
+                  placeholder="Ex.: recolher lixo antes jantar"
                   aria-describedby="alert-queue-phrase-hint"
                 />
                 <p
@@ -346,7 +346,7 @@ export function AlertQueueOverlay({
                         current.description,
                         undefined,
                         targetCount
-                      )} (na ordem indicada)`}
+                      )} (na ordem, considere palavras com 4 letras ou mais, apenas letras)`}
                 </p>
               </div>
             ) : requiresAnswers ? (

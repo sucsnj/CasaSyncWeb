@@ -30,7 +30,7 @@ export const ALERT_TYPED_WORDS_REQUIRED = 3
  * Mínimo de palavras "de conteúdo" (4+ letras) que um comunicado precisa ter para
  * ser publicável — garante material suficiente para o desafio diário.
  */
-export const COMUNICADO_MIN_WORDS = 7
+export const COMUNICADO_MIN_WORDS = 5
 
 /**
  * Tamanho mínimo (em letras) de uma palavra para entrar no desafio diário.
@@ -66,7 +66,7 @@ export function normalizeAlertText(text: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^a-z]+/g, ' ')
     .trim()
 }
 
@@ -227,15 +227,15 @@ export function communicadoTargetHint(
 
   const labels = positions.map((index) => {
     if (index === words.length - 1) return 'a última palavra'
-    return `a ${index + 1}ª palavra`
+    return ` ${index + 1}ª`
   })
 
   if (labels.length === 1) {
     return `Para confirmar hoje, digite ${labels[0]} do aviso.`
   }
-  return `Para confirmar hoje, digite ${labels
+  return `Para confirmar hoje, digite as${labels
     .slice(0, -1)
-    .join(', ')} e ${labels[labels.length - 1]} do aviso.`
+    .join(', ')} e ${labels[labels.length - 1]} palavras do aviso.`
 }
 
 /**
