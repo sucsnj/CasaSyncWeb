@@ -376,7 +376,7 @@ export function TasksAdmin({
         if (result.data?.task) {
           upsertTaskInBundle(queryClient, houseId, result.data!.task)
         }
-    setFormError(null)
+        setFormError(null)
         resetForm()
         setShowTaskForm(false)
         void invalidateTasks(houseId)
@@ -431,8 +431,8 @@ export function TasksAdmin({
       if (result.data?.task) {
         upsertTaskInBundle(queryClient, houseId, result.data!.task)
       }
-    console.log('DEBUG taskAttachment', taskAttachment)
-    setFormError(null)
+      console.log('DEBUG taskAttachment', taskAttachment)
+      setFormError(null)
       resetForm()
       setShowTaskForm(false)
       void invalidateTasks(houseId)
@@ -1018,29 +1018,29 @@ export function TasksAdmin({
             </form>
           </CardContent>
         ) : null}
-        </Card>
-  
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-              <ListTodo className="size-4 text-blue-600" />
-              Pendentes
-            </h2>
-            <SortSelect
-              value={sortPending}
-              onChange={setSortPending}
-              options={[
-                { value: 'created:desc', label: 'Mais recentes' },
-                { value: 'created:asc', label: 'Mais antigas' },
-                { value: 'title:asc', label: 'Título (A-Z)' },
-                { value: 'title:desc', label: 'Título (Z-A)' },
-                { value: 'points:desc', label: 'Mais pontos' },
-                { value: 'points:asc', label: 'Menos pontos' },
-                { value: 'due:asc', label: 'Prazo (próximo)' },
-                { value: 'due:desc', label: 'Prazo (distante)' },
-              ]}
-            />
-          </div>
+      </Card>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+            <ListTodo className="size-4 text-blue-600" />
+            Pendentes
+          </h2>
+          <SortSelect
+            value={sortPending}
+            onChange={setSortPending}
+            options={[
+              { value: 'created:desc', label: 'Mais recentes' },
+              { value: 'created:asc', label: 'Mais antigas' },
+              { value: 'title:asc', label: 'Título (A-Z)' },
+              { value: 'title:desc', label: 'Título (Z-A)' },
+              { value: 'points:desc', label: 'Mais pontos' },
+              { value: 'points:asc', label: 'Menos pontos' },
+              { value: 'due:asc', label: 'Prazo (próximo)' },
+              { value: 'due:desc', label: 'Prazo (distante)' },
+            ]}
+          />
+        </div>
         {pendingTasks.length === 0 ? (
           <EmptyState
             icon={ListTodo}
@@ -1075,16 +1075,25 @@ export function TasksAdmin({
               return (
                 <Card key={task.id} className={cardClass}>
                   <CardContent className="flex flex-col gap-3 py-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(task.id)}
-                      aria-expanded={isExpanded}
-                      className="flex w-full flex-wrap items-center gap-2 text-left"
-                    >
-                      <span className="min-w-0 basis-full truncate font-medium text-slate-800 sm:basis-0 sm:flex-1">
-                        {task.title}
-                      </span>
-                      <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(task.id)}
+                        aria-expanded={isExpanded}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+                          {task.title}
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            'size-4 shrink-0 text-slate-400',
+                            isHydrated && 'transition-transform duration-200',
+                            isExpanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                         {!isNotDelivered && slaInfo ? (
                           <span
                             className={cn(
@@ -1105,8 +1114,9 @@ export function TasksAdmin({
                         </span>
                         {/* Pedido de adiamento esperando decisão: fica NO
                             cabeçalho, e não só no banner do corpo expandido —
-                            os cards vêm recolhidos por padrão, então o ADMIN só
-                            percebia o pedido ao expandir (ou pela notificação). */}
+                            mesmo que os cards estejam recolhidos, o ADMIN irá
+                            perceber o pedido sem precisar expandir 
+                            (ou ver pela notificação). */}
                         {task.extension_requested ? (
                           <span
                             className={cn(
@@ -1118,32 +1128,25 @@ export function TasksAdmin({
                             {taskExtensionChip.label}
                           </span>
                         ) : null}
-                      </span>
-                      <span
-                        className={cn(
-                          'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                          POINTS_PILL_CLASS
-                        )}
-                      >
-                        {currentPoints < task.points ? (
-                          <>
-                            {currentPoints} pts{' '}
-                            <span className="font-normal line-through opacity-60">
-                              {task.points}
-                            </span>
-                          </>
-                        ) : (
-                          `${task.points} pts`
-                        )}
-                      </span>
-                      <ChevronDown
-                        className={cn(
-                          'size-4 shrink-0 text-slate-400',
-                          isHydrated && 'transition-transform duration-200',
-                          isExpanded && 'rotate-180'
-                        )}
-                      />
-                    </button>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                            POINTS_PILL_CLASS
+                          )}
+                        >
+                          {currentPoints < task.points ? (
+                            <>
+                              {currentPoints} pts{' '}
+                              <span className="font-normal line-through opacity-60">
+                                {task.points}
+                              </span>
+                            </>
+                          ) : (
+                            `${task.points} pts`
+                          )}
+                        </span>
+                      </div>
+                    </div>
 
                     {isExpanded ? (
                       <>
@@ -1438,9 +1441,9 @@ export function TasksAdmin({
                         <ChevronDown
                           className={cn(
                             cn(
-                            'size-4 shrink-0 text-slate-400',
-                            isHydrated && 'transition-transform duration-200'
-                          ),
+                              'size-4 shrink-0 text-slate-400',
+                              isHydrated && 'transition-transform duration-200'
+                            ),
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -1629,9 +1632,9 @@ export function TasksAdmin({
                         <ChevronDown
                           className={cn(
                             cn(
-                            'size-4 shrink-0 text-slate-400',
-                            isHydrated && 'transition-transform duration-200'
-                          ),
+                              'size-4 shrink-0 text-slate-400',
+                              isHydrated && 'transition-transform duration-200'
+                            ),
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -1715,28 +1718,28 @@ export function TasksAdmin({
         )}
       </section>
 
-       {approvedTasks.length > 0 ? (
-         <section className="flex flex-col gap-3">
-           <div className="flex items-center justify-between gap-3">
-             <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-               <CircleCheckBig className="size-4 text-emerald-500" />
-               Aprovadas
-             </h2>
-             <SortSelect
-               value={sortApproved}
-               onChange={setSortApproved}
-               options={[
-                 { value: 'created:desc', label: 'Mais recentes' },
-                 { value: 'created:asc', label: 'Mais antigas' },
-                 { value: 'title:asc', label: 'Título (A-Z)' },
-                 { value: 'title:desc', label: 'Título (Z-A)' },
-                 { value: 'points:desc', label: 'Mais pontos' },
-                 { value: 'points:asc', label: 'Menos pontos' },
-                 { value: 'due:asc', label: 'Prazo (próximo)' },
-                 { value: 'due:desc', label: 'Prazo (distante)' },
-               ]}
-             />
-           </div>
+      {approvedTasks.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+              <CircleCheckBig className="size-4 text-emerald-500" />
+              Aprovadas
+            </h2>
+            <SortSelect
+              value={sortApproved}
+              onChange={setSortApproved}
+              options={[
+                { value: 'created:desc', label: 'Mais recentes' },
+                { value: 'created:asc', label: 'Mais antigas' },
+                { value: 'title:asc', label: 'Título (A-Z)' },
+                { value: 'title:desc', label: 'Título (Z-A)' },
+                { value: 'points:desc', label: 'Mais pontos' },
+                { value: 'points:asc', label: 'Menos pontos' },
+                { value: 'due:asc', label: 'Prazo (próximo)' },
+                { value: 'due:desc', label: 'Prazo (distante)' },
+              ]}
+            />
+          </div>
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {approvedTasks.map((task) => {
               const isExpanded = expandedIds.has(task.id)
@@ -1760,9 +1763,9 @@ export function TasksAdmin({
                         <ChevronDown
                           className={cn(
                             cn(
-                            'size-4 shrink-0 text-slate-400',
-                            isHydrated && 'transition-transform duration-200'
-                          ),
+                              'size-4 shrink-0 text-slate-400',
+                              isHydrated && 'transition-transform duration-200'
+                            ),
                             isExpanded && 'rotate-180'
                           )}
                         />
