@@ -130,6 +130,7 @@ export async function login(
   displayName: string | null
   avatarUrl: string | null
   role: 'ADMIN' | 'DEPENDENT'
+  refreshToken: string | null
 }>> {
   const normalizedUsername = username.trim().toLowerCase()
 
@@ -192,6 +193,7 @@ export async function login(
       displayName,
       avatarUrl,
       role: profile.user_role,
+      refreshToken: data.session?.refresh_token ?? null,
     },
   }
 }

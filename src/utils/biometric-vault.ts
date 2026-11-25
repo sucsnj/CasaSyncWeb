@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core'
+import { NativeBiometric } from '@capgo/capacitor-native-biometric'
 
 export type RecentAccount = {
   userId: string
@@ -15,13 +16,11 @@ type NativeModule = {
     username: string
     password: string
     server: string
-    accessControl?: string
   }) => Promise<void>
+  verifyIdentity?: (opts: { reason: string; title: string }) => Promise<void>
   getSecureCredentials?: (opts: { server: string }) => Promise<{ username?: string; password?: string }>
   deleteCredentials?: (opts: { server: string; username?: string }) => Promise<void>
 }
-
-import { NativeBiometric } from '@capgo/capacitor-native-biometric'
 
 async function loadNative(): Promise<NativeModule | null> {
   if (!Capacitor.isNativePlatform()) return null
@@ -41,7 +40,7 @@ export const biometricVault: BiometricVault = {
     if (!native?.isAvailable) return false
     try {
       const result = await native.isAvailable()
-      return Boolean(result?.isAvailable)
+      return result?.isAvailable === true
     } catch {
       return false
     }
@@ -49,21 +48,20 @@ export const biometricVault: BiometricVault = {
   async saveToken(userId, refreshToken) {
     const native = await loadNative()
     if (!native?.setCredentials) return
-    try {
-      await native.setCredentials({
-        username: userId,
-        password: refreshToken,
-        server: `casasync:${userId}`,
-        accessControl: 'biometryAny',
-      })
-    } catch {
-      // Falha silenciosa: a biometria é opcional.
-    }
+    await native.setCredentials({
+      username: userId,
+      password: refreshToken,
+      server: `casasync:${userId}`,
+    })
   },
   async verifyAndGetToken(userId) {
     const native = await loadNative()
-    if (!native?.getSecureCredentials) return null
+    if (!native?.verifyIdentity || !native?.getSecureCredentials) return null
     try {
+      await native.verifyIdentity({
+        reason: 'Confirme sua identidade para entrar',
+        title: 'Login CasaSync',
+      })
       const creds = await native.getSecureCredentials({ server: `casasync:${userId}` })
       if (creds?.username === userId && creds?.password) {
         return creds.password

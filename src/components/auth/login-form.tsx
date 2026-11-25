@@ -8,7 +8,6 @@ import { RegisterForm } from '@/components/auth/register-form'
 import { getRecentAccounts, removeRecentAccount, saveRecentAccount } from '@/utils/recent-accounts'
 import { biometricVault } from '@/utils/biometric-vault'
 import { Preferences } from '@capacitor/preferences'
-import { createClient } from '@/utils/supabase/client'
 import type { RecentAccount } from '@/utils/biometric-vault'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
@@ -58,7 +57,11 @@ export function LoginForm({
             return
           }
           if (result.data?.refreshToken) {
-            await biometricVault.saveToken(account.userId, result.data.refreshToken)
+            try {
+              await biometricVault.saveToken(account.userId, result.data.refreshToken)
+            } catch (err) {
+              console.warn('[biometria] falha ao rotacionar token:', err)
+            }
           }
           router.push(result.data?.redirectTo ?? '/')
           router.refresh()
@@ -101,47 +104,47 @@ export function LoginForm({
           return
         }
 
-        // Salva o perfil recente (metadados não-sensíveis) em background, sem
-        // bloquear a navegação (evita o botão preso em "Entrando...").
+        // Salva o perfil recente (metadados não-sensíveis) e tenta ativar a
+        // biometria ANTES de navegar. O refresh_token vem direto da Server
+        // Action (o cliente nativo pode não expor a sessão via getSession).
+        // O bloco inteiro é limitado a 2000ms para nunca travar o botão.
         if (result.data) {
           const accountData = result.data
-          void (async () => {
-            try {
-              await saveRecentAccount({
-                userId: accountData.userId,
-                loginIdentifier: accountData.loginIdentifier,
-                displayName: accountData.displayName,
-                avatarUrl: accountData.avatarUrl,
-                role: accountData.role,
-                biometricEnabled: false,
-              })
-              setRecentAccounts(await getRecentAccounts())
+          try {
+            await Promise.race([
+              (async () => {
+                await saveRecentAccount({
+                  userId: accountData.userId,
+                  loginIdentifier: accountData.loginIdentifier,
+                  displayName: accountData.displayName,
+                  avatarUrl: accountData.avatarUrl,
+                  role: accountData.role,
+                  biometricEnabled: false,
+                })
+                setRecentAccounts(await getRecentAccounts())
 
-              // Tenta ativar a biometria sem depender de isAvailable() (que pode
-              // retornar false em alguns aparelhos mesmo com digital cadastrada).
-              try {
-                const supabase = createClient()
-                const { data: sessionData } = await supabase.auth.getSession()
-                const refreshToken = sessionData.session?.refresh_token
-                if (refreshToken) {
-                  await biometricVault.saveToken(accountData.userId, refreshToken)
-                  const list = await getRecentAccounts()
-                  const updated = list.map((a) =>
-                    a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
-                  )
-                  await Preferences.set({
-                    key: 'casasync:recent-accounts',
-                    value: JSON.stringify(updated),
-                  })
-                  setRecentAccounts(updated)
+                if (accountData.refreshToken && (await biometricVault.isAvailable())) {
+                  try {
+                    await biometricVault.saveToken(accountData.userId, accountData.refreshToken)
+                    const list = await getRecentAccounts()
+                    const updated = list.map((a) =>
+                      a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
+                    )
+                    await Preferences.set({
+                      key: 'casasync:recent-accounts',
+                      value: JSON.stringify(updated),
+                    })
+                    setRecentAccounts(updated)
+                  } catch (err) {
+                    console.warn('[biometria] falha ao salvar token:', err)
+                  }
                 }
-              } catch {
-                // biometria é opcional
-              }
-            } catch {
-              // ignore
-            }
-          })()
+              })(),
+              new Promise((resolve) => setTimeout(resolve, 2000)),
+            ])
+          } catch (err) {
+            console.warn('[login] falha ao salvar conta recente:', err)
+          }
         }
 
         router.push(result.redirectTo ?? '/')
