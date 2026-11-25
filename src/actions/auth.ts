@@ -124,7 +124,13 @@ export async function registerAdmin(
 export async function login(
   username: string,
   password: string
-): Promise<ActionResult> {
+): Promise<ActionResult<{
+  userId: string
+  loginIdentifier: string
+  displayName: string | null
+  avatarUrl: string | null
+  role: 'ADMIN' | 'DEPENDENT'
+}>> {
   const normalizedUsername = username.trim().toLowerCase()
 
   if (!normalizedUsername || !password) {
@@ -161,12 +167,32 @@ export async function login(
     return { ok: false, error: 'Credenciais inválidas.' }
   }
 
+  const adminClient = getAdminClient()
+  let displayName: string | null = null
+  let avatarUrl: string | null = null
+  if (adminClient) {
+    const { data: prof } = await adminClient
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('id', data.user.id)
+      .maybeSingle()
+    displayName = prof?.full_name ?? null
+    avatarUrl = prof?.avatar_url ?? null
+  }
+
   return {
     ok: true,
     redirectTo:
       profile.user_role === 'ADMIN'
         ? '/dashboard/admin'
         : '/dashboard/dependent',
+    data: {
+      userId: data.user.id,
+      loginIdentifier: normalizedUsername,
+      displayName,
+      avatarUrl,
+      role: profile.user_role,
+    },
   }
 }
 

@@ -1,9 +1,15 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { login } from '@/actions/auth'
+import { restoreSessionFromRefreshToken } from '@/actions/biometric'
 import { RegisterForm } from '@/components/auth/register-form'
+import { getRecentAccounts, removeRecentAccount, saveRecentAccount } from '@/utils/recent-accounts'
+import { biometricVault } from '@/utils/biometric-vault'
+import { Preferences } from '@capacitor/preferences'
+import { createClient } from '@/utils/supabase/client'
+import type { RecentAccount } from '@/utils/biometric-vault'
 import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { Input } from '@/components/ui/input'
@@ -31,6 +37,47 @@ export function LoginForm({
     error === 'auth_callback' ? 'Falha ao autenticar. Tente novamente.' : null
   )
   const [pending, startTransition] = useTransition()
+  const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([])
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    void getRecentAccounts().then(setRecentAccounts)
+  }, [])
+
+  async function handleRecentAccount(account: RecentAccount) {
+    setFormError(null)
+    if (account.biometricEnabled) {
+      const token = await biometricVault.verifyAndGetToken(account.userId)
+      if (token) {
+        startTransition(async () => {
+          const result = await restoreSessionFromRefreshToken(token)
+          if (!result.ok) {
+            setFormError(result.error)
+            // Atualiza o cofre com o token rotacionado, se disponível.
+            return
+          }
+          if (result.data?.refreshToken) {
+            await biometricVault.saveToken(account.userId, result.data.refreshToken)
+          }
+          router.push(result.data?.redirectTo ?? '/')
+          router.refresh()
+        })
+        return
+      }
+    }
+    // Sem biometria (ou falhou): preenche o apelido/e-mail e foca a senha.
+    if (usernameRef.current) {
+      usernameRef.current.value = account.loginIdentifier
+    }
+    passwordRef.current?.focus()
+  }
+
+  async function handleRemoveAccount(account: RecentAccount) {
+    await biometricVault.deleteToken(account.userId)
+    await removeRecentAccount(account.userId)
+    setRecentAccounts((prev) => prev.filter((a) => a.userId !== account.userId))
+  }
 
   function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -52,6 +99,43 @@ export function LoginForm({
         if (!result.ok) {
           setFormError(result.error)
           return
+        }
+
+        // Salva o perfil recente (metadados não-sensíveis) para troca rápida.
+        if (result.data) {
+          await saveRecentAccount({
+            userId: result.data.userId,
+            loginIdentifier: result.data.loginIdentifier,
+            displayName: result.data.displayName,
+            avatarUrl: result.data.avatarUrl,
+            role: result.data.role,
+            biometricEnabled: false,
+          })
+          setRecentAccounts(await getRecentAccounts())
+
+          // Oferece biometria no app nativo (no-op na web).
+          if (await biometricVault.isAvailable()) {
+            try {
+              const supabase = createClient()
+              const { data: sessionData } = await supabase.auth.getSession()
+              const refreshToken = sessionData.session?.refresh_token
+              if (refreshToken) {
+                await biometricVault.saveToken(result.data.userId, refreshToken)
+                // Marca o perfil como biométrico.
+                const list = await getRecentAccounts()
+                const updated = list.map((a) =>
+                  a.userId === result.data!.userId ? { ...a, biometricEnabled: true } : a
+                )
+                await Preferences.set({
+                  key: 'casasync:recent-accounts',
+                  value: JSON.stringify(updated),
+                })
+                setRecentAccounts(updated)
+              }
+            } catch {
+              // biometria é opcional
+            }
+          }
         }
 
         router.push(result.redirectTo ?? '/')
@@ -80,6 +164,49 @@ export function LoginForm({
             </CardHeader>
 
             <CardContent>
+              {recentAccounts.length > 0 ? (
+                <div className="mb-4 flex flex-col gap-2">
+                  <p className="text-xs font-medium text-slate-500">
+                    Contas recentes neste aparelho
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {recentAccounts.map((account) => (
+                      <div
+                        key={account.userId}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => void handleRecentAccount(account)}
+                        >
+                          <span className="flex size-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                            {(account.displayName ?? account.loginIdentifier)
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
+                            {account.displayName ?? account.loginIdentifier}
+                          </span>
+                          {account.biometricEnabled ? (
+                            <span className="text-xs text-emerald-600">
+                              Biometria
+                            </span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Remover conta"
+                          className="text-xs text-slate-400 hover:text-red-600"
+                          onClick={() => void handleRemoveAccount(account)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {redirectedFrom ? (
                 <p className="mb-4 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
                   Faça login para acessar a página do gestor.
@@ -97,6 +224,7 @@ export function LoginForm({
                     placeholder="Seu nome de usuário"
                     required
                     defaultValue=""
+                    ref={usernameRef}
                   />
                 </div>
 
@@ -110,6 +238,7 @@ export function LoginForm({
                     placeholder="••••••••"
                     suppressHydrationWarning
                     required
+                    ref={passwordRef}
                   />
                 </div>
 
