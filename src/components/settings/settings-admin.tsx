@@ -547,6 +547,7 @@ export function SettingsAdmin({
   ) {
     setError(null)
     setSuccess(null)
+    savingRef.current = true
     setSaving((prev) => [...prev, key])
     try {
       const result = await run()
@@ -567,7 +568,13 @@ export function SettingsAdmin({
       setError(message)
       toast.error(message)
     } finally {
+      savingRef.current = saving.filter((item) => item !== key).length > 0
       setSaving((prev) => prev.filter((item) => item !== key))
+      const queued = queuedNavigationRef.current
+      if (queued && !savingRef.current) {
+        queuedNavigationRef.current = null
+        router.push(queued)
+      }
     }
   }
 
@@ -762,10 +769,15 @@ export function SettingsAdmin({
 
   const [showLeaveWarning, setShowLeaveWarning] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
+  const savingRef = useRef<boolean>(false)
+  const queuedNavigationRef = useRef<string | null>(null)
+  useEffect(() => {
+    savingRef.current = saving.length > 0
+  }, [saving])
 
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
-      if (pendingCardsRef.current.length === 0) return
+      if (pendingCardsRef.current.length === 0 && !savingRef.current) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -788,6 +800,13 @@ export function SettingsAdmin({
     }).navigation
     if (!navigation?.addEventListener) return
     function handleNavigate(event: { canIntercept?: boolean; preventDefault: () => void; destination?: { url?: string } }) {
+      if (savingRef.current) {
+        if (event.canIntercept) {
+          event.preventDefault()
+          if (event.destination?.url) queuedNavigationRef.current = event.destination.url
+        }
+        return
+      }
       if (pendingCardsRef.current.length === 0) return
       if (event.canIntercept) {
         event.preventDefault()
@@ -801,6 +820,25 @@ export function SettingsAdmin({
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {
+      if (savingRef.current) {
+        const target = (event.target as HTMLElement | null)?.closest('a')
+        if (target) {
+          const href = target.getAttribute('href')
+          if (href && !href.startsWith('#') && !href.startsWith('mailto:')) {
+            try {
+              const url = new URL(href, window.location.href)
+              if (url.origin === window.location.origin && url.pathname !== window.location.pathname) {
+                event.preventDefault()
+                event.stopPropagation()
+                queuedNavigationRef.current = url.href
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+        return
+      }
       if (pendingCardsRef.current.length === 0) return
       const target = (event.target as HTMLElement | null)?.closest('a')
       if (!target) return
@@ -841,6 +879,7 @@ export function SettingsAdmin({
         </p>
       </header>
 
+      <div className={saving.length > 0 ? 'pointer-events-none opacity-60 transition-opacity' : ''}>
       <CardColumns className="gap-x-6 lg:columns-2 [&>*]:mb-6">
         <Card
           ref={(node) => {
@@ -2021,6 +2060,7 @@ export function SettingsAdmin({
           </CardContent>
         </Card>
       </CardColumns>
+      </div>
 
       <Modal
         open={showLeaveWarning}
