@@ -1,11 +1,5 @@
-/**
- * Adaptador do cofre biométrico.
- *
- * Hoje (camada web/shared) só a interface fica pronta: no navegador a
- * biometria não está disponível e todos os métodos falham de forma segura.
- * A próxima etapa conecta `@capgo/capacitor-native-biometric` aqui dentro,
- * sem tocar no restante do app.
- */
+import { Capacitor } from '@capacitor/core'
+
 export type RecentAccount = {
   userId: string
   loginIdentifier: string
@@ -15,6 +9,30 @@ export type RecentAccount = {
   biometricEnabled: boolean
 }
 
+type NativeModule = {
+  isAvailable?: () => Promise<{ isAvailable?: boolean; biometryType?: number }>
+  setCredentials?: (opts: {
+    username: string
+    password: string
+    server: string
+    accessControl?: string
+  }) => Promise<void>
+  getSecureCredentials?: (opts: { server: string }) => Promise<{ username?: string; password?: string }>
+  deleteCredentials?: (opts: { server: string; username?: string }) => Promise<void>
+}
+
+async function loadNative(): Promise<NativeModule | null> {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const mod = await import('@capgo/capacitor-native-biometric')
+    return (mod as { NativeBiometric?: NativeModule }).NativeBiometric ??
+      (mod as { default?: NativeModule }).default ??
+      null
+  } catch {
+    return null
+  }
+}
+
 export type BiometricVault = {
   isAvailable: () => Promise<boolean>
   saveToken: (userId: string, refreshToken: string) => Promise<void>
@@ -22,31 +40,9 @@ export type BiometricVault = {
   deleteToken: (userId: string) => Promise<void>
 }
 
-type NativeBiometricModule = {
-  isAvailable?: () => Promise<{ isAvailable?: boolean }>
-  setCredentials?: (opts: { username: string; password: string; server: string }) => Promise<void>
-  verifyIdentity?: (opts: { reason: string; title: string }) => Promise<void>
-  getCredentials?: (opts: { server: string }) => Promise<{ username?: string; password?: string }>
-  deleteCredentials?: (opts: { server: string; username: string }) => Promise<void>
-}
-
-async function loadNativeBiometric(): Promise<NativeBiometricModule | null> {
-  try {
-    // @ts-expect-error - módulo opcional, instalado apenas na build nativa
-    const mod = await import('@capgo/capacitor-native-biometric')
-    const resolved =
-      (mod as { NativeBiometric?: NativeBiometricModule }).NativeBiometric ??
-      (mod as { default?: NativeBiometricModule }).default ??
-      null
-    return resolved as NativeBiometricModule | null
-  } catch {
-    return null
-  }
-}
-
 export const biometricVault: BiometricVault = {
   async isAvailable() {
-    const native = await loadNativeBiometric()
+    const native = await loadNative()
     if (!native?.isAvailable) return false
     try {
       const result = await native.isAvailable()
@@ -56,38 +52,47 @@ export const biometricVault: BiometricVault = {
     }
   },
   async saveToken(userId, refreshToken) {
-    const native = await loadNativeBiometric()
+    const native = await loadNative()
     if (!native?.setCredentials) return
     try {
       await native.setCredentials({
         username: userId,
         password: refreshToken,
-        server: 'casasync',
+        server: `casasync:${userId}`,
+        accessControl: 'biometryAny',
       })
     } catch {
       // Falha silenciosa: a biometria é opcional.
     }
   },
   async verifyAndGetToken(userId) {
-    const native = await loadNativeBiometric()
-    if (!native?.verifyIdentity || !native?.getCredentials) return null
+    const native = await loadNative()
+    if (!native?.getSecureCredentials) return null
     try {
-      await native.verifyIdentity({
-        reason: 'Confirme sua identidade para entrar',
-        title: 'Desbloqueio biométrico',
-      })
-      const creds = await native.getCredentials({ server: 'casasync' })
-      if (creds?.username === userId) return creds.password ?? null
+      const creds = await native.getSecureCredentials({ server: `casasync:${userId}` })
+      if (creds?.username === userId && creds?.password) {
+        return creds.password
+      }
       return null
-    } catch {
+    } catch (err) {
+      // Cancelamento ou lockout: retorna null sem quebrar a UI.
+      const message = (err as { message?: string })?.message ?? ''
+      if (
+        message.includes('USER_LOCKOUT') ||
+        message.includes('USER_TEMPORARY_LOCKOUT') ||
+        message.includes('canceled') ||
+        message.includes('cancelled')
+      ) {
+        return null
+      }
       return null
     }
   },
   async deleteToken(userId) {
-    const native = await loadNativeBiometric()
+    const native = await loadNative()
     if (!native?.deleteCredentials) return
     try {
-      await native.deleteCredentials({ server: 'casasync', username: userId })
+      await native.deleteCredentials({ server: `casasync:${userId}`, username: userId })
     } catch {
       // ignore
     }
