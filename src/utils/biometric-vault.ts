@@ -21,16 +21,11 @@ type NativeModule = {
   deleteCredentials?: (opts: { server: string; username?: string }) => Promise<void>
 }
 
+import { NativeBiometric } from '@capgo/capacitor-native-biometric'
+
 async function loadNative(): Promise<NativeModule | null> {
   if (!Capacitor.isNativePlatform()) return null
-  try {
-    const mod = await import('@capgo/capacitor-native-biometric')
-    return (mod as { NativeBiometric?: NativeModule }).NativeBiometric ??
-      (mod as { default?: NativeModule }).default ??
-      null
-  } catch {
-    return null
-  }
+  return NativeBiometric as unknown as NativeModule
 }
 
 export type BiometricVault = {
