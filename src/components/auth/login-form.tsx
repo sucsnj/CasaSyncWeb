@@ -117,26 +117,26 @@ export function LoginForm({
               })
               setRecentAccounts(await getRecentAccounts())
 
-              if (await biometricVault.isAvailable()) {
-                try {
-                  const supabase = createClient()
-                  const { data: sessionData } = await supabase.auth.getSession()
-                  const refreshToken = sessionData.session?.refresh_token
-                  if (refreshToken) {
-                    await biometricVault.saveToken(accountData.userId, refreshToken)
-                    const list = await getRecentAccounts()
-                    const updated = list.map((a) =>
-                      a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
-                    )
-                    await Preferences.set({
-                      key: 'casasync:recent-accounts',
-                      value: JSON.stringify(updated),
-                    })
-                    setRecentAccounts(updated)
-                  }
-                } catch {
-                  // biometria é opcional
+              // Tenta ativar a biometria sem depender de isAvailable() (que pode
+              // retornar false em alguns aparelhos mesmo com digital cadastrada).
+              try {
+                const supabase = createClient()
+                const { data: sessionData } = await supabase.auth.getSession()
+                const refreshToken = sessionData.session?.refresh_token
+                if (refreshToken) {
+                  await biometricVault.saveToken(accountData.userId, refreshToken)
+                  const list = await getRecentAccounts()
+                  const updated = list.map((a) =>
+                    a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
+                  )
+                  await Preferences.set({
+                    key: 'casasync:recent-accounts',
+                    value: JSON.stringify(updated),
+                  })
+                  setRecentAccounts(updated)
                 }
+              } catch {
+                // biometria é opcional
               }
             } catch {
               // ignore
