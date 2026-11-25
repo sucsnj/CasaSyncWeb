@@ -84,12 +84,6 @@ export function ComunicadosAdmin() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const answersMode = settingsData?.comunicadoConfirmation?.mode === 'answers'
-  const editingComunicado = editingId
-    ? comunicados.find((item) => item.id === editingId)
-    : null
-  const showAnswersBuilder =
-    answersMode ||
-    (editingComunicado?.confirmation_answers?.length ?? 0) > 0
 
   useKeyAction('Escape', () => resetForm(), { enabled: showForm })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -212,7 +206,7 @@ export function ComunicadosAdmin() {
         repeatIntervalDays: form.repeatIntervalDays,
         repeatWeekdays: form.weekdays,
         repeatTime: form.repeatTime,
-        ...(showAnswersBuilder
+        ...(answersMode
           ? {
               confirmationAnswers: answers,
               confirmationCorrectIndex: correctIndex,
@@ -458,7 +452,7 @@ export function ComunicadosAdmin() {
                       <span className="text-sm font-medium text-slate-700">Horário</span>
                       <input type="time" value={form.repeatTime} onChange={(event) => setForm((prev) => ({ ...prev, repeatTime: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
                     </label>
-                    {showAnswersBuilder ? (
+                    {answersMode ? (
                       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <span className="text-sm font-medium text-slate-700">
                           Respostas (mínimo 2, marque uma como correta)
