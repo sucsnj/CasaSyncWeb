@@ -810,8 +810,11 @@ export function SettingsAdmin({
       if (pendingCardsRef.current.length === 0) return
       if (event.canIntercept) {
         event.preventDefault()
-        if (event.destination?.url) setPendingNavigation(event.destination.url)
-        setShowLeaveWarning(true)
+        const destinationUrl = event.destination?.url
+        setTimeout(() => {
+          if (destinationUrl) setPendingNavigation(destinationUrl)
+          setShowLeaveWarning(true)
+        }, 0)
       }
     }
     navigation.addEventListener('navigate', handleNavigate)
@@ -991,7 +994,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void savePricing()}
-                disabled={isSaving('pricing')}
+                disabled={isSaving('pricing') || !dirty.pricing}
               >
                 <Save className="size-4" />
                 {isSaving('pricing') ? 'Salvando…' : 'Salvar economia de pontos'}
@@ -1083,7 +1086,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveQuick()}
-                disabled={isSaving('quick')}
+                disabled={isSaving('quick') || !dirty.quick}
               >
                 <Save className="size-4" />
                 {isSaving('quick') ? 'Salvando…' : 'Salvar mensagem rápida'}
@@ -1161,7 +1164,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveSla()}
-                disabled={isSaving('sla')}
+                disabled={isSaving('sla') || !dirty.sla}
               >
                 <Save className="size-4" />
                 {isSaving('sla') ? 'Salvando…' : 'Salvar prazos'}
@@ -1298,7 +1301,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveExtensions()}
-                disabled={isSaving('extensions')}
+                disabled={isSaving('extensions') || !dirty.extensions}
               >
                 <Save className="size-4" />
                 {isSaving('extensions') ? 'Salvando…' : 'Salvar adiamento'}
@@ -1399,7 +1402,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveRetention()}
-                disabled={isSaving('retention')}
+                disabled={isSaving('retention') || !dirty.retention}
               >
                 <Save className="size-4" />
                 {isSaving('retention') ? 'Salvando…' : 'Salvar notificações'}
@@ -1497,7 +1500,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveDecay()}
-                disabled={isSaving('decay')}
+                disabled={isSaving('decay') || !dirty.decay}
               >
                 <Save className="size-4" />
                 {isSaving('decay') ? 'Salvando…' : 'Salvar decaimento'}
@@ -1573,7 +1576,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveRules()}
-                disabled={isSaving('rules')}
+                disabled={isSaving('rules') || !dirty.rules}
               >
                 <Save className="size-4" />
                 {isSaving('rules') ? 'Salvando…' : 'Salvar limites'}
@@ -1674,7 +1677,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveAttachmentBudget()}
-                disabled={isSaving('attachmentBudget')}
+                disabled={isSaving('attachmentBudget') || !dirty.attachmentBudget}
               >
                 <Save className="size-4" />
                 {isSaving('attachmentBudget') ? 'Salvando…' : 'Salvar limite'}
@@ -1788,7 +1791,7 @@ export function SettingsAdmin({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={isSaving('attachments')}
+                  disabled={isSaving('attachments') || !dirty.attachments}
                 >
                   <Save className="size-4" />
                   {isSaving('attachments') ? 'Salvando…' : 'Salvar anexos'}
@@ -1860,7 +1863,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveTimezone()}
-                disabled={isSaving('timezone')}
+                disabled={isSaving('timezone') || !dirty.timezone}
               >
                 <Save className="size-4" />
                 {isSaving('timezone') ? 'Salvando…' : 'Salvar fuso'}
@@ -1949,7 +1952,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveLimits()}
-                disabled={isSaving('limits')}
+                disabled={isSaving('limits') || !dirty.limits}
               >
                 <Save className="size-4" />
                 {isSaving('limits') ? 'Salvando…' : 'Salvar limites de texto'}
@@ -2046,7 +2049,7 @@ export function SettingsAdmin({
                 type="button"
                 size="sm"
                 onClick={() => void saveComunicadoConfirmation()}
-                disabled={isSaving('comunicadoConfirmation')}
+                disabled={isSaving('comunicadoConfirmation') || !dirty.comunicadoConfirmation}
               >
                 <Save className="size-4" />
                 {isSaving('comunicadoConfirmation') ? 'Salvando…' : 'Salvar confirmação'}
