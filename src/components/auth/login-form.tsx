@@ -101,41 +101,47 @@ export function LoginForm({
           return
         }
 
-        // Salva o perfil recente (metadados não-sensíveis) para troca rápida.
+        // Salva o perfil recente (metadados não-sensíveis) em background, sem
+        // bloquear a navegação (evita o botão preso em "Entrando...").
         if (result.data) {
-          await saveRecentAccount({
-            userId: result.data.userId,
-            loginIdentifier: result.data.loginIdentifier,
-            displayName: result.data.displayName,
-            avatarUrl: result.data.avatarUrl,
-            role: result.data.role,
-            biometricEnabled: false,
-          })
-          setRecentAccounts(await getRecentAccounts())
-
-          // Oferece biometria no app nativo (no-op na web).
-          if (await biometricVault.isAvailable()) {
+          const accountData = result.data
+          void (async () => {
             try {
-              const supabase = createClient()
-              const { data: sessionData } = await supabase.auth.getSession()
-              const refreshToken = sessionData.session?.refresh_token
-              if (refreshToken) {
-                await biometricVault.saveToken(result.data.userId, refreshToken)
-                // Marca o perfil como biométrico.
-                const list = await getRecentAccounts()
-                const updated = list.map((a) =>
-                  a.userId === result.data!.userId ? { ...a, biometricEnabled: true } : a
-                )
-                await Preferences.set({
-                  key: 'casasync:recent-accounts',
-                  value: JSON.stringify(updated),
-                })
-                setRecentAccounts(updated)
+              await saveRecentAccount({
+                userId: accountData.userId,
+                loginIdentifier: accountData.loginIdentifier,
+                displayName: accountData.displayName,
+                avatarUrl: accountData.avatarUrl,
+                role: accountData.role,
+                biometricEnabled: false,
+              })
+              setRecentAccounts(await getRecentAccounts())
+
+              if (await biometricVault.isAvailable()) {
+                try {
+                  const supabase = createClient()
+                  const { data: sessionData } = await supabase.auth.getSession()
+                  const refreshToken = sessionData.session?.refresh_token
+                  if (refreshToken) {
+                    await biometricVault.saveToken(accountData.userId, refreshToken)
+                    const list = await getRecentAccounts()
+                    const updated = list.map((a) =>
+                      a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
+                    )
+                    await Preferences.set({
+                      key: 'casasync:recent-accounts',
+                      value: JSON.stringify(updated),
+                    })
+                    setRecentAccounts(updated)
+                  }
+                } catch {
+                  // biometria é opcional
+                }
               }
             } catch {
-              // biometria é opcional
+              // ignore
             }
-          }
+          })()
         }
 
         router.push(result.redirectTo ?? '/')
