@@ -20,7 +20,7 @@ type NativeModule = {
     server: string
   }) => Promise<void>
   verifyIdentity?: (opts: { reason: string; title: string }) => Promise<void>
-  getSecureCredentials?: (opts: { server: string }) => Promise<{ username?: string; password?: string }>
+  getCredentials?: (opts: { server: string }) => Promise<{ username?: string; password?: string }>
   deleteCredentials?: (opts: { server: string; username?: string }) => Promise<void>
 }
 
@@ -69,17 +69,14 @@ export const biometricVault: BiometricVault = {
   async verifyAndGetToken(userId) {
     if (!Capacitor.isNativePlatform()) return null
     const native = NativeBiometric as unknown as NativeModule
-    if (!native.verifyIdentity || !native.getSecureCredentials) return null
+    if (!native.verifyIdentity || !native.getCredentials) return null
     try {
       await native.verifyIdentity({
         reason: 'Confirme sua identidade para entrar',
         title: 'Login CasaSync',
       })
-      const creds = await native.getSecureCredentials({ server: `casasync:${userId}` })
-      if (creds?.username === userId && creds?.password) {
-        return creds.password
-      }
-      return null
+      const creds = await native.getCredentials({ server: `casasync:${userId}` })
+      return creds?.password ?? null
     } catch {
       // Cancelamento, lockout ou credencial ausente: retorna null sem quebrar a UI.
       return null

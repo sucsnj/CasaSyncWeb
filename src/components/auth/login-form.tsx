@@ -23,8 +23,6 @@ import {
 } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-const BIOMETRIC_DEBUG_KEY = 'casasync:biometric-debug'
-
 export function LoginForm({
   redirectedFrom,
   error,
@@ -39,25 +37,13 @@ export function LoginForm({
   )
   const [pending, startTransition] = useTransition()
   const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([])
-  const [biometricDebug, setBiometricDebug] = useState<string | null>(null)
   const usernameRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void getRecentAccounts().then(setRecentAccounts)
-    void Preferences.get({ key: BIOMETRIC_DEBUG_KEY }).then(({ value }) => {
-      setBiometricDebug(value)
-    })
+    void Preferences.remove({ key: 'casasync:biometric-debug' }).catch(() => undefined)
   }, [])
-
-  async function setDebug(reason: string) {
-    setBiometricDebug(reason)
-    try {
-      await Preferences.set({ key: BIOMETRIC_DEBUG_KEY, value: reason })
-    } catch {
-      // diagnóstico é best-effort
-    }
-  }
 
   async function handleRecentAccount(account: RecentAccount) {
     setFormError(null)
@@ -85,7 +71,6 @@ export function LoginForm({
         })
         return
       }
-      await setDebug('verifyAndGetToken retornou null (biometria cancelada ou credencial ausente)')
     }
     // Sem biometria (ou falhou): preenche o apelido/e-mail e foca a senha.
     if (usernameRef.current) {
@@ -141,19 +126,17 @@ export function LoginForm({
                 })
                 setRecentAccounts(await getRecentAccounts())
 
-                if (!accountData.refreshToken) {
-                  await setDebug('refreshToken ausente na resposta do login')
-                } else {
+                if (accountData.refreshToken) {
                   const availability = await biometricVault.isAvailable()
                   if (!availability.ok) {
-                    await setDebug(availability.reason)
+                    console.warn('[biometria] indisponível:', availability.reason)
                   } else {
                     const saved = await biometricVault.saveToken(
                       accountData.userId,
                       accountData.refreshToken
                     )
                     if (!saved.ok) {
-                      await setDebug(saved.reason)
+                      console.warn('[biometria] falha ao salvar token:', saved.reason)
                     } else {
                       const list = await getRecentAccounts()
                       const updated = list.map((a) =>
@@ -164,7 +147,6 @@ export function LoginForm({
                         value: JSON.stringify(updated),
                       })
                       setRecentAccounts(updated)
-                      await setDebug('OK')
                     }
                   }
                 }
@@ -243,11 +225,6 @@ export function LoginForm({
                       </div>
                     ))}
                   </div>
-                  {biometricDebug ? (
-                    <p className="text-[0.7rem] leading-tight text-slate-400">
-                      Debug Biometria: {biometricDebug}
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
               {redirectedFrom ? (
