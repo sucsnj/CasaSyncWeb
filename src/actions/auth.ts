@@ -2,10 +2,12 @@
 
 import type { ActionResult } from './types'
 import { revalidatePath } from 'next/cache'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { validatePassword, validateUsername } from './types'
 import { getSessionProfile } from '@/utils/house'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
+import type { Database } from '@/types/database'
 
 const ADMIN_EMAIL_DOMAIN = 'admin.casasync'
 const DEPENDENT_EMAIL_DOMAIN = 'dependente.casasync'
@@ -181,6 +183,31 @@ export async function login(
     avatarUrl = prof?.avatar_url ?? null
   }
 
+  // Sessão secundária independente para o cofre biométrico. A sessão principal
+  // (cookies do @supabase/ssr) é revogada no signOut local; este refresh_token
+  // separado permanece válido no Android Keystore.
+  let refreshToken: string | null = null
+  try {
+    const isolated = createSupabaseClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    )
+    const { data: secondary } = await isolated.auth.signInWithPassword({
+      email,
+      password,
+    })
+    refreshToken = secondary.session?.refresh_token ?? null
+  } catch {
+    refreshToken = null
+  }
+
   return {
     ok: true,
     redirectTo:
@@ -193,7 +220,7 @@ export async function login(
       displayName,
       avatarUrl,
       role: profile.user_role,
-      refreshToken: data.session?.refresh_token ?? null,
+      refreshToken,
     },
   }
 }
