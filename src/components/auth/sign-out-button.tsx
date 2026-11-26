@@ -32,15 +32,11 @@ export function SignOutButton({
       queryClient.clear()
       await del(PERSIST_KEY).catch(() => undefined)
 
-      // Logout seguro: se este aparelho tem biometria ativa para a conta
-      // atual, usa scope 'local' para não revogar o refresh_token guardado
-      // no cofre biométrico no servidor.
-      const { data: userData } = await supabase.auth.getUser()
-      const currentUserId = userData.user?.id
+      // Logout seguro: se o aparelho tem QUALQUER conta com biometria ativa,
+      // usa sempre scope 'local' para não revogar os refresh_tokens guardados
+      // no cofre. Não depende de getUser() (pode retornar nulo na WebView).
       const recent = await getRecentAccounts()
-      const hasBiometric = recent.some(
-        (account) => account.userId === currentUserId && account.biometricEnabled
-      )
+      const hasBiometric = recent.some((account) => account.biometricEnabled)
       await supabase.auth.signOut({
         scope: hasBiometric ? 'local' : 'global',
       })
