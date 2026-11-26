@@ -22,6 +22,26 @@ import {
 } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+function AccountAvatar({ account }: { account: RecentAccount }) {
+  const [failed, setFailed] = useState(false)
+  const label = (account.displayName ?? account.loginIdentifier).slice(0, 2).toUpperCase()
+
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+      {account.avatarUrl && !failed ? (
+        <img
+          src={account.avatarUrl}
+          alt={account.displayName ?? account.loginIdentifier}
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        label
+      )}
+    </span>
+  )
+}
+
 export function LoginForm({
   redirectedFrom,
   error,
@@ -188,11 +208,7 @@ export function LoginForm({
                           className="flex min-w-0 flex-1 items-center gap-2 text-left"
                           onClick={() => void handleRecentAccount(account)}
                         >
-                          <span className="flex size-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                            {(account.displayName ?? account.loginIdentifier)
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </span>
+                          <AccountAvatar account={account} />
                           <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
                             {account.displayName ?? account.loginIdentifier}
                           </span>
