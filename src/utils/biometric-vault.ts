@@ -28,11 +28,6 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-async function loadNative(): Promise<NativeModule | null> {
-  if (!Capacitor.isNativePlatform()) return null
-  return NativeBiometric as unknown as NativeModule
-}
-
 export type BiometricVault = {
   isAvailable: () => Promise<VaultResult>
   saveToken: (userId: string, refreshToken: string) => Promise<VaultResult>
@@ -42,8 +37,8 @@ export type BiometricVault = {
 
 export const biometricVault: BiometricVault = {
   async isAvailable() {
-    const native = await loadNative()
-    if (!native) return { ok: false, reason: 'plataforma não nativa' }
+    if (!Capacitor.isNativePlatform()) return { ok: false, reason: 'plataforma não nativa' }
+    const native = NativeBiometric as unknown as NativeModule
     if (!native.isAvailable) return { ok: false, reason: 'plugin isAvailable indisponível' }
     try {
       const result = await native.isAvailable()
@@ -57,8 +52,8 @@ export const biometricVault: BiometricVault = {
     }
   },
   async saveToken(userId, refreshToken) {
-    const native = await loadNative()
-    if (!native) return { ok: false, reason: 'plataforma não nativa' }
+    if (!Capacitor.isNativePlatform()) return { ok: false, reason: 'plataforma não nativa' }
+    const native = NativeBiometric as unknown as NativeModule
     if (!native.setCredentials) return { ok: false, reason: 'plugin setCredentials indisponível' }
     try {
       await native.setCredentials({
@@ -72,8 +67,9 @@ export const biometricVault: BiometricVault = {
     }
   },
   async verifyAndGetToken(userId) {
-    const native = await loadNative()
-    if (!native?.verifyIdentity || !native?.getSecureCredentials) return null
+    if (!Capacitor.isNativePlatform()) return null
+    const native = NativeBiometric as unknown as NativeModule
+    if (!native.verifyIdentity || !native.getSecureCredentials) return null
     try {
       await native.verifyIdentity({
         reason: 'Confirme sua identidade para entrar',
@@ -84,27 +80,19 @@ export const biometricVault: BiometricVault = {
         return creds.password
       }
       return null
-    } catch (err) {
-      // Cancelamento ou lockout: retorna null sem quebrar a UI.
-      const message = (err as { message?: string })?.message ?? ''
-      if (
-        message.includes('USER_LOCKOUT') ||
-        message.includes('USER_TEMPORARY_LOCKOUT') ||
-        message.includes('canceled') ||
-        message.includes('cancelled')
-      ) {
-        return null
-      }
+    } catch {
+      // Cancelamento, lockout ou credencial ausente: retorna null sem quebrar a UI.
       return null
     }
   },
   async deleteToken(userId) {
-    const native = await loadNative()
-    if (!native?.deleteCredentials) return
+    if (!Capacitor.isNativePlatform()) return
+    const native = NativeBiometric as unknown as NativeModule
+    if (!native.deleteCredentials) return
     try {
       await native.deleteCredentials({ server: `casasync:${userId}`, username: userId })
     } catch {
-      // ignore
+      // Sem credencial salva ou usuário cancelou: nunca lançar.
     }
   },
 }
