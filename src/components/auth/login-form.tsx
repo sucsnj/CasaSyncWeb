@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { login } from '@/actions/auth'
-import { restoreSessionFromRefreshToken } from '@/actions/biometric'
 import { RegisterForm } from '@/components/auth/register-form'
 import { getRecentAccounts, removeRecentAccount, saveRecentAccount } from '@/utils/recent-accounts'
 import { biometricVault } from '@/utils/biometric-vault'
@@ -48,26 +47,20 @@ export function LoginForm({
   async function handleRecentAccount(account: RecentAccount) {
     setFormError(null)
     if (account.biometricEnabled) {
-      const token = await biometricVault.verifyAndGetToken(account.userId)
-      if (token) {
+      const savedPassword = await biometricVault.verifyAndGetToken(account.userId)
+      if (savedPassword) {
         startTransition(async () => {
-          const result = await restoreSessionFromRefreshToken(token)
-          if (!result.ok) {
-            setFormError(result.error)
-            // Atualiza o cofre com o token rotacionado, se disponível.
-            return
-          }
-          if (result.data?.refreshToken) {
-            const rotated = await biometricVault.saveToken(
-              account.userId,
-              result.data.refreshToken
-            )
-            if (!rotated.ok) {
-              console.warn('[biometria] falha ao rotacionar token:', rotated.reason)
+          try {
+            const result = await login(account.loginIdentifier, savedPassword)
+            if (!result.ok) {
+              setFormError(result.error)
+              return
             }
+            router.push(result.redirectTo ?? '/')
+            router.refresh()
+          } catch {
+            setFormError('Falha de conexão. Tente novamente.')
           }
-          router.push(result.data?.redirectTo ?? '/')
-          router.refresh()
         })
         return
       }
@@ -108,9 +101,9 @@ export function LoginForm({
         }
 
         // Salva o perfil recente (metadados não-sensíveis) e tenta ativar a
-        // biometria ANTES de navegar. O refresh_token vem direto da Server
-        // Action (o cliente nativo pode não expor a sessão via getSession).
-        // O bloco inteiro é limitado a 2000ms para nunca travar o botão.
+        // biometria ANTES de navegar. O cofre guarda a senha do usuário,
+        // protegida pelo Android Keystore + verifyIdentity. O bloco inteiro é
+        // limitado a 2000ms para nunca travar o botão.
         if (result.data) {
           const accountData = result.data
           try {
@@ -126,28 +119,23 @@ export function LoginForm({
                 })
                 setRecentAccounts(await getRecentAccounts())
 
-                if (accountData.refreshToken) {
-                  const availability = await biometricVault.isAvailable()
-                  if (!availability.ok) {
-                    console.warn('[biometria] indisponível:', availability.reason)
+                const availability = await biometricVault.isAvailable()
+                if (!availability.ok) {
+                  console.warn('[biometria] indisponível:', availability.reason)
+                } else {
+                  const saved = await biometricVault.saveToken(accountData.userId, password)
+                  if (!saved.ok) {
+                    console.warn('[biometria] falha ao salvar credencial:', saved.reason)
                   } else {
-                    const saved = await biometricVault.saveToken(
-                      accountData.userId,
-                      accountData.refreshToken
+                    const list = await getRecentAccounts()
+                    const updated = list.map((a) =>
+                      a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
                     )
-                    if (!saved.ok) {
-                      console.warn('[biometria] falha ao salvar token:', saved.reason)
-                    } else {
-                      const list = await getRecentAccounts()
-                      const updated = list.map((a) =>
-                        a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
-                      )
-                      await Preferences.set({
-                        key: 'casasync:recent-accounts',
-                        value: JSON.stringify(updated),
-                      })
-                      setRecentAccounts(updated)
-                    }
+                    await Preferences.set({
+                      key: 'casasync:recent-accounts',
+                      value: JSON.stringify(updated),
+                    })
+                    setRecentAccounts(updated)
                   }
                 }
               })(),

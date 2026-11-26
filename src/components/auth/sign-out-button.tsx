@@ -4,7 +4,6 @@ import { useTransition } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { del } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
-import { getRecentAccounts } from '@/utils/recent-accounts'
 import { unregisterAllPushSubscriptions } from '@/actions/push'
 import { PERSIST_KEY } from '@/lib/query/persist'
 import { Button } from '@/components/ui/button'
@@ -32,14 +31,7 @@ export function SignOutButton({
       queryClient.clear()
       await del(PERSIST_KEY).catch(() => undefined)
 
-      // Logout seguro: se o aparelho tem QUALQUER conta com biometria ativa,
-      // usa sempre scope 'local' para não revogar os refresh_tokens guardados
-      // no cofre. Não depende de getUser() (pode retornar nulo na WebView).
-      const recent = await getRecentAccounts()
-      const hasBiometric = recent.some((account) => account.biometricEnabled)
-      await supabase.auth.signOut({
-        scope: hasBiometric ? 'local' : 'global',
-      })
+      await supabase.auth.signOut()
       // Full reload: evita a corrida em que o proxy redireciona de volta para
       // o dashboard (router.push + refresh dispara o redirect com a sessão
       // ainda visível no cookie).

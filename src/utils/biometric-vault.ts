@@ -61,7 +61,7 @@ async function writeVaultMap(native: NativeModule, map: TokenMap): Promise<void>
 
 export type BiometricVault = {
   isAvailable: () => Promise<VaultResult>
-  saveToken: (userId: string, refreshToken: string) => Promise<VaultResult>
+  saveToken: (userId: string, secret: string) => Promise<VaultResult>
   verifyAndGetToken: (userId: string) => Promise<string | null>
   deleteToken: (userId: string) => Promise<void>
 }
@@ -82,13 +82,13 @@ export const biometricVault: BiometricVault = {
       return { ok: false, reason: errorMessage(err) }
     }
   },
-  async saveToken(userId, refreshToken) {
+  async saveToken(userId, secret) {
     if (!Capacitor.isNativePlatform()) return { ok: false, reason: 'plataforma não nativa' }
     const native = NativeBiometric as unknown as NativeModule
     if (!native.setCredentials) return { ok: false, reason: 'plugin setCredentials indisponível' }
     try {
       const current = await readVaultMap(native)
-      const updated = { ...current, [userId]: refreshToken }
+      const updated = { ...current, [userId]: secret }
       await writeVaultMap(native, updated)
       return { ok: true }
     } catch (err) {
