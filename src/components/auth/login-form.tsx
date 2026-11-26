@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+const BIOMETRIC_DEBUG_KEY = 'casasync:biometric-debug'
+
 export function LoginForm({
   redirectedFrom,
   error,
@@ -37,12 +39,25 @@ export function LoginForm({
   )
   const [pending, startTransition] = useTransition()
   const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([])
+  const [biometricDebug, setBiometricDebug] = useState<string | null>(null)
   const usernameRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void getRecentAccounts().then(setRecentAccounts)
+    void Preferences.get({ key: BIOMETRIC_DEBUG_KEY }).then(({ value }) => {
+      setBiometricDebug(value)
+    })
   }, [])
+
+  async function setDebug(reason: string) {
+    setBiometricDebug(reason)
+    try {
+      await Preferences.set({ key: BIOMETRIC_DEBUG_KEY, value: reason })
+    } catch {
+      // diagnóstico é best-effort
+    }
+  }
 
   async function handleRecentAccount(account: RecentAccount) {
     setFormError(null)
@@ -57,10 +72,12 @@ export function LoginForm({
             return
           }
           if (result.data?.refreshToken) {
-            try {
-              await biometricVault.saveToken(account.userId, result.data.refreshToken)
-            } catch (err) {
-              console.warn('[biometria] falha ao rotacionar token:', err)
+            const rotated = await biometricVault.saveToken(
+              account.userId,
+              result.data.refreshToken
+            )
+            if (!rotated.ok) {
+              console.warn('[biometria] falha ao rotacionar token:', rotated.reason)
             }
           }
           router.push(result.data?.redirectTo ?? '/')
@@ -68,6 +85,7 @@ export function LoginForm({
         })
         return
       }
+      await setDebug('verifyAndGetToken retornou null (biometria cancelada ou credencial ausente)')
     }
     // Sem biometria (ou falhou): preenche o apelido/e-mail e foca a senha.
     if (usernameRef.current) {
@@ -77,9 +95,9 @@ export function LoginForm({
   }
 
   async function handleRemoveAccount(account: RecentAccount) {
-    await biometricVault.deleteToken(account.userId)
-    await removeRecentAccount(account.userId)
     setRecentAccounts((prev) => prev.filter((a) => a.userId !== account.userId))
+    await removeRecentAccount(account.userId)
+    void biometricVault.deleteToken(account.userId)
   }
 
   function handleLogin(event: React.FormEvent<HTMLFormElement>) {
@@ -123,20 +141,31 @@ export function LoginForm({
                 })
                 setRecentAccounts(await getRecentAccounts())
 
-                if (accountData.refreshToken && (await biometricVault.isAvailable())) {
-                  try {
-                    await biometricVault.saveToken(accountData.userId, accountData.refreshToken)
-                    const list = await getRecentAccounts()
-                    const updated = list.map((a) =>
-                      a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
+                if (!accountData.refreshToken) {
+                  await setDebug('refreshToken ausente na resposta do login')
+                } else {
+                  const availability = await biometricVault.isAvailable()
+                  if (!availability.ok) {
+                    await setDebug(availability.reason)
+                  } else {
+                    const saved = await biometricVault.saveToken(
+                      accountData.userId,
+                      accountData.refreshToken
                     )
-                    await Preferences.set({
-                      key: 'casasync:recent-accounts',
-                      value: JSON.stringify(updated),
-                    })
-                    setRecentAccounts(updated)
-                  } catch (err) {
-                    console.warn('[biometria] falha ao salvar token:', err)
+                    if (!saved.ok) {
+                      await setDebug(saved.reason)
+                    } else {
+                      const list = await getRecentAccounts()
+                      const updated = list.map((a) =>
+                        a.userId === accountData.userId ? { ...a, biometricEnabled: true } : a
+                      )
+                      await Preferences.set({
+                        key: 'casasync:recent-accounts',
+                        value: JSON.stringify(updated),
+                      })
+                      setRecentAccounts(updated)
+                      await setDebug('OK')
+                    }
                   }
                 }
               })(),
@@ -182,7 +211,7 @@ export function LoginForm({
                     {recentAccounts.map((account) => (
                       <div
                         key={account.userId}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                        className="relative flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
                       >
                         <button
                           type="button"
@@ -206,7 +235,7 @@ export function LoginForm({
                         <button
                           type="button"
                           aria-label="Remover conta"
-                          className="text-xs text-slate-400 hover:text-red-600"
+                          className="relative z-10 shrink-0 px-1 text-xs text-slate-400 hover:text-red-600"
                           onClick={() => void handleRemoveAccount(account)}
                         >
                           Remover
@@ -214,6 +243,11 @@ export function LoginForm({
                       </div>
                     ))}
                   </div>
+                  {biometricDebug ? (
+                    <p className="text-[0.7rem] leading-tight text-slate-400">
+                      Debug Biometria: {biometricDebug}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {redirectedFrom ? (

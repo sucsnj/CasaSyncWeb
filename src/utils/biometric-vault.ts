@@ -10,6 +10,8 @@ export type RecentAccount = {
   biometricEnabled: boolean
 }
 
+export type VaultResult = { ok: true } | { ok: false; reason: string }
+
 type NativeModule = {
   isAvailable?: () => Promise<{ isAvailable?: boolean; biometryType?: number }>
   setCredentials?: (opts: {
@@ -22,14 +24,18 @@ type NativeModule = {
   deleteCredentials?: (opts: { server: string; username?: string }) => Promise<void>
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 async function loadNative(): Promise<NativeModule | null> {
   if (!Capacitor.isNativePlatform()) return null
   return NativeBiometric as unknown as NativeModule
 }
 
 export type BiometricVault = {
-  isAvailable: () => Promise<boolean>
-  saveToken: (userId: string, refreshToken: string) => Promise<void>
+  isAvailable: () => Promise<VaultResult>
+  saveToken: (userId: string, refreshToken: string) => Promise<VaultResult>
   verifyAndGetToken: (userId: string) => Promise<string | null>
   deleteToken: (userId: string) => Promise<void>
 }
@@ -37,22 +43,33 @@ export type BiometricVault = {
 export const biometricVault: BiometricVault = {
   async isAvailable() {
     const native = await loadNative()
-    if (!native?.isAvailable) return false
+    if (!native) return { ok: false, reason: 'plataforma não nativa' }
+    if (!native.isAvailable) return { ok: false, reason: 'plugin isAvailable indisponível' }
     try {
       const result = await native.isAvailable()
-      return result?.isAvailable === true
-    } catch {
-      return false
+      if (result?.isAvailable === true) return { ok: true }
+      return {
+        ok: false,
+        reason: `isAvailable=false (biometryType=${result?.biometryType ?? 'n/a'})`,
+      }
+    } catch (err) {
+      return { ok: false, reason: errorMessage(err) }
     }
   },
   async saveToken(userId, refreshToken) {
     const native = await loadNative()
-    if (!native?.setCredentials) return
-    await native.setCredentials({
-      username: userId,
-      password: refreshToken,
-      server: `casasync:${userId}`,
-    })
+    if (!native) return { ok: false, reason: 'plataforma não nativa' }
+    if (!native.setCredentials) return { ok: false, reason: 'plugin setCredentials indisponível' }
+    try {
+      await native.setCredentials({
+        username: userId,
+        password: refreshToken,
+        server: `casasync:${userId}`,
+      })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, reason: errorMessage(err) }
+    }
   },
   async verifyAndGetToken(userId) {
     const native = await loadNative()
