@@ -31,3 +31,11 @@
   - Web: Web Push (VAPID) existente.
 - **Backend:** `push-service.ts` bifurca o envio por `provider`: Web Push (VAPID) e FCM (Firebase Admin HTTP v1).
 - **Android:** permissões `INTERNET`, `POST_NOTIFICATIONS`, `VIBRATE`, `WAKE_LOCK`; `google-services.json` em `android/app/`; ícone de notificação `ic_stat_ic_notification` (vector drawable).
+
+## Biometria & Login Rápido (Android)
+- **Cofre (`src/utils/biometric-vault.ts`):** guarda **a senha por `userId`** num único JSON (`server: 'casasync:vault'`, `username: 'casasync-vault'`) no `@capgo/capacitor-native-biometric` (Android Keystore). O Android ignora `server` para isolar registros, por isso o mapa multi-conta num único registro.
+- **Leitura:** `verifyIdentity()` → `getCredentials()` → `JSON.parse(password)` → `map[userId]`. `saveToken` faz merge no mapa; `deleteToken` remove só a chave (ou apaga o registro quando vazio). `NativeBiometric` é usado direto, nunca retornado de função `async`.
+- **Login (`src/components/auth/login-form.tsx`):** o card biométrico lê a senha do cofre e chama a mesma Server Action `login(loginIdentifier, senha)`. Após login tradicional, a senha é salva no cofre (gate `isAvailable()`, timeout de 2000ms) e a conta recente é marcada com `biometricEnabled`.
+- **Contas recentes (`src/utils/recent-accounts.ts`):** `@capacitor/preferences` (`casasync:recent-accounts`) com apenas metadados não sensíveis; o card mostra avatar do perfil com fallback para iniciais.
+- **Logout (`src/components/auth/sign-out-button.tsx`):** `signOut()` padrão, pois o cofre não depende da sessão dos cookies.
+- Detalhes, alternativas rejeitadas e histórico de refresh token: ADR-0030.
