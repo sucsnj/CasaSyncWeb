@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { parseRichText } from '@/components/ui/rich-text'
 import { Input } from '@/components/ui/input'
 import type { DueComunicado } from '@/utils/comunicados'
+const DAY_KEY = new Date().toDateString()
 import {
   alertTargetWords,
   communicadoTargetHint,
@@ -112,7 +113,7 @@ export function AlertQueueOverlay({
     : 0
   const shuffled = useMemo(() => {
     if (!requiresAnswers || !answers.length) return answers.map((_, i) => i)
-    const seedStr = current?.id ?? ''
+    const seedStr = `${current?.id ?? ''}:${DAY_KEY}`
     let seed = 0
     for (let i = 0; i < seedStr.length; i++) {
       seed = (Math.imul(seed, 31) + seedStr.charCodeAt(i)) >>> 0
