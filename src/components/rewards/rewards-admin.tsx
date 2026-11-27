@@ -60,6 +60,7 @@ import {
   getRedemptionDisplayDate,
   type RedemptionView,
 } from '@/utils/redemptions'
+import { CountBadge } from '@/components/ui/count-badge'
 
 type Reward = Tables<'rewards'>
 
@@ -530,6 +531,7 @@ export function RewardsAdmin({
               <CardTitle className="flex items-center gap-2">
                 <Gift className="size-4 text-blue-600" />
                 Catálogo
+                <CountBadge count={rewards.length} />
                 <ChevronDown
                   className={cn(
                     'size-4 shrink-0 text-slate-400',
@@ -538,7 +540,7 @@ export function RewardsAdmin({
                   )}
                 />
               </CardTitle>
-              <CardDescription>Recompensas disponíveis na casa.</CardDescription>
+              {/* <CardDescription>Recompensas disponíveis na casa.</CardDescription> */}
             </button>
             <SortSelect
               value={sortCatalog}
@@ -709,6 +711,7 @@ export function RewardsAdmin({
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <Lightbulb className="size-4 text-violet-500" />
           Sugestões dos dependentes
+          <CountBadge count={pendingSuggestions.length} />
         </h2>
 
         {pendingSuggestions.length === 0 ? (
@@ -777,6 +780,7 @@ export function RewardsAdmin({
         <section className="grid gap-3 xl:grid-cols-2 xl:items-start">
           <h2 className="font-heading text-sm font-semibold text-slate-500 xl:col-span-2">
             Sugestões resolvidas
+            <CountBadge count={dismissedSuggestions.length} />
           </h2>
           {dismissedSuggestions.map((suggestion) => (
             <Card
@@ -865,6 +869,7 @@ export function RewardsAdmin({
              <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
                <Layers className="size-4 text-slate-500" />
                Histórico
+               <CountBadge count={groupedRedemptions.length} />
              </h2>
              <SortSelect
                value={sortHistory}

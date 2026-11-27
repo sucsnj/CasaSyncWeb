@@ -29,6 +29,7 @@ import { parseRichText } from '@/components/ui/rich-text'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { CountBadge } from '@/components/ui/count-badge'
 import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
@@ -229,6 +230,7 @@ export function TasksDependent({
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
             <ListTodo className="size-4 text-blue-600" />
             Suas tarefas
+            <CountBadge count={openTasks.length} />
           </h2>
           <SortSelect
             value={sortOpen}
@@ -407,6 +409,7 @@ export function TasksDependent({
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-base font-semibold text-slate-800">
             Aguardando aprovação
+            <CountBadge count={awaitingTasks.length} />
           </h2>
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {awaitingTasks.map((task) => {
@@ -491,6 +494,7 @@ export function TasksDependent({
            <div className="flex items-center justify-between gap-3">
              <h2 className="font-heading text-base font-semibold text-slate-800">
                Concluídas
+               <CountBadge count={doneTasks.length} />
              </h2>
              <SortSelect
                value={sortDone}

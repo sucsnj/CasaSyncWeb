@@ -51,6 +51,7 @@ import type {
   AchievementProgressEntry,
 } from '@/actions/achievements-reads'
 import type { Tables } from '@/types/database'
+import { CountBadge } from '@/components/ui/count-badge'
 
 type Achievement = Tables<'achievements'>
 
@@ -713,6 +714,7 @@ export function AchievementsAdmin({
          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
            <Trophy className="size-4 text-indigo-600" />
            Conquistas
+           <CountBadge count={data?.achievements?.length} />
          </h2>
          <SortSelect
            value={sort}

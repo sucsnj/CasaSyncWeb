@@ -29,6 +29,7 @@ import { PageSkeleton } from '@/components/ui/page-skeleton'
 import { QueryError } from '@/components/session/query-error'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { CountBadge } from '@/components/ui/count-badge'
 import type { Tables } from '@/types/database'
 
 type Achievement = Tables<'achievements'>
@@ -179,6 +180,7 @@ export function AchievementsDependent({
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
           <Trophy className="size-4 text-indigo-600" />
           Conquistas
+          <CountBadge count={views.length} />
         </h2>
         <SortSelect
           value={sort}

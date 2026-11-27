@@ -70,6 +70,7 @@ import { CardColumns } from '@/components/ui/card-columns'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FormattedDateTime } from '@/components/ui/formatted-date'
 import { cn } from '@/lib/utils'
+import { CountBadge } from '@/components/ui/count-badge'
 import { taskAttachmentView } from '@/utils/task-attachment-view'
 import type { AttachmentSelection } from '@/components/chest/chest-types'
 import type { ChestItemView } from '@/components/chest/chest-types'
@@ -1022,10 +1023,11 @@ export function TasksAdmin({
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
-            <ListTodo className="size-4 text-blue-600" />
-            Pendentes
-          </h2>
+            <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
+              <ListTodo className="size-4 text-blue-600" />
+              Pendentes
+              <CountBadge count={pendingTasks.length} />
+            </h2>
           <SortSelect
             value={sortPending}
             onChange={setSortPending}
@@ -1417,6 +1419,7 @@ export function TasksAdmin({
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
             <PauseCircle className="size-4 text-slate-400" />
             Em espera
+            <CountBadge count={heldTasks.length} />
           </h2>
           <CardColumns className="gap-x-3 xl:columns-2 [&>*]:mb-3">
             {heldTasks.map((task) => {
@@ -1593,6 +1596,7 @@ export function TasksAdmin({
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
           <ClipboardList className="size-4 text-amber-500" />
           Concluídas — aguardando aprovação
+          <CountBadge count={suggestions.length} />
         </h2>
         {completedTasks.length === 0 ? (
           <EmptyState
@@ -1724,6 +1728,7 @@ export function TasksAdmin({
             <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
               <CircleCheckBig className="size-4 text-emerald-500" />
               Aprovadas
+              <CountBadge count={approvedTasks.length} />
             </h2>
             <SortSelect
               value={sortApproved}

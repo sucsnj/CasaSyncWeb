@@ -18,6 +18,7 @@ import {
 import { PageSkeleton } from '@/components/ui/page-skeleton'
 import { QueryError } from '@/components/session/query-error'
 import type { ChestItemView } from './chest-types'
+import { CountBadge } from '@/components/ui/count-badge'
 
 /**
  * Tela do DEPENDENTE no baú: **só consulta e abertura** — sem edição, sem
@@ -88,6 +89,7 @@ export function ChestDependent({
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-slate-800">
           <Package className="size-5 text-amber-600" />
           Baú da casa
+          <CountBadge count={items.length} />
         </h2>
       </div>
 

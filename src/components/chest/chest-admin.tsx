@@ -41,6 +41,7 @@ import { attachmentBudgetState, formatMb } from '@/utils/attachment-budget'
 import { formatAttachmentSize, TASK_ATTACHMENT_MAX_MB } from '@/utils/task-attachment'
 import type { ChestItemView } from './chest-types'
 import type { Tables } from '@/types/database'
+import { CountBadge } from '@/components/ui/count-badge'
 
 /**
  * Tela do ADMIN no baú (ADR-0024): **acervo da casa ativa**, com título apenas.
@@ -257,6 +258,7 @@ export function ChestAdmin({
             <CardTitle className="flex items-center gap-2">
               <Package className="size-5 text-amber-600" />
               Baú da casa
+              <CountBadge count={items.length} />
             </CardTitle>
             <CardDescription>
               Arquivos que os dependentes da casa podem consultar e abrir.

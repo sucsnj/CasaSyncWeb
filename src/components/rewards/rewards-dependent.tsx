@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { ClearableInput } from '@/components/ui/clearable-input'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Input } from '@/components/ui/input'
+import { CountBadge } from '@/components/ui/count-badge'
 import {
   DEFAULT_TEXT_LIMITS,
 } from '@/utils/settings'
@@ -292,6 +293,7 @@ export function RewardsDependent({
            <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800">
              <Gift className="size-4 text-blue-600" />
              Loja de recompensas
+             <CountBadge count={rewards.length} />
            </h2>
            <div className="flex items-center gap-2">
              <SortSelect
@@ -557,6 +559,7 @@ export function RewardsDependent({
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
             <Lightbulb className="size-4 text-violet-500" />
             Suas sugestões
+            <CountBadge count={suggestions.length} />
           </h2>
           {suggestions.map((suggestion) => (
             <Card
@@ -596,6 +599,7 @@ export function RewardsDependent({
         <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-slate-800 xl:col-span-2">
           <PartyPopper className="size-4 text-amber-500" />
           Seus resgates
+          <CountBadge count={myRedemptions.length} />
         </h2>
 
         {myRedemptions.length === 0 ? (
